@@ -25,7 +25,7 @@ pub mod merkle_proof;
 pub mod sdk;
 pub mod state;
 
-declare_id!("8uPehR98NcpTLMtTncvJa4JGkr2GaCTbjggF4fGi8SXW");
+declare_id!("5mGKeBjhjiF3NhtgVkfbMW6vm9eS8rNmALo5s9MA91W");
 
 #[program]
 pub mod rakurai_block_reward_distribution {
