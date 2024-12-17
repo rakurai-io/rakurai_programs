@@ -25,13 +25,14 @@ pub mod merkle_proof;
 pub mod sdk;
 pub mod state;
 
-declare_id!("9zdEx5mZ5bSH6J1bZiSAH6CiXSQ4dx5maJ6jWtaMaFC");
+declare_id!("8uPehR98NcpTLMtTncvJa4JGkr2GaCTbjggF4fGi8SXW");
 
 #[program]
 pub mod rakurai_block_reward_distribution {
 
     use super::*;
     use crate::ErrorCode::*;
+    use solana_program::vote::state::VoteStateVersions;
 
     /// Initialize a singleton instance of the [Config] account.
     pub fn initialize(
@@ -65,6 +66,22 @@ pub mod rakurai_block_reward_distribution {
             return Err(MaxValidatorCommissionFeeBpsExceeded.into());
         }
 
+        if ctx.accounts.validator_vote_account.owner != &solana_program::vote::program::id() {
+            return Err(Unauthorized.into());
+        }
+
+        let node_identity = match bincode::deserialize::<VoteStateVersions>(
+            &ctx.accounts.validator_vote_account.data.borrow(),
+        )
+        .map(|versioned| versioned.convert_to_current())
+        .map_err(|_| ProgramError::InvalidAccountData)
+        {
+            Ok(vote_state) => vote_state.node_pubkey,
+            Err(_) => return Err(Unauthorized.into()),
+        };
+        if &node_identity != ctx.accounts.signer.key {
+            return Err(Unauthorized.into());
+        }
         let current_epoch = Clock::get()?.epoch;
 
         let distribution_acc = &mut ctx.accounts.block_reward_distribution_account;
