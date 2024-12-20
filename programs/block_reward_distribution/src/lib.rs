@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 use {default_env::default_env, solana_security_txt::security_txt};
 
 use crate::{
-    state::{BlockRewardDistributionAccount, ClaimStatus, Config, MerkleRoot},
+    state::{ClaimStatus, Config, MerkleRoot, RewardDistributionAccount},
     ErrorCode::Unauthorized,
 };
 
@@ -20,19 +20,18 @@ security_txt! {
     source_revision: default_env!("GIT_SHA", "GIT_SHA_MISSING"),
     source_release: default_env!("GIT_REF_NAME", "GIT_REF_NAME_MISSING")
 }
-
 pub mod merkle_proof;
 pub mod sdk;
 pub mod state;
 
-declare_id!("7EoVvrgiYjMhHiccyKDKijdQE96DwuJKdRAvHB24iXcs");
+declare_id!("B1a2HGarui4iZTVvNL36xoAWnVAtWT9UjNJq3iGcG3Ri");
 
 #[program]
-pub mod rakurai_block_reward_distribution {
+pub mod reward_distribution {
+    use jito_programs_vote_state::VoteState;
 
     use super::*;
     use crate::ErrorCode::*;
-    use solana_program::vote::state::VoteStateVersions;
 
     /// Initialize a singleton instance of the [Config] account.
     pub fn initialize(
@@ -54,10 +53,10 @@ pub mod rakurai_block_reward_distribution {
         Ok(())
     }
 
-    /// Initialize a new [BlockRewardDistributionAccount] associated with the given validator vote key
+    /// Initialize a new [RewardDistributionAccount] associated with the given validator vote key
     /// and current epoch.
-    pub fn initialize_block_reward_distribution_account(
-        ctx: Context<InitializeBlockRewardDistributionAccount>,
+    pub fn initialize_reward_distribution_account(
+        ctx: Context<InitializeRewardDistributionAccount>,
         merkle_root_upload_authority: Pubkey,
         validator_commission_bps: u16,
         bump: u8,
@@ -66,25 +65,14 @@ pub mod rakurai_block_reward_distribution {
             return Err(MaxValidatorCommissionFeeBpsExceeded.into());
         }
 
-        if ctx.accounts.validator_vote_account.owner != &solana_program::vote::program::id() {
+        let validator_vote_state = VoteState::deserialize(&ctx.accounts.validator_vote_account)?;
+        if &validator_vote_state.node_pubkey != ctx.accounts.signer.key {
             return Err(Unauthorized.into());
         }
 
-        let node_identity = match bincode::deserialize::<VoteStateVersions>(
-            &ctx.accounts.validator_vote_account.data.borrow(),
-        )
-        .map(|versioned| versioned.convert_to_current())
-        .map_err(|_| ProgramError::InvalidAccountData)
-        {
-            Ok(vote_state) => vote_state.node_pubkey,
-            Err(_) => return Err(Unauthorized.into()),
-        };
-        if &node_identity != ctx.accounts.signer.key {
-            return Err(Unauthorized.into());
-        }
         let current_epoch = Clock::get()?.epoch;
 
-        let distribution_acc = &mut ctx.accounts.block_reward_distribution_account;
+        let distribution_acc = &mut ctx.accounts.reward_distribution_account;
         distribution_acc.validator_vote_account = ctx.accounts.validator_vote_account.key();
         distribution_acc.epoch_created_at = current_epoch;
         distribution_acc.validator_commission_bps = validator_commission_bps;
@@ -96,8 +84,8 @@ pub mod rakurai_block_reward_distribution {
         distribution_acc.bump = bump;
         distribution_acc.validate()?;
 
-        emit!(BlockRewardDistributionAccountInitializedEvent {
-            block_reward_distribution_account: distribution_acc.key(),
+        emit!(RewardDistributionAccountInitializedEvent {
+            reward_distribution_account: distribution_acc.key(),
         });
 
         Ok(())
@@ -121,7 +109,7 @@ pub mod rakurai_block_reward_distribution {
         Ok(())
     }
 
-    /// Uploads a merkle root to the provided [BlockRewardDistributionAccount]. This instruction may be
+    /// Uploads a merkle root to the provided [RewardDistributionAccount]. This instruction may be
     /// invoked many times as long as the account is at least one epoch old and not expired; and
     /// no funds have already been claimed. Only the `merkle_root_upload_authority` has the
     /// authority to invoke.
@@ -134,7 +122,7 @@ pub mod rakurai_block_reward_distribution {
         UploadMerkleRoot::auth(&ctx)?;
 
         let current_epoch = Clock::get()?.epoch;
-        let distribution_acc = &mut ctx.accounts.block_reward_distribution_account;
+        let distribution_acc = &mut ctx.accounts.reward_distribution_account;
 
         if let Some(merkle_root) = &distribution_acc.merkle_root {
             if merkle_root.num_nodes_claimed > 0 {
@@ -146,7 +134,7 @@ pub mod rakurai_block_reward_distribution {
         }
 
         if current_epoch > distribution_acc.expires_at {
-            return Err(ExpiredBlockRewardDistributionAccount.into());
+            return Err(ExpiredRewardDistributionAccount.into());
         }
 
         distribution_acc.merkle_root = Some(MerkleRoot {
@@ -160,13 +148,13 @@ pub mod rakurai_block_reward_distribution {
 
         emit!(MerkleRootUploadedEvent {
             merkle_root_upload_authority: ctx.accounts.merkle_root_upload_authority.key(),
-            block_reward_distribution_account: distribution_acc.key(),
+            reward_distribution_account: distribution_acc.key(),
         });
 
         Ok(())
     }
 
-    /// Anyone can invoke this only after the [BlockRewardDistributionAccount] has expired.
+    /// Anyone can invoke this only after the [RewardDistributionAccount] has expired.
     /// This instruction will return any rent back to `claimant` and close the account
     pub fn close_claim_status(ctx: Context<CloseClaimStatus>) -> Result<()> {
         let claim_status = &ctx.accounts.claim_status;
@@ -184,47 +172,47 @@ pub mod rakurai_block_reward_distribution {
         Ok(())
     }
 
-    /// Anyone can invoke this only after the [BlockRewardDistributionAccount] has expired.
+    /// Anyone can invoke this only after the [RewardDistributionAccount] has expired.
     /// This instruction will send any unclaimed funds to the designated `expired_funds_account`
     /// before closing and returning the rent exempt funds to the validator.
-    pub fn close_block_reward_distribution_account(
-        ctx: Context<CloseBlockRewardDistributionAccount>,
+    pub fn close_reward_distribution_account(
+        ctx: Context<CloseRewardDistributionAccount>,
         _epoch: u64,
     ) -> Result<()> {
-        CloseBlockRewardDistributionAccount::auth(&ctx)?;
+        CloseRewardDistributionAccount::auth(&ctx)?;
 
-        let block_reward_distribution_account = &mut ctx.accounts.block_reward_distribution_account;
+        let reward_distribution_account = &mut ctx.accounts.reward_distribution_account;
 
-        if Clock::get()?.epoch <= block_reward_distribution_account.expires_at {
-            return Err(PrematureCloseBlockRewardDistributionAccount.into());
+        if Clock::get()?.epoch <= reward_distribution_account.expires_at {
+            return Err(PrematureCloseRewardDistributionAccount.into());
         }
 
-        let expired_amount = BlockRewardDistributionAccount::claim_expired(
-            block_reward_distribution_account.to_account_info(),
+        let expired_amount = RewardDistributionAccount::claim_expired(
+            reward_distribution_account.to_account_info(),
             ctx.accounts.expired_funds_account.to_account_info(),
         )?;
-        block_reward_distribution_account.validate()?;
+        reward_distribution_account.validate()?;
 
-        emit!(BlockRewardDistributionAccountClosedEvent {
+        emit!(RewardDistributionAccountClosedEvent {
             expired_funds_account: ctx.accounts.expired_funds_account.key(),
-            block_reward_distribution_account: block_reward_distribution_account.key(),
+            reward_distribution_account: reward_distribution_account.key(),
             expired_amount,
         });
 
         Ok(())
     }
 
-    /// Claims tokens from the [BlockRewardDistributionAccount].
+    /// Claims tokens from the [RewardDistributionAccount].
     pub fn claim(ctx: Context<Claim>, bump: u8, amount: u64, proof: Vec<[u8; 32]>) -> Result<()> {
         let claim_status = &mut ctx.accounts.claim_status;
         claim_status.bump = bump;
 
         let claimant_account = &mut ctx.accounts.claimant;
-        let block_reward_distribution_account = &mut ctx.accounts.block_reward_distribution_account;
+        let reward_distribution_account = &mut ctx.accounts.reward_distribution_account;
 
         let clock = Clock::get()?;
-        if clock.epoch > block_reward_distribution_account.expires_at {
-            return Err(ExpiredBlockRewardDistributionAccount.into());
+        if clock.epoch > reward_distribution_account.expires_at {
+            return Err(ExpiredRewardDistributionAccount.into());
         }
 
         // Redundant check since we shouldn't be able to init a claim status account using the same seeds.
@@ -232,10 +220,9 @@ pub mod rakurai_block_reward_distribution {
             return Err(FundsAlreadyClaimed.into());
         }
 
-        let block_reward_distribution_info = block_reward_distribution_account.to_account_info();
-        let block_reward_distribution_epoch_expires_at =
-            block_reward_distribution_account.expires_at;
-        let merkle_root = block_reward_distribution_account
+        let reward_distribution_info = reward_distribution_account.to_account_info();
+        let reward_distribution_epoch_expires_at = reward_distribution_account.expires_at;
+        let merkle_root = reward_distribution_account
             .merkle_root
             .as_mut()
             .ok_or(RootNotUploaded)?;
@@ -254,8 +241,8 @@ pub mod rakurai_block_reward_distribution {
             return Err(InvalidProof.into());
         }
 
-        BlockRewardDistributionAccount::claim(
-            block_reward_distribution_info,
+        RewardDistributionAccount::claim(
+            reward_distribution_info,
             claimant_account.to_account_info(),
             amount,
         )?;
@@ -266,7 +253,7 @@ pub mod rakurai_block_reward_distribution {
         claim_status.slot_claimed_at = clock.slot;
         claim_status.claimant = claimant_account.key();
         claim_status.claim_status_payer = ctx.accounts.payer.key();
-        claim_status.expires_at = block_reward_distribution_epoch_expires_at;
+        claim_status.expires_at = reward_distribution_epoch_expires_at;
 
         merkle_root.total_funds_claimed = merkle_root
             .total_funds_claimed
@@ -285,13 +272,13 @@ pub mod rakurai_block_reward_distribution {
         }
 
         emit!(ClaimedEvent {
-            block_reward_distribution_account: block_reward_distribution_account.key(),
+            reward_distribution_account: reward_distribution_account.key(),
             payer: ctx.accounts.payer.key(),
             claimant: claimant_account.key(),
             amount
         });
 
-        block_reward_distribution_account.validate()?;
+        reward_distribution_account.validate()?;
 
         Ok(())
     }
@@ -311,10 +298,10 @@ pub enum ErrorCode {
     #[msg("The maximum number of claims has been exceeded.")]
     ExceedsMaxNumNodes,
 
-    #[msg("The given BlockRewardDistributionAccount has expired.")]
-    ExpiredBlockRewardDistributionAccount,
+    #[msg("The given RewardDistributionAccount has expired.")]
+    ExpiredRewardDistributionAccount,
 
-    #[msg("The funds for the given index and BlockRewardDistributionAccount have already been claimed.")]
+    #[msg("The funds for the given index and RewardDistributionAccount have already been claimed.")]
     FundsAlreadyClaimed,
 
     #[msg("Supplied invalid parameters.")]
@@ -329,16 +316,16 @@ pub enum ErrorCode {
     #[msg("Validator's commission basis points must be less than or equal to the Config account's max_validator_commission_bps.")]
     MaxValidatorCommissionFeeBpsExceeded,
 
-    #[msg("The given BlockRewardDistributionAccount is not ready to be closed.")]
-    PrematureCloseBlockRewardDistributionAccount,
+    #[msg("The given RewardDistributionAccount is not ready to be closed.")]
+    PrematureCloseRewardDistributionAccount,
 
     #[msg("The given ClaimStatus account is not ready to be closed.")]
     PrematureCloseClaimStatus,
 
-    #[msg("Must wait till at least one epoch after the block reward distribution account was created to upload the merkle root.")]
+    #[msg("Must wait till at least one epoch after the reward distribution account was created to upload the merkle root.")]
     PrematureMerkleRootUpload,
 
-    #[msg("No merkle root has been uploaded to the given BlockRewardDistributionAccount.")]
+    #[msg("No merkle root has been uploaded to the given RewardDistributionAccount.")]
     RootNotUploaded,
 
     #[msg("Unauthorized signer.")]
@@ -389,22 +376,22 @@ pub struct Initialize<'info> {
     _validator_commission_bps: u16,
     _bump: u8
 )]
-pub struct InitializeBlockRewardDistributionAccount<'info> {
+pub struct InitializeRewardDistributionAccount<'info> {
     pub config: Account<'info, Config>,
 
     #[account(
         init,
         seeds = [
-            BlockRewardDistributionAccount::SEED,
+            RewardDistributionAccount::SEED,
             validator_vote_account.key().as_ref(),
             Clock::get().unwrap().epoch.to_le_bytes().as_ref(),
         ],
         bump,
         payer = signer,
-        space = BlockRewardDistributionAccount::SIZE,
+        space = RewardDistributionAccount::SIZE,
         rent_exempt = enforce
     )]
-    pub block_reward_distribution_account: Account<'info, BlockRewardDistributionAccount>,
+    pub reward_distribution_account: Account<'info, RewardDistributionAccount>,
 
     /// CHECK: Safe because we check the vote program is the owner before deserialization.
     /// The validator's vote account is used to check this transaction's signer is also the authorized withdrawer.
@@ -438,7 +425,7 @@ impl UpdateConfig<'_> {
 
 #[derive(Accounts)]
 #[instruction(epoch: u64)]
-pub struct CloseBlockRewardDistributionAccount<'info> {
+pub struct CloseRewardDistributionAccount<'info> {
     pub config: Account<'info, Config>,
 
     /// CHECK: safe see auth fn
@@ -449,13 +436,13 @@ pub struct CloseBlockRewardDistributionAccount<'info> {
         mut,
         close = validator_vote_account,
         seeds = [
-            BlockRewardDistributionAccount::SEED,
+            RewardDistributionAccount::SEED,
             validator_vote_account.key().as_ref(),
             epoch.to_le_bytes().as_ref(),
         ],
-        bump = block_reward_distribution_account.bump,
+        bump = reward_distribution_account.bump,
     )]
-    pub block_reward_distribution_account: Account<'info, BlockRewardDistributionAccount>,
+    pub reward_distribution_account: Account<'info, RewardDistributionAccount>,
 
     /// CHECK: safe see auth fn
     #[account(mut)]
@@ -466,8 +453,8 @@ pub struct CloseBlockRewardDistributionAccount<'info> {
     pub signer: Signer<'info>,
 }
 
-impl CloseBlockRewardDistributionAccount<'_> {
-    fn auth(ctx: &Context<CloseBlockRewardDistributionAccount>) -> Result<()> {
+impl CloseRewardDistributionAccount<'_> {
+    fn auth(ctx: &Context<CloseRewardDistributionAccount>) -> Result<()> {
         if ctx.accounts.config.expired_funds_account != ctx.accounts.expired_funds_account.key() {
             Err(Unauthorized.into())
         } else {
@@ -482,7 +469,7 @@ pub struct Claim<'info> {
     pub config: Account<'info, Config>,
 
     #[account(mut, rent_exempt = enforce)]
-    pub block_reward_distribution_account: Account<'info, BlockRewardDistributionAccount>,
+    pub reward_distribution_account: Account<'info, RewardDistributionAccount>,
 
     /// Status of the claim. Used to prevent the same party from claiming multiple times.
     #[account(
@@ -491,7 +478,7 @@ pub struct Claim<'info> {
         seeds = [
             ClaimStatus::SEED,
             claimant.key().as_ref(),
-            block_reward_distribution_account.key().as_ref()
+            reward_distribution_account.key().as_ref()
         ],
         bump,
         space = ClaimStatus::SIZE,
@@ -516,7 +503,7 @@ pub struct UploadMerkleRoot<'info> {
     pub config: Account<'info, Config>,
 
     #[account(mut, rent_exempt = enforce)]
-    pub block_reward_distribution_account: Account<'info, BlockRewardDistributionAccount>,
+    pub reward_distribution_account: Account<'info, RewardDistributionAccount>,
 
     #[account(mut)]
     pub merkle_root_upload_authority: Signer<'info>,
@@ -527,7 +514,7 @@ impl UploadMerkleRoot<'_> {
         if ctx.accounts.merkle_root_upload_authority.key()
             != ctx
                 .accounts
-                .block_reward_distribution_account
+                .reward_distribution_account
                 .merkle_root_upload_authority
         {
             Err(Unauthorized.into())
@@ -540,13 +527,13 @@ impl UploadMerkleRoot<'_> {
 // Events
 
 #[event]
-pub struct BlockRewardDistributionAccountInitializedEvent {
-    pub block_reward_distribution_account: Pubkey,
+pub struct RewardDistributionAccountInitializedEvent {
+    pub reward_distribution_account: Pubkey,
 }
 
 #[event]
 pub struct ValidatorCommissionBpsUpdatedEvent {
-    pub block_reward_distribution_account: Pubkey,
+    pub reward_distribution_account: Pubkey,
     pub old_commission_bps: u16,
     pub new_commission_bps: u16,
 }
@@ -565,8 +552,8 @@ pub struct ConfigUpdatedEvent {
 
 #[event]
 pub struct ClaimedEvent {
-    /// [BlockRewardDistributionAccount] claimed from.
-    pub block_reward_distribution_account: Pubkey,
+    /// [RewardDistributionAccount] claimed from.
+    pub reward_distribution_account: Pubkey,
 
     /// User that paid for the claim, may or may not be the same as claimant.
     pub payer: Pubkey,
@@ -584,16 +571,16 @@ pub struct MerkleRootUploadedEvent {
     pub merkle_root_upload_authority: Pubkey,
 
     /// Where the root was uploaded to.
-    pub block_reward_distribution_account: Pubkey,
+    pub reward_distribution_account: Pubkey,
 }
 
 #[event]
-pub struct BlockRewardDistributionAccountClosedEvent {
+pub struct RewardDistributionAccountClosedEvent {
     /// Account where unclaimed funds were transferred to.
     pub expired_funds_account: Pubkey,
 
-    /// [BlockRewardDistributionAccount] closed.
-    pub block_reward_distribution_account: Pubkey,
+    /// [RewardDistributionAccount] closed.
+    pub reward_distribution_account: Pubkey,
 
     /// Unclaimed amount transferred.
     pub expired_amount: u64,

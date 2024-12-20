@@ -29,7 +29,7 @@ pub struct Config {
 /// The account that validators register as **block_reward_receiver**.
 #[account]
 #[derive(Default)]
-pub struct BlockRewardDistributionAccount {
+pub struct RewardDistributionAccount {
     /// The validator's vote account, also the recipient of remaining lamports after
     /// upon closing this account.
     pub validator_vote_account: Pubkey,
@@ -98,8 +98,8 @@ impl Config {
     }
 }
 
-impl BlockRewardDistributionAccount {
-    pub const SEED: &'static [u8] = b"BLOCK_REWARD_DISTRIBUTION_ACCOUNT";
+impl RewardDistributionAccount {
+    pub const SEED: &'static [u8] = b"REWARD_DISTRIBUTION_ACCOUNT";
 
     pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
 

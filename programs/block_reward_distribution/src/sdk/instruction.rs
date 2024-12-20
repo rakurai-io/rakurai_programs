@@ -55,32 +55,32 @@ pub fn initialize_ix(
     }
 }
 
-pub struct InitializeBlockRewardDistributionAccountArgs {
+pub struct InitializeRewardDistributionAccountArgs {
     pub merkle_root_upload_authority: Pubkey,
     pub validator_commission_bps: u16,
     pub bump: u8,
 }
-pub struct InitializeBlockRewardDistributionAccountAccounts {
+pub struct InitializeRewardDistributionAccountAccounts {
     pub config: Pubkey,
     pub signer: Pubkey,
     pub system_program: Pubkey,
-    pub block_reward_distribution_account: Pubkey,
+    pub reward_distribution_account: Pubkey,
     pub validator_vote_account: Pubkey,
 }
-pub fn initialize_block_reward_distribution_account_ix(
+pub fn initialize_reward_distribution_account_ix(
     program_id: Pubkey,
-    args: InitializeBlockRewardDistributionAccountArgs,
-    accounts: InitializeBlockRewardDistributionAccountAccounts,
+    args: InitializeRewardDistributionAccountArgs,
+    accounts: InitializeRewardDistributionAccountAccounts,
 ) -> Instruction {
-    let InitializeBlockRewardDistributionAccountArgs {
+    let InitializeRewardDistributionAccountArgs {
         merkle_root_upload_authority,
         validator_commission_bps,
         bump,
     } = args;
 
-    let InitializeBlockRewardDistributionAccountAccounts {
+    let InitializeRewardDistributionAccountAccounts {
         config,
-        block_reward_distribution_account,
+        reward_distribution_account,
         system_program,
         validator_vote_account,
         signer,
@@ -88,17 +88,17 @@ pub fn initialize_block_reward_distribution_account_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::InitializeBlockRewardDistributionAccount {
+        data: crate::instruction::InitializeRewardDistributionAccount {
             merkle_root_upload_authority,
             validator_commission_bps,
             bump,
         }
         .data(),
-        accounts: crate::accounts::InitializeBlockRewardDistributionAccount {
+        accounts: crate::accounts::InitializeRewardDistributionAccount {
             config,
             signer,
             system_program,
-            block_reward_distribution_account,
+            reward_distribution_account,
             validator_vote_account,
         }
         .to_account_metas(None),
@@ -165,7 +165,7 @@ pub struct UploadMerkleRootArgs {
 pub struct UploadMerkleRootAccounts {
     pub config: Pubkey,
     pub merkle_root_upload_authority: Pubkey,
-    pub block_reward_distribution_account: Pubkey,
+    pub reward_distribution_account: Pubkey,
 }
 pub fn upload_merkle_root_ix(
     program_id: Pubkey,
@@ -181,7 +181,7 @@ pub fn upload_merkle_root_ix(
     let UploadMerkleRootAccounts {
         config,
         merkle_root_upload_authority,
-        block_reward_distribution_account,
+        reward_distribution_account,
     } = accounts;
 
     Instruction {
@@ -195,32 +195,32 @@ pub fn upload_merkle_root_ix(
         accounts: crate::accounts::UploadMerkleRoot {
             config,
             merkle_root_upload_authority,
-            block_reward_distribution_account,
+            reward_distribution_account,
         }
         .to_account_metas(None),
     }
 }
 
-pub struct CloseBlockRewardDistributionAccountArgs {
+pub struct CloseRewardDistributionAccountArgs {
     pub _epoch: u64,
 }
-pub struct CloseBlockRewardDistributionAccounts {
+pub struct CloseRewardDistributionAccounts {
     pub config: Pubkey,
-    pub block_reward_distribution_account: Pubkey,
+    pub reward_distribution_account: Pubkey,
     pub validator_vote_account: Pubkey,
     pub expired_funds_account: Pubkey,
     pub signer: Pubkey,
 }
-pub fn close_block_reward_distribution_account_ix(
+pub fn close_reward_distribution_account_ix(
     program_id: Pubkey,
-    args: CloseBlockRewardDistributionAccountArgs,
-    accounts: CloseBlockRewardDistributionAccounts,
+    args: CloseRewardDistributionAccountArgs,
+    accounts: CloseRewardDistributionAccounts,
 ) -> Instruction {
-    let CloseBlockRewardDistributionAccountArgs { _epoch } = args;
+    let CloseRewardDistributionAccountArgs { _epoch } = args;
 
-    let CloseBlockRewardDistributionAccounts {
+    let CloseRewardDistributionAccounts {
         config,
-        block_reward_distribution_account,
+        reward_distribution_account,
         validator_vote_account,
         expired_funds_account,
         signer,
@@ -228,12 +228,12 @@ pub fn close_block_reward_distribution_account_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::CloseBlockRewardDistributionAccount { _epoch }.data(),
-        accounts: crate::accounts::CloseBlockRewardDistributionAccount {
+        data: crate::instruction::CloseRewardDistributionAccount { _epoch }.data(),
+        accounts: crate::accounts::CloseRewardDistributionAccount {
             config,
             validator_vote_account,
             expired_funds_account,
-            block_reward_distribution_account,
+            reward_distribution_account,
             signer,
         }
         .to_account_metas(None),
@@ -247,7 +247,7 @@ pub struct ClaimArgs {
 }
 pub struct ClaimAccounts {
     pub config: Pubkey,
-    pub block_reward_distribution_account: Pubkey,
+    pub reward_distribution_account: Pubkey,
     pub claim_status: Pubkey,
     pub claimant: Pubkey,
     pub payer: Pubkey,
@@ -262,7 +262,7 @@ pub fn claim_ix(program_id: Pubkey, args: ClaimArgs, accounts: ClaimAccounts) ->
 
     let ClaimAccounts {
         config,
-        block_reward_distribution_account,
+        reward_distribution_account,
         claim_status,
         claimant,
         payer,
@@ -279,7 +279,7 @@ pub fn claim_ix(program_id: Pubkey, args: ClaimArgs, accounts: ClaimAccounts) ->
         .data(),
         accounts: crate::accounts::Claim {
             config,
-            block_reward_distribution_account,
+            reward_distribution_account,
             claimant,
             claim_status,
             payer,
