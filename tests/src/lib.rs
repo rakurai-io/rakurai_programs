@@ -1,2 +1,2 @@
 #[cfg(test)]
-mod test_initialize;
+mod block_reward_distributor;

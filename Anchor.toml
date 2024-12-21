@@ -5,7 +5,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-block_reward_distribution = "4wyjfWEX6746eoepd37Gb6KcPpLpkJhe4CqWzerLfpCB"
+block_reward_distribution = "73rhHmGAfK4E7KEaTz7PxStSUicuRx4JcKN1tUC4x1Ev"
 
 [registry]
 url = "https://api.apr.dev"

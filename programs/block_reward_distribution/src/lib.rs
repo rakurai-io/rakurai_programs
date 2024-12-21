@@ -24,11 +24,11 @@ pub mod merkle_proof;
 pub mod sdk;
 pub mod state;
 
-declare_id!("B1a2HGarui4iZTVvNL36xoAWnVAtWT9UjNJq3iGcG3Ri");
+declare_id!("73rhHmGAfK4E7KEaTz7PxStSUicuRx4JcKN1tUC4x1Ev");
 
 #[program]
 pub mod reward_distribution {
-    use jito_programs_vote_state::VoteState;
+    // use solana_program::vote::state::VoteStateVersions;
 
     use super::*;
     use crate::ErrorCode::*;
@@ -65,10 +65,22 @@ pub mod reward_distribution {
             return Err(MaxValidatorCommissionFeeBpsExceeded.into());
         }
 
-        let validator_vote_state = VoteState::deserialize(&ctx.accounts.validator_vote_account)?;
-        if &validator_vote_state.node_pubkey != ctx.accounts.signer.key {
+        if ctx.accounts.validator_vote_account.owner != &solana_program::vote::program::id() {
             return Err(Unauthorized.into());
         }
+
+        // let node_identity = match bincode::deserialize::<VoteStateVersions>(
+        //     &ctx.accounts.validator_vote_account.data.borrow(),
+        // )
+        // .map(|versioned| versioned.convert_to_current())
+        // .map_err(|_| ProgramError::InvalidAccountData)
+        // {
+        //     Ok(vote_state) => vote_state.node_pubkey,
+        //     Err(_) => return Err(Unauthorized.into()),
+        // };
+        // if &node_identity != ctx.accounts.signer.key {
+        //     return Err(Unauthorized.into());
+        // }
 
         let current_epoch = Clock::get()?.epoch;
 
@@ -301,7 +313,9 @@ pub enum ErrorCode {
     #[msg("The given RewardDistributionAccount has expired.")]
     ExpiredRewardDistributionAccount,
 
-    #[msg("The funds for the given index and RewardDistributionAccount have already been claimed.")]
+    #[msg(
+        "The funds for the given index and RewardDistributionAccount have already been claimed."
+    )]
     FundsAlreadyClaimed,
 
     #[msg("Supplied invalid parameters.")]

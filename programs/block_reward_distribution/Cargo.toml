@@ -15,8 +15,8 @@ no-entrypoint = []
 no-idl = []
 
 [dependencies]
-anchor-lang = { path = "../../../../anchor/lang" }
+anchor-lang = "0.30.1"
 default-env = "0.1.1"
-jito-programs-vote-state = { path = "../vote-state" }
-solana-program = { path = "../../../../sdk/program" }
+solana-program = "1.18.22"
 solana-security-txt = "1.1.1"
+bincode = "1.3.3"
