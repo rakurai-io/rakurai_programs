@@ -21,30 +21,43 @@ use {
 
 #[test]
 fn init_config_account() {
-    // Keypair loading
-    let keypair_path = "../../txn-generator-client/staked-identity-copy.json";
-    let kp: Keypair = read_keypair_file(keypair_path).expect("Failed to load keypair");
+    // Load Anchor Wallet Keypair
+    let anchor_wallet = std::env::var("TEST_WALLET")
+        .unwrap_or_else(|_| panic!("Environment variable `TEST_WALLET` is not set"));
+    let kp: Keypair = read_keypair_file(&anchor_wallet)
+        .unwrap_or_else(|_| panic!("Failed to load keypair from path: `{}`", anchor_wallet));
+    println!("✅ Loaded Payer Keypair: {}", kp.pubkey());
 
-    println!("Keypair loaded successfully!");
-    println!("Public Key: {}", kp.pubkey());
+    // Load RPC URL
+    let rpc_url = std::env::var("RPC_URL")
+        .unwrap_or_else(|_| panic!("Environment variable `RPC_URL` is not set"));
+    let rpc_client = RpcClient::new_with_commitment(rpc_url.clone(), CommitmentConfig::confirmed());
+    println!("✅ Connected to RPC URL: {}", rpc_url);
 
-    // RPC setup
-    let rpc_url = "https://api.testnet.solana.com";
-    let rpc_client = RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed());
+    // Load Program ID
+    let tip_distribution_program_id: Pubkey =
+        if let Ok(env_program_id) = std::env::var("PROGRAM_ID") {
+            env_program_id
+                .parse()
+                .expect("Invalid PROGRAM_ID in environment")
+        } else {
+            read_keypair_file("../../target/deploy/block_reward_distribution-keypair.json")
+                .expect("Failed to load program ID keypair file")
+                .pubkey()
+        };
+    println!(
+        "✅ Tip Distribution Program ID: {}",
+        tip_distribution_program_id
+    );
 
-    // Program ID and Config Account
-    let tip_distribution_program_id: Pubkey = read_keypair_file(
-        "/home/ubuntu/rakurai_programs/target/deploy/block_reward_distribution-keypair.json",
-    )
-    .expect("Failed to read program keypair")
-    .pubkey();
-    println!("Tip Program Address: {}", tip_distribution_program_id);
-
+    // Derive Config Account Address
     let config_pda_and_bump = derive_config_account_address(&tip_distribution_program_id);
-    println!("Config Account: {}", config_pda_and_bump.0);
-    println!("Config Bump Seed: {}", config_pda_and_bump.1);
+    println!(
+        "🛠️ Config Account: {}, Bump: {}",
+        config_pda_and_bump.0, config_pda_and_bump.1
+    );
 
-    // Create initialize instruction
+    // Create Initialize Instruction
     let initialize_ix = initialize_ix(
         tip_distribution_program_id,
         InitializeArgs {
@@ -61,80 +74,111 @@ fn init_config_account() {
         },
     );
 
-    // Generate transaction
+    // Generate Transaction
     let recent_blockhash = rpc_client
         .get_latest_blockhash()
-        .expect("Failed to fetch blockhash");
+        .expect("Failed to fetch recent blockhash");
     let message = Message::new(&[initialize_ix], Some(&kp.pubkey()));
     let transaction = Transaction::new(&[&kp], message, recent_blockhash);
 
-    println!("Signature: {:?}", transaction.signatures[0]);
-    let result = rpc_client
-        .simulate_transaction(&transaction)
-        .expect("Failed to confirm transaction");
-
-    println!("Config Account Result: {:?}", result);
+    // Send and Confirm Transaction
+    let result = rpc_client.send_and_confirm_transaction(&transaction);
+    match result {
+        Ok(sig) => println!(
+            "✅ Config Account Initialized. Transaction Signature: {}",
+            sig
+        ),
+        Err(err) => println!("❌ Failed to Initialize Config Account: {:?}", err),
+    }
 }
 
 #[test]
 fn create_reward_distribution_account() {
-    let keypair_path = "../../txn-generator-client/staked-identity-copy.json";
-    let kp: Keypair = read_keypair_file(keypair_path).expect("Failed to load keypair");
+    // Load Anchor Wallet Keypair
+    let anchor_wallet = std::env::var("TEST_WALLET")
+        .unwrap_or_else(|_| panic!("Environment variable `TEST_WALLET` is not set"));
+    let kp: Keypair = read_keypair_file(&anchor_wallet)
+        .unwrap_or_else(|_| panic!("Failed to load keypair from path: `{}`", anchor_wallet));
+    println!("✅ Loaded Payer Keypair: {}", kp.pubkey());
 
-    println!("Keypair loaded successfully!");
-    println!("Public Key: {}", kp.pubkey());
+    // Load RPC URL
+    let rpc_url = std::env::var("RPC_URL")
+        .unwrap_or_else(|_| panic!("Environment variable `RPC_URL` is not set"));
+    let rpc_client = RpcClient::new_with_commitment(rpc_url.clone(), CommitmentConfig::confirmed());
+    println!("✅ Connected to RPC URL: {}", rpc_url);
 
-    // RPC setup
-    let rpc_url = "https://api.testnet.solana.com";
-    let rpc_client = RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed());
+    // Load Program ID
+    let tip_distribution_program_id: Pubkey =
+        if let Ok(env_program_id) = std::env::var("PROGRAM_ID") {
+            env_program_id
+                .parse()
+                .expect("Invalid PROGRAM_ID in environment")
+        } else {
+            read_keypair_file("../../target/deploy/block_reward_distribution-keypair.json")
+                .expect("Failed to load program ID keypair file")
+                .pubkey()
+        };
+    println!(
+        "✅ Tip Distribution Program ID: {}",
+        tip_distribution_program_id
+    );
 
-    // Program ID and Config Account
-    // Program ID and Config Account
-    let tip_distribution_program_id: Pubkey = read_keypair_file(
-        "/home/ubuntu/rakurai_programs/target/deploy/block_reward_distribution-keypair.json",
-    )
-    .expect("Failed to read program keypair")
-    .pubkey();
-    println!("Tip Program Address: {}", tip_distribution_program_id);
-
+    // Derive Config Account Address
     let config_pda_and_bump = derive_config_account_address(&tip_distribution_program_id);
-    println!("Config Account: {}", config_pda_and_bump.0);
-    println!("Config Bump Seed: {}", config_pda_and_bump.1);
+    println!(
+        "🛠️ Config Account: {}, Bump: {}",
+        config_pda_and_bump.0, config_pda_and_bump.1
+    );
 
-    // TDA Account for each epoch
-    let keypair_path = "../../txn-generator-client/staked-identity-copy.json";
-    let kp: Keypair = read_keypair_file(keypair_path).unwrap();
-    let vote_account = Pubkey::from_str("6No5zMEn7SYhrBLQe47sprXzzhNPW2UW1nHzm4dbC1df").unwrap();
-    let (tip_distribution_account, bump) = derive_reward_distribution_account_address(
+    // Load Validator Vote Account
+    let vote_account = std::env::var("VOTE_PUBKEY")
+        .unwrap_or_else(|_| panic!("Environment variable `VOTE_PUBKEY` is not set"))
+        .parse::<Pubkey>()
+        .unwrap_or_else(|_| panic!("Failed to parse `VOTE_PUBKEY` as a valid Pubkey"));
+    println!("✅ Validator Vote Account Pubkey: {}", vote_account);
+
+    // Derive Reward Distribution Account Address
+    let tip_distribution_account = derive_reward_distribution_account_address(
         &tip_distribution_program_id,
         &vote_account,
         rpc_client.get_epoch_info().unwrap().epoch,
     );
-    println!("TDA Account: {}", tip_distribution_account);
-    println!("TDA Bump Seed: {}", bump);
+    println!(
+        "🛠️ Reward Distribution Account: {}, Bump: {:?}",
+        tip_distribution_account.0, tip_distribution_account.1
+    );
+
+    // Create Initialize Reward Distribution Account Instruction
     let ix = initialize_reward_distribution_account_ix(
         tip_distribution_program_id,
         InitializeRewardDistributionAccountArgs {
             merkle_root_upload_authority: kp.pubkey(),
             validator_commission_bps: 1000,
-            bump,
+            bump: tip_distribution_account.1,
         },
         InitializeRewardDistributionAccountAccounts {
             config: config_pda_and_bump.0,
-            reward_distribution_account: tip_distribution_account,
+            reward_distribution_account: tip_distribution_account.0,
             system_program: system_program::id(),
             signer: kp.pubkey(),
             validator_vote_account: vote_account,
         },
     );
-    let recent_blockhash = rpc_client.get_latest_blockhash().unwrap();
+
+    // Generate Transaction
+    let recent_blockhash = rpc_client
+        .get_latest_blockhash()
+        .expect("Failed to fetch recent blockhash");
     let message = Message::new(&[ix], Some(&kp.pubkey()));
     let transaction = Transaction::new(&[&kp], message, recent_blockhash);
 
-    println!("signature {:?}", transaction.signatures[0]);
-    let result = rpc_client
-        .simulate_transaction(&transaction)
-        .expect("Failed to confirm transaction");
-
-    println!("Config Account result: {:?}", result);
+    // Send and Confirm Transaction
+    let result = rpc_client.send_and_confirm_transaction(&transaction);
+    match result {
+        Ok(sig) => println!(
+            "✅ Reward Distribution Account Created. Transaction Signature: {}",
+            sig
+        ),
+        Err(err) => println!("❌ Failed to Create Reward Distribution Account: {:?}", err),
+    }
 }
