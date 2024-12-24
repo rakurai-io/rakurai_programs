@@ -24,7 +24,7 @@ pub mod merkle_proof;
 pub mod sdk;
 pub mod state;
 
-declare_id!("73rhHmGAfK4E7KEaTz7PxStSUicuRx4JcKN1tUC4x1Ev");
+declare_id!("9PtH4afPuMbikRhWAoHvKgshFsUBjmqyHm7dNa2HUBGP");
 
 #[program]
 pub mod reward_distribution {
