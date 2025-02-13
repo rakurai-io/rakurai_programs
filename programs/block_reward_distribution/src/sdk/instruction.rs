@@ -7,7 +7,6 @@ use crate::Config;
 
 pub struct InitializeArgs {
     pub authority: Pubkey,
-    pub expired_funds_account: Pubkey,
     pub num_epochs_valid: u64,
     pub max_validator_commission_bps: u16,
     pub bump: u8,
@@ -24,7 +23,6 @@ pub fn initialize_ix(
 ) -> Instruction {
     let InitializeArgs {
         authority,
-        expired_funds_account,
         num_epochs_valid,
         max_validator_commission_bps,
         bump,
@@ -40,7 +38,6 @@ pub fn initialize_ix(
         program_id,
         data: crate::instruction::Initialize {
             authority,
-            expired_funds_account,
             num_epochs_valid,
             max_validator_commission_bps,
             bump,

@@ -12,10 +12,6 @@ pub struct Config {
     /// Account with authority over this PDA.
     pub authority: Pubkey,
 
-    /// We want to expire funds after some time so that validators can be refunded the rent.
-    /// Expired funds will get transferred to this account.
-    pub expired_funds_account: Pubkey,
-
     /// Specifies the number of epochs a merkle root is valid for before expiring.
     pub num_epochs_valid: u64,
 
@@ -48,6 +44,10 @@ pub struct RewardDistributionAccount {
 
     /// The epoch (upto and including) that rewards can be claimed.
     pub expires_at: u64,
+
+    /// We want to expire funds after some time so that validators can be refunded the rent.
+    /// Expired funds will get transferred to this account.
+    pub expired_funds_account: Pubkey,
 
     /// The bump used to generate this account
     pub bump: u8,
@@ -89,11 +89,6 @@ impl Config {
             return Err(AccountValidationFailure.into());
         }
 
-        let default_pubkey = Pubkey::default();
-        if self.expired_funds_account == default_pubkey || self.authority == default_pubkey {
-            return Err(AccountValidationFailure.into());
-        }
-
         Ok(())
     }
 }
@@ -108,6 +103,10 @@ impl RewardDistributionAccount {
         if self.validator_vote_account == default_pubkey
             || self.merkle_root_upload_authority == default_pubkey
         {
+            return Err(AccountValidationFailure.into());
+        }
+
+        if self.expired_funds_account == default_pubkey {
             return Err(AccountValidationFailure.into());
         }
 

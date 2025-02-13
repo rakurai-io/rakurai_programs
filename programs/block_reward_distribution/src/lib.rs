@@ -37,14 +37,12 @@ pub mod reward_distribution {
     pub fn initialize(
         ctx: Context<Initialize>,
         authority: Pubkey,
-        expired_funds_account: Pubkey,
         num_epochs_valid: u64,
         max_validator_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
         let cfg = &mut ctx.accounts.config;
         cfg.authority = authority;
-        cfg.expired_funds_account = expired_funds_account;
         cfg.num_epochs_valid = num_epochs_valid;
         cfg.max_validator_commission_bps = max_validator_commission_bps;
         cfg.bump = bump;
@@ -85,6 +83,7 @@ pub mod reward_distribution {
         distribution_acc.expires_at = current_epoch
             .checked_add(ctx.accounts.config.num_epochs_valid)
             .ok_or(ArithmeticError)?;
+        distribution_acc.expired_funds_account = ctx.accounts.signer.key();
         distribution_acc.bump = bump;
         distribution_acc.validate()?;
 
@@ -101,7 +100,6 @@ pub mod reward_distribution {
 
         let config = &mut ctx.accounts.config;
         config.authority = new_config.authority;
-        config.expired_funds_account = new_config.expired_funds_account;
         config.num_epochs_valid = new_config.num_epochs_valid;
         config.max_validator_commission_bps = new_config.max_validator_commission_bps;
         config.validate()?;
@@ -461,7 +459,12 @@ pub struct CloseRewardDistributionAccount<'info> {
 
 impl CloseRewardDistributionAccount<'_> {
     fn auth(ctx: &Context<CloseRewardDistributionAccount>) -> Result<()> {
-        if ctx.accounts.config.expired_funds_account != ctx.accounts.expired_funds_account.key() {
+        if ctx
+            .accounts
+            .reward_distribution_account
+            .expired_funds_account
+            != ctx.accounts.expired_funds_account.key()
+        {
             Err(Unauthorized.into())
         } else {
             Ok(())
