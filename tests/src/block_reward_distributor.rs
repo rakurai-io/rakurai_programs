@@ -62,7 +62,6 @@ fn init_config_account() {
         tip_distribution_program_id,
         InitializeArgs {
             authority: kp.pubkey(),
-            expired_funds_account: kp.pubkey(),
             num_epochs_valid: 10,
             max_validator_commission_bps: 10_000,
             bump: config_pda_and_bump.1,
