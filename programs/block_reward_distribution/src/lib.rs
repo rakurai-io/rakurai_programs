@@ -24,7 +24,7 @@ pub mod merkle_proof;
 pub mod sdk;
 pub mod state;
 
-declare_id!("9PtH4afPuMbikRhWAoHvKgshFsUBjmqyHm7dNa2HUBGP");
+declare_id!("ArEru7KcVzvVzgukQnJhZE4xsAq43bjz2ZcL1C7Wq9d");
 
 #[program]
 pub mod reward_distribution {
@@ -38,13 +38,13 @@ pub mod reward_distribution {
         ctx: Context<Initialize>,
         authority: Pubkey,
         num_epochs_valid: u64,
-        max_validator_commission_bps: u16,
+        max_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
         let cfg = &mut ctx.accounts.config;
         cfg.authority = authority;
         cfg.num_epochs_valid = num_epochs_valid;
-        cfg.max_validator_commission_bps = max_validator_commission_bps;
+        cfg.max_commission_bps = max_commission_bps;
         cfg.bump = bump;
         cfg.validate()?;
 
@@ -57,10 +57,16 @@ pub mod reward_distribution {
         ctx: Context<InitializeRewardDistributionAccount>,
         merkle_root_upload_authority: Pubkey,
         validator_commission_bps: u16,
+        rakurai_commission_pubkey: Pubkey,
+        rakurai_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
-        if validator_commission_bps > ctx.accounts.config.max_validator_commission_bps {
-            return Err(MaxValidatorCommissionFeeBpsExceeded.into());
+        if validator_commission_bps > ctx.accounts.config.max_commission_bps
+            || rakurai_commission_bps > ctx.accounts.config.max_commission_bps
+            || (validator_commission_bps + rakurai_commission_bps)
+                > ctx.accounts.config.max_commission_bps
+        {
+            return Err(MaxCommissionFeeBpsExceeded.into());
         }
 
         if ctx.accounts.validator_vote_account.owner != &solana_program::vote::program::id() {
@@ -78,6 +84,8 @@ pub mod reward_distribution {
         distribution_acc.validator_vote_account = ctx.accounts.validator_vote_account.key();
         distribution_acc.epoch_created_at = current_epoch;
         distribution_acc.validator_commission_bps = validator_commission_bps;
+        distribution_acc.rakurai_commission_bps = rakurai_commission_bps;
+        distribution_acc.rakurai_commission_pubkey = rakurai_commission_pubkey;
         distribution_acc.merkle_root_upload_authority = merkle_root_upload_authority;
         distribution_acc.merkle_root = None;
         distribution_acc.expires_at = current_epoch
@@ -101,7 +109,7 @@ pub mod reward_distribution {
         let config = &mut ctx.accounts.config;
         config.authority = new_config.authority;
         config.num_epochs_valid = new_config.num_epochs_valid;
-        config.max_validator_commission_bps = new_config.max_validator_commission_bps;
+        config.max_commission_bps = new_config.max_commission_bps;
         config.validate()?;
 
         emit!(ConfigUpdatedEvent {
@@ -317,8 +325,8 @@ pub enum ErrorCode {
     #[msg("Failed to deserialize the supplied vote account data.")]
     InvalidVoteAccountData,
 
-    #[msg("Validator's commission basis points must be less than or equal to the Config account's max_validator_commission_bps.")]
-    MaxValidatorCommissionFeeBpsExceeded,
+    #[msg("Validator's commission basis points must be less than or equal to the Config account's max_commission_bps.")]
+    MaxCommissionFeeBpsExceeded,
 
     #[msg("The given RewardDistributionAccount is not ready to be closed.")]
     PrematureCloseRewardDistributionAccount,

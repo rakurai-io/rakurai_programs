@@ -16,7 +16,7 @@ pub struct Config {
     pub num_epochs_valid: u64,
 
     /// The maximum commission a validator can set on their distribution account.
-    pub max_validator_commission_bps: u16,
+    pub max_commission_bps: u16,
 
     /// The bump used to generate this account
     pub bump: u8,
@@ -41,6 +41,12 @@ pub struct RewardDistributionAccount {
 
     /// The commission basis points this validator charges.
     pub validator_commission_bps: u16,
+
+    /// The commission basis points rakurai will charges on total rewards.
+    pub rakurai_commission_bps: u16,
+
+    /// The account where rakurai commission will get transferred.
+    pub rakurai_commission_pubkey: Pubkey,
 
     /// The epoch (upto and including) that rewards can be claimed.
     pub expires_at: u64,
@@ -79,13 +85,13 @@ impl Config {
 
     pub fn validate(&self) -> Result<()> {
         const MAX_NUM_EPOCHS_VALID: u64 = 10;
-        const MAX_VALIDATOR_COMMISSION_BPS: u16 = 10000;
+        const MAX_COMMISSION_BPS: u16 = 10000;
 
         if self.num_epochs_valid == 0 || self.num_epochs_valid > MAX_NUM_EPOCHS_VALID {
             return Err(AccountValidationFailure.into());
         }
 
-        if self.max_validator_commission_bps > MAX_VALIDATOR_COMMISSION_BPS {
+        if self.max_commission_bps > MAX_COMMISSION_BPS {
             return Err(AccountValidationFailure.into());
         }
 
@@ -102,6 +108,7 @@ impl RewardDistributionAccount {
         let default_pubkey = Pubkey::default();
         if self.validator_vote_account == default_pubkey
             || self.merkle_root_upload_authority == default_pubkey
+            || self.rakurai_commission_pubkey == default_pubkey
         {
             return Err(AccountValidationFailure.into());
         }
