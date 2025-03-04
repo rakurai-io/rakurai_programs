@@ -112,6 +112,23 @@ pub mod multi_sig {
 
         Ok(())
     }
+
+    pub fn close_multi_sig_account(ctx: Context<CloseMultiSigAccount>) -> Result<()> {
+        CloseMultiSigAccount::auth(&ctx)?;
+
+        let multisig_account = &mut ctx.accounts.multisig_account;
+
+        let amount = MultiSigAccount::claim_expired(
+            multisig_account.to_account_info(),
+            ctx.accounts.validator_vote_account.to_account_info(),
+        )?;
+        emit!(MultiSigAccountClosedEvent {
+            multisig_account: multisig_account.key(),
+            amount_claimed: amount,
+        });
+
+        Ok(())
+    }
 }
 
 #[error_code]
@@ -207,6 +224,35 @@ impl UpdateConfig<'_> {
     }
 }
 
+#[derive(Accounts)]
+pub struct CloseMultiSigAccount<'info> {
+    pub config: Account<'info, Config>,
+    #[account(
+        mut,
+        close = validator_vote_account,
+        seeds = [
+            MultiSigAccount::SEED,
+            validator_vote_account.key().as_ref(),
+        ],
+        bump = multisig_account.bump,
+    )]
+    pub multisig_account: Account<'info, MultiSigAccount>,
+    #[account(mut)]
+    pub validator_vote_account: AccountInfo<'info>,
+    #[account(mut)]
+    pub signer: Signer<'info>,
+}
+
+impl CloseMultiSigAccount<'_> {
+    fn auth(ctx: &Context<CloseMultiSigAccount>) -> Result<()> {
+        if ctx.accounts.signer.key() != ctx.accounts.config.block_builder_authority.key() {
+            Err(Unauthorized.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
 // Events
 
 #[event]
@@ -218,4 +264,10 @@ pub struct MultiSigAccountInitializedEvent {
 pub struct ConfigUpdatedEvent {
     /// Who updated it.
     authority: Pubkey,
+}
+
+#[event]
+pub struct MultiSigAccountClosedEvent {
+    pub multisig_account: Pubkey,
+    pub amount_claimed: u64,
 }

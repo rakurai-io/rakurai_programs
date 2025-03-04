@@ -125,3 +125,35 @@ pub fn update_config_ix(
         accounts: crate::accounts::UpdateConfig { config, authority }.to_account_metas(None),
     }
 }
+
+pub struct CloseMultiSigAccountArgs;
+pub struct CloseMultiSigAccounts {
+    pub config: Pubkey,
+    pub multisig_account: Pubkey,
+    pub validator_vote_account: Pubkey,
+    pub signer: Pubkey,
+}
+pub fn close_multi_sig_account_ix(
+    program_id: Pubkey,
+    _args: CloseMultiSigAccountArgs,
+    accounts: CloseMultiSigAccounts,
+) -> Instruction {
+    let CloseMultiSigAccounts {
+        config,
+        multisig_account,
+        validator_vote_account,
+        signer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::CloseMultiSigAccount {}.data(),
+        accounts: crate::accounts::CloseMultiSigAccount {
+            config,
+            validator_vote_account,
+            multisig_account,
+            signer,
+        }
+        .to_account_metas(None),
+    }
+}

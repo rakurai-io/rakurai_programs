@@ -1,4 +1,8 @@
-use {crate::ErrorCode::AccountValidationFailure, anchor_lang::prelude::*, std::mem::size_of};
+use {
+    crate::ErrorCode::{AccountValidationFailure, ArithmeticError},
+    anchor_lang::prelude::*,
+    std::mem::size_of,
+};
 
 #[account]
 #[derive(Default)]
@@ -65,6 +69,28 @@ impl MultiSigAccount {
         {
             return Err(AccountValidationFailure.into());
         }
+
+        Ok(())
+    }
+
+    pub fn claim_expired(from: AccountInfo, to: AccountInfo) -> Result<u64> {
+        let rent = Rent::get()?;
+        let min_rent_lamports = rent.minimum_balance(from.data_len());
+
+        let amount = from
+            .lamports()
+            .checked_sub(min_rent_lamports)
+            .ok_or(ArithmeticError)?;
+        Self::transfer_lamports(from, to, amount)?;
+
+        Ok(amount)
+    }
+
+    fn transfer_lamports(from: AccountInfo, to: AccountInfo, amount: u64) -> Result<()> {
+        **from.try_borrow_mut_lamports()? =
+            from.lamports().checked_sub(amount).ok_or(ArithmeticError)?;
+        **to.try_borrow_mut_lamports()? =
+            to.lamports().checked_add(amount).ok_or(ArithmeticError)?;
 
         Ok(())
     }
