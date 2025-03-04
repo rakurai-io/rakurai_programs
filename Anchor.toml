@@ -7,15 +7,15 @@ skip-lint = false
 [programs.localnet]
 block_reward_distribution = "ArEru7KcVzvVzgukQnJhZE4xsAq43bjz2ZcL1C7Wq9d"
 
-[registry]
-url = "https://api.apr.dev"
-
 [provider]
 cluster = "Localnet"
 wallet = "~/.config/solana/id.json"
 
 [workspace]
-members = ["programs/block_reward_distribution"]
+members = [
+    "programs/block_reward_distribution",
+    "programs/multisig"
+]
 
 [scripts]
 test = "cargo test"
