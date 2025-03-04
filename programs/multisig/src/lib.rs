@@ -113,6 +113,40 @@ pub mod multi_sig {
         Ok(())
     }
 
+    pub fn update_multi_sig_approval(
+        ctx: Context<UpdateMultiSigApproval>,
+        grant_approval: bool,
+    ) -> Result<()> {
+        UpdateMultiSigApproval::auth(&ctx)?;
+
+        let multisig_account = &mut ctx.accounts.multisig_account;
+
+        if grant_approval {
+            if multisig_account.proposer.is_none()
+                || multisig_account.proposer == Some(ctx.accounts.signer.key())
+            {
+                multisig_account.proposer = Some(ctx.accounts.signer.key());
+            } else if multisig_account.validator_authority == ctx.accounts.signer.key()
+                || ctx.accounts.config.block_builder_authority == ctx.accounts.signer.key()
+            {
+                multisig_account.proposer = None;
+                multisig_account.is_enabled = true;
+            } else {
+                return Err(AccountValidationFailure.into());
+            }
+        } else {
+            multisig_account.is_enabled = false;
+        }
+
+        multisig_account.validate()?;
+
+        emit!(UpdateMultiSigApprovalEvent {
+            multisig_account: multisig_account.key(),
+        });
+
+        Ok(())
+    }
+
     pub fn close_multi_sig_account(ctx: Context<CloseMultiSigAccount>) -> Result<()> {
         CloseMultiSigAccount::auth(&ctx)?;
 
@@ -225,6 +259,37 @@ impl UpdateConfig<'_> {
 }
 
 #[derive(Accounts)]
+pub struct UpdateMultiSigApproval<'info> {
+    pub config: Account<'info, Config>,
+    #[account(
+        mut,
+        close = validator_vote_account,
+        seeds = [
+            MultiSigAccount::SEED,
+            validator_vote_account.key().as_ref(),
+        ],
+        bump = multisig_account.bump,
+    )]
+    pub multisig_account: Account<'info, MultiSigAccount>,
+    #[account(mut)]
+    pub validator_vote_account: AccountInfo<'info>,
+    #[account(mut)]
+    pub signer: Signer<'info>,
+}
+
+impl UpdateMultiSigApproval<'_> {
+    fn auth(ctx: &Context<UpdateMultiSigApproval>) -> Result<()> {
+        if ctx.accounts.signer.key() != ctx.accounts.config.block_builder_authority.key()
+            || ctx.accounts.signer.key() != ctx.accounts.multisig_account.validator_authority.key()
+        {
+            Err(Unauthorized.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[derive(Accounts)]
 pub struct CloseMultiSigAccount<'info> {
     pub config: Account<'info, Config>,
     #[account(
@@ -270,4 +335,9 @@ pub struct ConfigUpdatedEvent {
 pub struct MultiSigAccountClosedEvent {
     pub multisig_account: Pubkey,
     pub amount_claimed: u64,
+}
+
+#[event]
+pub struct UpdateMultiSigApprovalEvent {
+    pub multisig_account: Pubkey,
 }

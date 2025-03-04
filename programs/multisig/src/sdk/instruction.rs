@@ -157,3 +157,38 @@ pub fn close_multi_sig_account_ix(
         .to_account_metas(None),
     }
 }
+pub struct UpdateMultiSigApprovalArgs {
+    pub grant_approval: bool,
+}
+pub struct UpdateMultiSigApprovalAccounts {
+    pub config: Pubkey,
+    pub multisig_account: Pubkey,
+    pub validator_vote_account: Pubkey,
+    pub signer: Pubkey,
+}
+pub fn update_multi_sig_approval_ix(
+    program_id: Pubkey,
+    args: UpdateMultiSigApprovalArgs,
+    accounts: UpdateMultiSigApprovalAccounts,
+) -> Instruction {
+    let UpdateMultiSigApprovalArgs { grant_approval } = args;
+
+    let UpdateMultiSigApprovalAccounts {
+        config,
+        multisig_account,
+        validator_vote_account,
+        signer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateMultiSigApproval { grant_approval }.data(),
+        accounts: crate::accounts::UpdateMultiSigApproval {
+            config,
+            validator_vote_account,
+            multisig_account,
+            signer,
+        }
+        .to_account_metas(None),
+    }
+}
