@@ -6,10 +6,10 @@ use crate::Config;
 
 pub struct InitializeArgs {
     pub authority: Pubkey,
-    block_builder_authority: Pubkey,
-    block_builder_commission_account: Pubkey,
-    block_builder_commission_bps: u16,
-    max_validator_commission_bps: u16,
+    pub block_builder_authority: Pubkey,
+    pub block_builder_commission_account: Pubkey,
+    pub block_builder_commission_bps: u16,
+    pub max_validator_commission_bps: u16,
     pub bump: u8,
 }
 pub struct InitializeAccounts {
