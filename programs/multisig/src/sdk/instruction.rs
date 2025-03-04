@@ -57,6 +57,52 @@ pub fn initialize_ix(
     }
 }
 
+pub struct InitializeMultiSigAccountArgs {
+    pub validator_commission_bps: u16,
+    pub bump: u8,
+}
+pub struct InitializeMultiSigAccountAccounts {
+    pub config: Pubkey,
+    pub signer: Pubkey,
+    pub system_program: Pubkey,
+    pub multisig_account: Pubkey,
+    pub validator_vote_account: Pubkey,
+}
+pub fn initialize_multi_sig_account_ix(
+    program_id: Pubkey,
+    args: InitializeMultiSigAccountArgs,
+    accounts: InitializeMultiSigAccountAccounts,
+) -> Instruction {
+    let InitializeMultiSigAccountArgs {
+        validator_commission_bps,
+        bump,
+    } = args;
+
+    let InitializeMultiSigAccountAccounts {
+        config,
+        multisig_account,
+        system_program,
+        validator_vote_account,
+        signer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::InitializeMultiSigAccount {
+            validator_commission_bps,
+            bump,
+        }
+        .data(),
+        accounts: crate::accounts::InitializeMultiSigAccount {
+            config,
+            signer,
+            system_program,
+            multisig_account,
+            validator_vote_account,
+        }
+        .to_account_metas(None),
+    }
+}
 pub struct UpdateConfigArgs {
     new_config: Config,
 }

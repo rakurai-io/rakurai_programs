@@ -54,7 +54,46 @@ pub mod multi_sig {
         Ok(())
     }
 
-  
+    /// Initialize a new [MultiSigAccount] associated with the given validator vote key
+    /// and current epoch.
+    pub fn initialize_multi_sig_account(
+        ctx: Context<InitializeMultiSigAccount>,
+        validator_commission_bps: u16,
+        bump: u8,
+    ) -> Result<()> {
+        if validator_commission_bps > ctx.accounts.config.max_validator_commission_bps {
+            return Err(MaxCommissionFeeBpsExceeded.into());
+        }
+
+        if ctx.accounts.validator_vote_account.owner != &solana_program::vote::program::id() {
+            return Err(Unauthorized.into());
+        }
+
+        let validator_vote_state = VoteState::deserialize(&ctx.accounts.validator_vote_account)?;
+        if &validator_vote_state.node_pubkey != ctx.accounts.signer.key {
+            return Err(Unauthorized.into());
+        }
+
+        let multisig_account = &mut ctx.accounts.multisig_account;
+        multisig_account.validator_vote_account = ctx.accounts.validator_vote_account.key();
+        multisig_account.validator_commission_bps = validator_commission_bps;
+        multisig_account.block_builder_commission_bps =
+            ctx.accounts.config.block_builder_commission_bps;
+        multisig_account.block_builder_commission_account =
+            ctx.accounts.config.block_builder_commission_account;
+        multisig_account.validator_authority = ctx.accounts.signer.key();
+        multisig_account.is_enabled = false;
+        multisig_account.proposer = Some(ctx.accounts.signer.key());
+        multisig_account.bump = bump;
+        multisig_account.validate()?;
+
+        emit!(MultiSigAccountInitializedEvent {
+            multisig_account: multisig_account.key(),
+        });
+
+        Ok(())
+    }
+
     /// Update config fields. Only the [Config] authority can invoke this.
     pub fn update_config(ctx: Context<UpdateConfig>, new_config: Config) -> Result<()> {
         UpdateConfig::auth(&ctx)?;
@@ -73,6 +112,7 @@ pub mod multi_sig {
 
         Ok(())
     }
+}
 
 #[error_code]
 pub enum ErrorCode {
@@ -123,10 +163,36 @@ pub struct Initialize<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(
+    _merkle_root_upload_authority: Pubkey,
+    _validator_commission_bps: u16,
+    _bump: u8
+)]
+pub struct InitializeMultiSigAccount<'info> {
+    pub config: Account<'info, Config>,
+    #[account(
+        init,
+        seeds = [
+            MultiSigAccount::SEED,
+            validator_vote_account.key().as_ref(),
+            Clock::get().unwrap().epoch.to_le_bytes().as_ref(),
+        ],
+        bump,
+        payer = signer,
+        space = MultiSigAccount::SIZE,
+        rent_exempt = enforce
+    )]
+    pub multisig_account: Account<'info, MultiSigAccount>,
+    pub validator_vote_account: AccountInfo<'info>,
+    #[account(mut)]
+    pub signer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct UpdateConfig<'info> {
     #[account(mut, rent_exempt = enforce)]
     pub config: Account<'info, Config>,
-
     #[account(mut)]
     pub authority: Signer<'info>,
 }
@@ -139,4 +205,17 @@ impl UpdateConfig<'_> {
             Ok(())
         }
     }
+}
+
+// Events
+
+#[event]
+pub struct MultiSigAccountInitializedEvent {
+    pub multisig_account: Pubkey,
+}
+
+#[event]
+pub struct ConfigUpdatedEvent {
+    /// Who updated it.
+    authority: Pubkey,
 }
