@@ -6,5 +6,5 @@ edition = "2021"
 
 [dependencies]
 block_reward_distribution = { path = "../programs/block_reward_distribution" }
-solana-client = { path = "../../client" }
-solana-sdk = { path = "../../sdk" }
+solana-client = "=2.1.11"
+solana-sdk = "=2.1.11"
