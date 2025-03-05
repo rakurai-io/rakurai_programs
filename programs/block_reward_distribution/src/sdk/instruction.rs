@@ -7,9 +7,8 @@ use crate::Config;
 
 pub struct InitializeArgs {
     pub authority: Pubkey,
-    pub expired_funds_account: Pubkey,
     pub num_epochs_valid: u64,
-    pub max_validator_commission_bps: u16,
+    pub max_commission_bps: u16,
     pub bump: u8,
 }
 pub struct InitializeAccounts {
@@ -24,9 +23,8 @@ pub fn initialize_ix(
 ) -> Instruction {
     let InitializeArgs {
         authority,
-        expired_funds_account,
         num_epochs_valid,
-        max_validator_commission_bps,
+        max_commission_bps,
         bump,
     } = args;
 
@@ -40,9 +38,8 @@ pub fn initialize_ix(
         program_id,
         data: crate::instruction::Initialize {
             authority,
-            expired_funds_account,
             num_epochs_valid,
-            max_validator_commission_bps,
+            max_commission_bps,
             bump,
         }
         .data(),
@@ -58,6 +55,8 @@ pub fn initialize_ix(
 pub struct InitializeRewardDistributionAccountArgs {
     pub merkle_root_upload_authority: Pubkey,
     pub validator_commission_bps: u16,
+    pub rakurai_commission_pubkey: Pubkey,
+    pub rakurai_commission_bps: u16,
     pub bump: u8,
 }
 pub struct InitializeRewardDistributionAccountAccounts {
@@ -75,6 +74,8 @@ pub fn initialize_reward_distribution_account_ix(
     let InitializeRewardDistributionAccountArgs {
         merkle_root_upload_authority,
         validator_commission_bps,
+        rakurai_commission_pubkey,
+        rakurai_commission_bps,
         bump,
     } = args;
 
@@ -91,6 +92,8 @@ pub fn initialize_reward_distribution_account_ix(
         data: crate::instruction::InitializeRewardDistributionAccount {
             merkle_root_upload_authority,
             validator_commission_bps,
+            rakurai_commission_pubkey,
+            rakurai_commission_bps,
             bump,
         }
         .data(),

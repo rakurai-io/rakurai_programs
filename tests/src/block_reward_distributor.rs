@@ -16,7 +16,6 @@ use {
         system_program,
         transaction::Transaction,
     },
-    std::str::FromStr,
 };
 
 #[test]
@@ -62,9 +61,8 @@ fn init_config_account() {
         tip_distribution_program_id,
         InitializeArgs {
             authority: kp.pubkey(),
-            expired_funds_account: kp.pubkey(),
             num_epochs_valid: 10,
-            max_validator_commission_bps: 10_000,
+            max_commission_bps: 10_000,
             bump: config_pda_and_bump.1,
         },
         InitializeAccounts {
@@ -137,6 +135,23 @@ fn create_reward_distribution_account() {
         .unwrap_or_else(|_| panic!("Failed to parse `VOTE_PUBKEY` as a valid Pubkey"));
     println!("✅ Validator Vote Account Pubkey: {}", vote_account);
 
+    // Load Commission Info
+    let rakurai_commission_bps = std::env::var("RAKURAI_COMMISSION_BPS")
+        .unwrap_or_else(|_| panic!("Environment variable `RAKURAI_COMMISSION_BPS` is not set"))
+        .parse::<u16>()
+        .unwrap_or_else(|_| panic!("Failed to parse `RAKURAI_COMMISSION_BPS` as a valid Pubkey"));
+    println!("✅ Rakurai commission BPS: {}", rakurai_commission_bps);
+    let rakurai_commission_pubkey = std::env::var("RAKURAI_COMMISSION_PUBKEY")
+        .unwrap_or_else(|_| panic!("Environment variable `RAKURAI_COMMISSION_PUBKEY` is not set"))
+        .parse::<Pubkey>()
+        .unwrap_or_else(|_| {
+            panic!("Failed to parse `RAKURAI_COMMISSION_PUBKEY` as a valid Pubkey")
+        });
+    println!(
+        "✅ Rakurai commission Pubkey: {}",
+        rakurai_commission_pubkey
+    );
+
     // Derive Reward Distribution Account Address
     let tip_distribution_account = derive_reward_distribution_account_address(
         &tip_distribution_program_id,
@@ -154,6 +169,8 @@ fn create_reward_distribution_account() {
         InitializeRewardDistributionAccountArgs {
             merkle_root_upload_authority: kp.pubkey(),
             validator_commission_bps: 1000,
+            rakurai_commission_bps,
+            rakurai_commission_pubkey,
             bump: tip_distribution_account.1,
         },
         InitializeRewardDistributionAccountAccounts {

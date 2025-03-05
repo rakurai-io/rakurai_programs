@@ -24,11 +24,11 @@ pub mod merkle_proof;
 pub mod sdk;
 pub mod state;
 
-declare_id!("73rhHmGAfK4E7KEaTz7PxStSUicuRx4JcKN1tUC4x1Ev");
+declare_id!("ArEru7KcVzvVzgukQnJhZE4xsAq43bjz2ZcL1C7Wq9d");
 
 #[program]
 pub mod reward_distribution {
-    // use solana_program::vote::state::VoteStateVersions;
+    use rakurai_vote_state::VoteState;
 
     use super::*;
     use crate::ErrorCode::*;
@@ -37,16 +37,14 @@ pub mod reward_distribution {
     pub fn initialize(
         ctx: Context<Initialize>,
         authority: Pubkey,
-        expired_funds_account: Pubkey,
         num_epochs_valid: u64,
-        max_validator_commission_bps: u16,
+        max_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
         let cfg = &mut ctx.accounts.config;
         cfg.authority = authority;
-        cfg.expired_funds_account = expired_funds_account;
         cfg.num_epochs_valid = num_epochs_valid;
-        cfg.max_validator_commission_bps = max_validator_commission_bps;
+        cfg.max_commission_bps = max_commission_bps;
         cfg.bump = bump;
         cfg.validate()?;
 
@@ -59,28 +57,26 @@ pub mod reward_distribution {
         ctx: Context<InitializeRewardDistributionAccount>,
         merkle_root_upload_authority: Pubkey,
         validator_commission_bps: u16,
+        rakurai_commission_pubkey: Pubkey,
+        rakurai_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
-        if validator_commission_bps > ctx.accounts.config.max_validator_commission_bps {
-            return Err(MaxValidatorCommissionFeeBpsExceeded.into());
+        if validator_commission_bps > ctx.accounts.config.max_commission_bps
+            || rakurai_commission_bps > ctx.accounts.config.max_commission_bps
+            || (validator_commission_bps + rakurai_commission_bps)
+                > ctx.accounts.config.max_commission_bps
+        {
+            return Err(MaxCommissionFeeBpsExceeded.into());
         }
 
         if ctx.accounts.validator_vote_account.owner != &solana_program::vote::program::id() {
             return Err(Unauthorized.into());
         }
 
-        // let node_identity = match bincode::deserialize::<VoteStateVersions>(
-        //     &ctx.accounts.validator_vote_account.data.borrow(),
-        // )
-        // .map(|versioned| versioned.convert_to_current())
-        // .map_err(|_| ProgramError::InvalidAccountData)
-        // {
-        //     Ok(vote_state) => vote_state.node_pubkey,
-        //     Err(_) => return Err(Unauthorized.into()),
-        // };
-        // if &node_identity != ctx.accounts.signer.key {
-        //     return Err(Unauthorized.into());
-        // }
+        let validator_vote_state = VoteState::deserialize(&ctx.accounts.validator_vote_account)?;
+        if &validator_vote_state.node_pubkey != ctx.accounts.signer.key {
+            return Err(Unauthorized.into());
+        }
 
         let current_epoch = Clock::get()?.epoch;
 
@@ -88,11 +84,14 @@ pub mod reward_distribution {
         distribution_acc.validator_vote_account = ctx.accounts.validator_vote_account.key();
         distribution_acc.epoch_created_at = current_epoch;
         distribution_acc.validator_commission_bps = validator_commission_bps;
+        distribution_acc.rakurai_commission_bps = rakurai_commission_bps;
+        distribution_acc.rakurai_commission_pubkey = rakurai_commission_pubkey;
         distribution_acc.merkle_root_upload_authority = merkle_root_upload_authority;
         distribution_acc.merkle_root = None;
         distribution_acc.expires_at = current_epoch
             .checked_add(ctx.accounts.config.num_epochs_valid)
             .ok_or(ArithmeticError)?;
+        distribution_acc.expired_funds_account = ctx.accounts.signer.key();
         distribution_acc.bump = bump;
         distribution_acc.validate()?;
 
@@ -109,9 +108,8 @@ pub mod reward_distribution {
 
         let config = &mut ctx.accounts.config;
         config.authority = new_config.authority;
-        config.expired_funds_account = new_config.expired_funds_account;
         config.num_epochs_valid = new_config.num_epochs_valid;
-        config.max_validator_commission_bps = new_config.max_validator_commission_bps;
+        config.max_commission_bps = new_config.max_commission_bps;
         config.validate()?;
 
         emit!(ConfigUpdatedEvent {
@@ -327,8 +325,8 @@ pub enum ErrorCode {
     #[msg("Failed to deserialize the supplied vote account data.")]
     InvalidVoteAccountData,
 
-    #[msg("Validator's commission basis points must be less than or equal to the Config account's max_validator_commission_bps.")]
-    MaxValidatorCommissionFeeBpsExceeded,
+    #[msg("Validator's commission basis points must be less than or equal to the Config account's max_commission_bps.")]
+    MaxCommissionFeeBpsExceeded,
 
     #[msg("The given RewardDistributionAccount is not ready to be closed.")]
     PrematureCloseRewardDistributionAccount,
@@ -469,7 +467,12 @@ pub struct CloseRewardDistributionAccount<'info> {
 
 impl CloseRewardDistributionAccount<'_> {
     fn auth(ctx: &Context<CloseRewardDistributionAccount>) -> Result<()> {
-        if ctx.accounts.config.expired_funds_account != ctx.accounts.expired_funds_account.key() {
+        if ctx
+            .accounts
+            .reward_distribution_account
+            .expired_funds_account
+            != ctx.accounts.expired_funds_account.key()
+        {
             Err(Unauthorized.into())
         } else {
             Ok(())
