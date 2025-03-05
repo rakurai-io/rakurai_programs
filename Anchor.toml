@@ -16,6 +16,7 @@ members = [
     "programs/block_reward_distribution",
     "programs/multisig"
 ]
+exclude = ["programs/vote_state"]
 
 [scripts]
 test = "cargo test"

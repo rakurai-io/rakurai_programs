@@ -28,7 +28,7 @@ declare_id!("ArEru7KcVzvVzgukQnJhZE4xsAq43bjz2ZcL1C7Wq9d");
 
 #[program]
 pub mod reward_distribution {
-    use jito_programs_vote_state::VoteState;
+    use rakurai_vote_state::VoteState;
 
     use super::*;
     use crate::ErrorCode::*;
