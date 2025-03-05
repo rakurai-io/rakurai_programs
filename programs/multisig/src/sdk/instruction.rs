@@ -9,7 +9,6 @@ pub struct InitializeArgs {
     pub block_builder_authority: Pubkey,
     pub block_builder_commission_account: Pubkey,
     pub block_builder_commission_bps: u16,
-    pub max_validator_commission_bps: u16,
     pub bump: u8,
 }
 pub struct InitializeAccounts {
@@ -27,7 +26,6 @@ pub fn initialize_ix(
         block_builder_authority,
         block_builder_commission_account,
         block_builder_commission_bps,
-        max_validator_commission_bps,
         bump,
     } = args;
 
@@ -44,7 +42,6 @@ pub fn initialize_ix(
             block_builder_authority,
             block_builder_commission_account,
             block_builder_commission_bps,
-            max_validator_commission_bps,
             bump,
         }
         .data(),
