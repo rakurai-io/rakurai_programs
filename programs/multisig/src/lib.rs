@@ -23,7 +23,7 @@ security_txt! {
 pub mod sdk;
 pub mod state;
 
-declare_id!("ArEru7KcVzvVzgukQnJhZE4xsAq43bjz2ZcL1C7Wq9d");
+declare_id!("8qiL7nidiFm5FqipLmNE6MkD6XwXkULxJQcA126iMRGh");
 
 #[program]
 pub mod multi_sig {

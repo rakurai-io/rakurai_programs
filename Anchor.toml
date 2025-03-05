@@ -6,16 +6,17 @@ skip-lint = false
 
 [programs.localnet]
 block_reward_distribution = "ArEru7KcVzvVzgukQnJhZE4xsAq43bjz2ZcL1C7Wq9d"
+multisig = "8qiL7nidiFm5FqipLmNE6MkD6XwXkULxJQcA126iMRGh"
+
+[registry]
+url = "https://api.apr.dev"
 
 [provider]
 cluster = "Localnet"
 wallet = "~/.config/solana/id.json"
 
 [workspace]
-members = [
-    "programs/block_reward_distribution",
-    "programs/multisig"
-]
+members = ["programs/block_reward_distribution", "programs/multisig"]
 exclude = ["programs/vote_state"]
 
 [scripts]

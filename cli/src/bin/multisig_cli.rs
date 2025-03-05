@@ -29,8 +29,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Initialize block builder config account
+    InitConfig(InitConfigArgs),
+
     /// Initialize a new PDA with a specified commission rate and validator vote account
-    Init(InitArgs),
+    InitPda(InitPdaArgs),
 
     /// Enable or disable the scheduler for commission approvals
     SchedulerControl(SchedulerControlArgs),
@@ -43,11 +46,32 @@ enum Commands {
 }
 
 #[derive(Args)]
-#[command(arg_required_else_help = true, color = clap::ColorChoice::Always)]
-struct InitArgs {
+#[command(arg_required_else_help = false, color = clap::ColorChoice::Always)]
+struct InitConfigArgs {
     /// Initial commission percentage in base points (0 to 10,000)
-    #[arg(short = 'c', long = "commission", required = true, value_parser = validate_commission, help = "Initial commission percentage in base points (e.g., 500 for 5%)")]
-    commission: u64,
+    #[arg(short = 'c', long = "commission_bps", value_parser = validate_commission, help = "Initial commission percentage in base points (e.g., 500 for 5%)")]
+    block_builder_commission_bps: Option<u64>,
+
+    /// Block builder commission account public key
+    #[arg(short = 'a', long = "commission_account", value_parser = parse_pubkey, help = "Block builder commission account public key")]
+    block_builder_commission_account: Option<Pubkey>,
+
+    /// Block builder authority public key
+    #[arg(short = 'b', long = "authority", value_parser = parse_pubkey, help = "Block builder authority public key")]
+    block_builder_authority: Option<Pubkey>,
+
+    /// Config authority public key
+    #[arg(short = 'x', long = "config_authority", value_parser = parse_pubkey, help = "Config authority public key")]
+    config_authority: Option<Pubkey>,
+}
+
+
+#[derive(Args)]
+#[command(arg_required_else_help = true, color = clap::ColorChoice::Always)]
+struct InitPdaArgs {
+    /// Initial commission percentage in base points (0 to 10,000)
+    #[arg(short = 'c', long = "commission_bps", required = true, value_parser = validate_commission, help = "Initial commission percentage in base points (e.g., 500 for 5%)")]
+    commission_bps: u64,
 
     /// Validator vote account public key
     #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account public key")]
@@ -66,15 +90,35 @@ struct SchedulerControlArgs {
 #[command(arg_required_else_help = true, color = clap::ColorChoice::Always)]
 struct UpdateCommissionArgs {
     /// New commission value in base points (0 to 10,000). If omitted, no change is made.
-    #[arg(short = 'c', long = "commission", value_parser = validate_commission, help = "New commission value in base points (e.g., 500 for 5%)")]
-    validator_commission: Option<u64>,
+    #[arg(short = 'c', long = "commission_bps", value_parser = validate_commission, help = "New commission value in base points (e.g., 500 for 5%)")]
+    commission_bps: Option<u64>,
 }
 
-fn process_init(rpc: String,args: InitArgs) {
+fn process_init_config(rpc: String, args: InitConfigArgs) {
+    println!(
+        "{} {} (Validator Vote Pubkey: {})\n{} {}\n{} {}\n{} {}",
+        "🚀 Initializing with commission:".green(),
+        args.block_builder_commission_bps
+            .map_or("Not provided".to_string(), |v| v.to_string()),
+        args.block_builder_authority
+            .map_or("Not provided".to_string(), |v| v.to_string()),
+        "🏦 Commission Account:".blue(),
+        args.block_builder_commission_account
+            .map_or("Not provided".to_string(), |v| v.to_string()),
+        "🔑 Config Authority:".purple(),
+        args.config_authority
+            .map_or("Not provided".to_string(), |v| v.to_string()),
+        "🔗 RPC Endpoint:".cyan(),
+        rpc
+    );
+}
+
+
+fn process_init_pda(rpc: String,args: InitPdaArgs) {
     println!(
         "{} {} (Validator Vote Pubkey: {}) {}",
         "🚀 Initializing with commission:".green(),
-        args.commission,
+        args.commission_bps,
         args.validator_vote_pubkey,
         rpc
     );
@@ -92,7 +136,7 @@ fn process_scheduler_control(args: SchedulerControlArgs) {
 }
 
 fn process_update_commission(args: UpdateCommissionArgs) {
-    if let Some(commission) = args.validator_commission {
+    if let Some(commission) = args.commission_bps {
         println!(
             "{} {}",
             "🔄 Updating commission to:".yellow(),
@@ -110,7 +154,8 @@ fn process_close() {
 fn main() {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Init(args) => process_init(cli.rpc, args),
+        Commands::InitPda(args) => process_init_pda(cli.rpc, args),
+        Commands::InitConfig(args) => process_init_config(cli.rpc, args),
         Commands::SchedulerControl(args) => process_scheduler_control(args),
         Commands::UpdateCommission(args) => process_update_commission(args),
         Commands::Close => process_close(),
