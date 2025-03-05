@@ -1,9 +1,18 @@
 use {
+    anchor_lang::AccountDeserialize,
     clap::{Args, Parser, Subcommand},
     colored::*,
-    multisig::sdk::{
-        derive_config_account_address,
-        instruction::{initialize_ix, InitializeAccounts, InitializeArgs},
+    multisig::{
+        sdk::{
+            derive_config_account_address, derive_multisig_account_address,
+            instruction::{
+                initialize_ix, initialize_multi_sig_account_ix, update_multi_sig_approval_ix,
+                InitializeAccounts, InitializeArgs, InitializeMultiSigAccountAccounts,
+                InitializeMultiSigAccountArgs, UpdateMultiSigApprovalAccounts,
+                UpdateMultiSigApprovalArgs,
+            },
+        },
+        state::MultiSigAccount,
     },
     rakurai_cli::{normalize_to_url_if_moniker, parse_keypair, parse_pubkey, validate_commission},
     solana_client::rpc_client::RpcClient,
@@ -14,6 +23,7 @@ use {
         signature::{Keypair, Signer},
         system_program,
         transaction::Transaction,
+        vote::state::VoteStateVersions,
     },
     std::sync::Arc,
 };
@@ -86,7 +96,7 @@ struct InitPdaArgs {
 
     /// Validator vote account public key
     #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account public key")]
-    validator_vote_pubkey: Pubkey,
+    vote_pubkey: Pubkey,
 }
 
 #[derive(Args, Clone)]
@@ -100,6 +110,10 @@ struct SchedulerControlArgs {
         help = "Pass `true` to enable the scheduler, `false` to disable it"
     )]
     enable_scheduler: bool,
+
+    /// Validator vote account public key
+    #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account public key")]
+    vote_pubkey: Pubkey,
 }
 
 #[derive(Args, Clone)]
@@ -113,7 +127,8 @@ struct UpdateCommissionArgs {
 fn process_init_config(rpc_client: Arc<RpcClient>, kp: Arc<Keypair>, args: InitConfigArgs) {
     let signer_pubkey = kp.pubkey();
 
-    let block_builder_authority = args.config_authority.unwrap_or(signer_pubkey);
+    let config_authority = args.config_authority.unwrap_or(signer_pubkey);
+    let block_builder_authority = args.block_builder_authority.unwrap_or(signer_pubkey);
     let block_builder_commission_bps = args.block_builder_commission_bps.unwrap_or(1000);
     let block_builder_commission_account = args
         .block_builder_commission_account
@@ -137,7 +152,7 @@ fn process_init_config(rpc_client: Arc<RpcClient>, kp: Arc<Keypair>, args: InitC
     let initialize_instruction = initialize_ix(
         multisig::id(),
         InitializeArgs {
-            authority: signer_pubkey,
+            authority: config_authority,
             block_builder_commission_bps,
             block_builder_commission_account,
             block_builder_authority,
@@ -147,6 +162,68 @@ fn process_init_config(rpc_client: Arc<RpcClient>, kp: Arc<Keypair>, args: InitC
             config: config_pda,
             system_program: system_program::id(),
             initializer: signer_pubkey,
+        },
+    );
+
+    // Fetch Recent Blockhash
+    let recent_blockhash = rpc_client
+        .get_latest_blockhash()
+        .expect("❌ Failed to fetch recent blockhash");
+
+    // Generate Transaction
+    let message = Message::new(&[initialize_instruction], Some(&signer_pubkey));
+    let transaction = Transaction::new(&[&kp], message, recent_blockhash);
+
+    // Send and Confirm Transaction
+    match rpc_client.send_and_confirm_transaction(&transaction) {
+        Ok(sig) => println!("✅ Config Account Initialized!\n🔗 Txn Link: {}", sig),
+        Err(err) => println!("❌ Failed to Initialize Config Account: {:?}", err),
+    }
+}
+
+fn process_init_pda(rpc_client: Arc<RpcClient>, kp: Arc<Keypair>, args: InitPdaArgs) {
+    let signer_pubkey = kp.pubkey();
+
+    let validator_commission_bps = args.commission_bps;
+    let vote_pubkey = args.vote_pubkey;
+
+    let account_info = rpc_client
+        .get_account(&vote_pubkey)
+        .expect("❌ Failed to fetch vote account info");
+    let vote_state = bincode::deserialize::<VoteStateVersions>(&account_info.data)
+        .map(|v| v.convert_to_current())
+        .expect("❌ Failed to deserialize vote account state");
+    if vote_state.node_pubkey != signer_pubkey {
+        panic!(
+            "❌ Unauthorized signer! Expected: {:?}, Found: {:?}",
+            vote_state.node_pubkey, signer_pubkey
+        );
+    }
+    let (config_pda, _) = derive_config_account_address(&multisig::id());
+    let (multisig_pda, bump) = derive_multisig_account_address(&multisig::id(), &vote_pubkey);
+    println!("📌 Derived Config PDA: {} (Bump: {})", multisig_pda, bump);
+    println!(
+        "{} {}\n{} {}\n{} {}",
+        "🚀 Validator commission:".green(),
+        validator_commission_bps,
+        "🏦 Vote Pubkey:".blue(),
+        vote_pubkey,
+        "🔗 Signer:".cyan(),
+        signer_pubkey
+    );
+
+    let initialize_instruction = initialize_multi_sig_account_ix(
+        multisig::id(),
+        InitializeMultiSigAccountArgs {
+            validator_commission_bps,
+            bump,
+        },
+        InitializeMultiSigAccountAccounts {
+            config: config_pda,
+            system_program: system_program::id(),
+            validator_vote_account: vote_pubkey,
+            multisig_account: multisig_pda,
+            signer: signer_pubkey,
         },
     );
 
@@ -165,30 +242,86 @@ fn process_init_config(rpc_client: Arc<RpcClient>, kp: Arc<Keypair>, args: InitC
 
     // Send and Confirm Transaction
     match rpc_client.send_and_confirm_transaction(&transaction) {
-        Ok(sig) => println!("✅ Config Account Initialized!\n🔗 Txn Link: {}", sig),
+        Ok(sig) => println!("✅ Config Account Initialized!\n🔗 Txn Link: {:?}", sig),
         Err(err) => println!("❌ Failed to Initialize Config Account: {:?}", err),
     }
 }
 
-fn process_init_pda(rpc: String, args: InitPdaArgs) {
-    println!(
-        "{} {} (Validator Vote Pubkey: {}) {}",
-        "🚀 Initializing with commission:".green(),
-        args.commission_bps,
-        args.validator_vote_pubkey,
-        rpc
-    );
-}
+fn process_scheduler_control(
+    rpc_client: Arc<RpcClient>,
+    kp: Arc<Keypair>,
+    args: SchedulerControlArgs,
+) {
+    let signer_pubkey = kp.pubkey();
 
-fn process_scheduler_control(args: SchedulerControlArgs) {
+    let grant_approval = args.enable_scheduler;
+    let vote_pubkey = args.vote_pubkey;
+
+    let (config_pda, _) = derive_config_account_address(&multisig::id());
+    let (multisig_pda, bump) = derive_multisig_account_address(&multisig::id(), &vote_pubkey);
+
+    let x = rpc_client.get_account_data(&multisig_pda).unwrap();
+    let resp = MultiSigAccount::try_deserialize(&mut x.as_slice()).unwrap();
+    println!("{:#?}", resp.block_builder_authority);
+    println!("{:#?}", resp.block_builder_commission_account);
+    println!("{:#?}", resp.block_builder_commission_bps);
+    println!("{:#?}", resp.is_enabled);
+    println!("{:#?}", resp.proposer);
+    println!("{:#?}", resp.validator_authority);
+    println!("{:#?}", resp.validator_commission_bps);
+    println!("{:#?}", resp.validator_vote_account);
+
+    println!("📌 Derived Config PDA: {} (Bump: {})", multisig_pda, bump);
     println!(
-        "{}",
-        if args.enable_scheduler {
-            "✅ Scheduler Enabled".blue()
-        } else {
-            "❌ Scheduler Disabled".red()
-        }
+        "{} {}\n{} {}\n{} {}",
+        "🚀 Grant approval:".green(),
+        grant_approval,
+        "🏦 Vote Pubkey:".blue(),
+        vote_pubkey,
+        "🔗 Signer:".cyan(),
+        signer_pubkey
     );
+
+    let initialize_instruction = update_multi_sig_approval_ix(
+        multisig::id(),
+        UpdateMultiSigApprovalArgs { grant_approval },
+        UpdateMultiSigApprovalAccounts {
+            config: config_pda,
+            validator_vote_account: vote_pubkey,
+            multisig_account: multisig_pda,
+            signer: signer_pubkey,
+        },
+    );
+
+    // Fetch Recent Blockhash
+    let recent_blockhash = match rpc_client.get_latest_blockhash() {
+        Ok(hash) => hash,
+        Err(err) => {
+            eprintln!("❌ Failed to fetch recent blockhash: {:?}", err);
+            return;
+        }
+    };
+
+    // Generate Transaction
+    let message = Message::new(&[initialize_instruction], Some(&signer_pubkey));
+    let transaction = Transaction::new(&[&kp], message, recent_blockhash);
+
+    // Send and Confirm Transaction
+    match rpc_client.send_and_confirm_transaction(&transaction) {
+        Ok(sig) => println!("✅ Config Account Initialized!\n🔗 Txn Link: {:?}", sig),
+        Err(err) => println!("❌ Failed to Initialize Config Account: {:?}", err),
+    }
+
+    let x = rpc_client.get_account_data(&multisig_pda).unwrap();
+    let resp = MultiSigAccount::try_deserialize(&mut x.as_slice()).unwrap();
+    println!("{:#?}", resp.block_builder_authority);
+    println!("{:#?}", resp.block_builder_commission_account);
+    println!("{:#?}", resp.block_builder_commission_bps);
+    println!("{:#?}", resp.is_enabled);
+    println!("{:#?}", resp.proposer);
+    println!("{:#?}", resp.validator_authority);
+    println!("{:#?}", resp.validator_commission_bps);
+    println!("{:#?}", resp.validator_vote_account);
 }
 
 fn process_update_commission(args: UpdateCommissionArgs) {
@@ -215,9 +348,11 @@ fn main() {
         CommitmentConfig::confirmed(),
     ));
     match &cli.command {
-        Commands::InitPda(args) => process_init_pda(cli.rpc.clone(), args.clone()),
+        Commands::InitPda(args) => process_init_pda(rpc_client, cli.keypair, args.clone()),
         Commands::InitConfig(args) => process_init_config(rpc_client, cli.keypair, args.clone()),
-        Commands::SchedulerControl(args) => process_scheduler_control(args.clone()),
+        Commands::SchedulerControl(args) => {
+            process_scheduler_control(rpc_client, cli.keypair, args.clone())
+        }
         Commands::UpdateCommission(args) => process_update_commission(args.clone()),
         Commands::Close => process_close(),
     }
