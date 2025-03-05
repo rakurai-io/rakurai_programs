@@ -19,7 +19,7 @@ struct Cli {
     command: Commands,
 
     /// Path to the keypair file (must be a valid Solana keypair file for signing transactions)
-    #[arg(short, long, default_value = "/home/harkos/.config/solana/id.json", value_parser = parse_keypair, help = "Path to the Solana keypair file used for signing transactions")]
+    #[arg(short, long, default_value = "~/.config/solana/id.json", value_parser = parse_keypair, help = "Path to the Solana keypair file used for signing transactions")]
     keypair: Arc<Keypair>, 
 
     /// RPC URL for sending transactions
@@ -49,19 +49,19 @@ enum Commands {
 #[command(arg_required_else_help = false, color = clap::ColorChoice::Always)]
 struct InitConfigArgs {
     /// Initial commission percentage in base points (0 to 10,000)
-    #[arg(short = 'c', long = "commission_bps", value_parser = validate_commission, help = "Initial commission percentage in base points (e.g., 500 for 5%)")]
+    #[arg(short = 'c', long = "commission_bps", value_parser = validate_commission, help = "Block builder commission percentage in base points (e.g., 500 for 5%)")]
     block_builder_commission_bps: Option<u64>,
 
     /// Block builder commission account public key
-    #[arg(short = 'a', long = "commission_account", value_parser = parse_pubkey, help = "Block builder commission account public key")]
+    #[arg(short = 'a', long = "commission_account", value_parser = parse_pubkey, help = "Block builder commission account pubkey")]
     block_builder_commission_account: Option<Pubkey>,
 
     /// Block builder authority public key
-    #[arg(short = 'b', long = "authority", value_parser = parse_pubkey, help = "Block builder authority public key")]
+    #[arg(short = 'b', long = "authority", value_parser = parse_pubkey, help = "Block builder multisig authority pubkey")]
     block_builder_authority: Option<Pubkey>,
 
     /// Config authority public key
-    #[arg(short = 'x', long = "config_authority", value_parser = parse_pubkey, help = "Config authority public key")]
+    #[arg(short = 'x', long = "config_authority", value_parser = parse_pubkey, help = "Config account authority pubkey")]
     config_authority: Option<Pubkey>,
 }
 

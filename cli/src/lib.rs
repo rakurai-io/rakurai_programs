@@ -35,7 +35,8 @@ pub fn validate_commission(val: &str) -> Result<u64, String> {
 
 /// Parses a Solana keypair from a file
 pub fn parse_keypair(path: &str) -> Result<Arc<Keypair>, String> {
-    Keypair::read_from_file(&path)
+    let expanded_path = shellexpand::tilde(path).into_owned();
+    Keypair::read_from_file(&expanded_path)
         .map(Arc::new)
-        .map_err(|_| format!("Invalid keypair format in file: {}", path))
+        .map_err(|_| format!("Invalid keypair format in file: {}", expanded_path))
 }

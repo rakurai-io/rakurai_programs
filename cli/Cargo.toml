@@ -10,6 +10,7 @@ solana-client = "=2.1.11"
 multisig = { path = "../programs/multisig" }
 clap = { version = "4.4", features = ["derive"] }
 colored = "2.0"
+shellexpand = "3.1.0"
 
 [[bin]]
 name = "rakurai-multisig"

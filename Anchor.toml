@@ -6,7 +6,7 @@ skip-lint = false
 
 [programs.localnet]
 block_reward_distribution = "ArEru7KcVzvVzgukQnJhZE4xsAq43bjz2ZcL1C7Wq9d"
-multisig = "8qiL7nidiFm5FqipLmNE6MkD6XwXkULxJQcA126iMRGh"
+multisig = "2Q7DK4qWRAQvYNseZ3UnWLQYjZFgyRJurP7NJDvDCusF"
 
 [registry]
 url = "https://api.apr.dev"
