@@ -21,8 +21,8 @@ pub fn normalize_to_url_if_moniker(url_or_moniker: &str) -> Result<String, Strin
 }
 
 /// Validates that commission is between 0 and 10,000
-pub fn validate_commission(val: &str) -> Result<u64, String> {
-    val.parse::<u64>()
+pub fn validate_commission(val: &str) -> Result<u16, String> {
+    val.parse::<u16>()
         .map_err(|_| "Commission must be a valid positive integer".to_string())
         .and_then(|v| {
             if v <= 10_000 {

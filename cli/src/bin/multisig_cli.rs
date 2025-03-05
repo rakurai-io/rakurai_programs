@@ -1,17 +1,29 @@
 use {
     clap::{Args, Parser, Subcommand},
     colored::*,
-    solana_sdk::{pubkey::Pubkey, signature::Keypair},
-    std::sync::Arc,
+    multisig::sdk::{
+        derive_config_account_address,
+        instruction::{initialize_ix, InitializeAccounts, InitializeArgs},
+    },
     rakurai_cli::{normalize_to_url_if_moniker, parse_keypair, parse_pubkey, validate_commission},
+    solana_client::rpc_client::RpcClient,
+    solana_sdk::{
+        commitment_config::CommitmentConfig,
+        message::Message,
+        pubkey::Pubkey,
+        signature::{Keypair, Signer},
+        system_program,
+        transaction::Transaction,
+    },
+    std::sync::Arc,
 };
 
 #[derive(Parser)]
 #[command(
-    author, 
-    version, 
+    author,
+    version,
     about = "A comprehensive CLI tool for managing commission approvals",
-    arg_required_else_help = true, 
+    arg_required_else_help = true,
     color = clap::ColorChoice::Always
 )]
 struct Cli {
@@ -19,11 +31,11 @@ struct Cli {
     command: Commands,
 
     /// Path to the keypair file (must be a valid Solana keypair file for signing transactions)
-    #[arg(short, long, default_value = "~/.config/solana/id.json", value_parser = parse_keypair, help = "Path to the Solana keypair file used for signing transactions")]
-    keypair: Arc<Keypair>, 
+    #[arg(short, long, default_value = "~/.config/solana/test_identity.json", value_parser = parse_keypair, help = "Path to the Solana keypair file used for signing transactions")]
+    keypair: Arc<Keypair>,
 
     /// RPC URL for sending transactions
-    #[arg(short, long, default_value = "l", value_parser = normalize_to_url_if_moniker, help = "Solana RPC endpoint to send transactions through")]
+    #[arg(short, long, default_value = "t", value_parser = normalize_to_url_if_moniker, help = "Solana RPC endpoint to send transactions through")]
     rpc: String,
 }
 
@@ -45,12 +57,12 @@ enum Commands {
     Close,
 }
 
-#[derive(Args)]
+#[derive(Args, Clone)]
 #[command(arg_required_else_help = false, color = clap::ColorChoice::Always)]
 struct InitConfigArgs {
     /// Initial commission percentage in base points (0 to 10,000)
     #[arg(short = 'c', long = "commission_bps", value_parser = validate_commission, help = "Block builder commission percentage in base points (e.g., 500 for 5%)")]
-    block_builder_commission_bps: Option<u64>,
+    block_builder_commission_bps: Option<u16>,
 
     /// Block builder commission account public key
     #[arg(short = 'a', long = "commission_account", value_parser = parse_pubkey, help = "Block builder commission account pubkey")]
@@ -65,56 +77,100 @@ struct InitConfigArgs {
     config_authority: Option<Pubkey>,
 }
 
-
-#[derive(Args)]
+#[derive(Args, Clone)]
 #[command(arg_required_else_help = true, color = clap::ColorChoice::Always)]
 struct InitPdaArgs {
     /// Initial commission percentage in base points (0 to 10,000)
     #[arg(short = 'c', long = "commission_bps", required = true, value_parser = validate_commission, help = "Initial commission percentage in base points (e.g., 500 for 5%)")]
-    commission_bps: u64,
+    commission_bps: u16,
 
     /// Validator vote account public key
     #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account public key")]
     validator_vote_pubkey: Pubkey,
 }
 
-#[derive(Args)]
+#[derive(Args, Clone)]
 #[command(arg_required_else_help = true, color = clap::ColorChoice::Always)]
 struct SchedulerControlArgs {
     /// Enable or disable the scheduler (true = enable, false = disable)
-    #[arg(short = 'e', long = "enable", required = true, help = "Pass `true` to enable the scheduler, `false` to disable it")]
+    #[arg(
+        short = 'e',
+        long = "enable",
+        required = true,
+        help = "Pass `true` to enable the scheduler, `false` to disable it"
+    )]
     enable_scheduler: bool,
 }
 
-#[derive(Args)]
+#[derive(Args, Clone)]
 #[command(arg_required_else_help = true, color = clap::ColorChoice::Always)]
 struct UpdateCommissionArgs {
     /// New commission value in base points (0 to 10,000). If omitted, no change is made.
     #[arg(short = 'c', long = "commission_bps", value_parser = validate_commission, help = "New commission value in base points (e.g., 500 for 5%)")]
-    commission_bps: Option<u64>,
+    commission_bps: Option<u16>,
 }
 
-fn process_init_config(rpc: String, args: InitConfigArgs) {
+fn process_init_config(rpc_client: Arc<RpcClient>, kp: Arc<Keypair>, args: InitConfigArgs) {
+    let signer_pubkey = kp.pubkey();
+
+    let block_builder_authority = args.config_authority.unwrap_or(signer_pubkey);
+    let block_builder_commission_bps = args.block_builder_commission_bps.unwrap_or(1000);
+    let block_builder_commission_account = args
+        .block_builder_commission_account
+        .unwrap_or(signer_pubkey);
+
+    let (config_pda, bump) = derive_config_account_address(&multisig::id());
+    println!("📌 Derived Config PDA: {} (Bump: {})", config_pda, bump);
+
     println!(
-        "{} {} (Validator Vote Pubkey: {})\n{} {}\n{} {}\n{} {}",
-        "🚀 Initializing with commission:".green(),
-        args.block_builder_commission_bps
-            .map_or("Not provided".to_string(), |v| v.to_string()),
-        args.block_builder_authority
-            .map_or("Not provided".to_string(), |v| v.to_string()),
+        "{} {}\n{} {}\n{} {}\n{} {}",
+        "🚀 Block builder commission:".green(),
+        block_builder_commission_bps,
         "🏦 Commission Account:".blue(),
-        args.block_builder_commission_account
-            .map_or("Not provided".to_string(), |v| v.to_string()),
-        "🔑 Config Authority:".purple(),
-        args.config_authority
-            .map_or("Not provided".to_string(), |v| v.to_string()),
-        "🔗 RPC Endpoint:".cyan(),
-        rpc
+        block_builder_commission_account,
+        "🔑 Authority:".purple(),
+        block_builder_authority,
+        "🔗 Signer and Config Authority:".cyan(),
+        signer_pubkey
     );
+
+    let initialize_instruction = initialize_ix(
+        multisig::id(),
+        InitializeArgs {
+            authority: signer_pubkey,
+            block_builder_commission_bps,
+            block_builder_commission_account,
+            block_builder_authority,
+            bump,
+        },
+        InitializeAccounts {
+            config: config_pda,
+            system_program: system_program::id(),
+            initializer: signer_pubkey,
+        },
+    );
+
+    // Fetch Recent Blockhash
+    let recent_blockhash = match rpc_client.get_latest_blockhash() {
+        Ok(hash) => hash,
+        Err(err) => {
+            eprintln!("❌ Failed to fetch recent blockhash: {:?}", err);
+            return;
+        }
+    };
+
+    // Generate Transaction
+    let message = Message::new(&[initialize_instruction], Some(&signer_pubkey));
+    let transaction = Transaction::new(&[&kp], message, recent_blockhash);
+
+    // Send and Confirm Transaction
+    match rpc_client.send_and_confirm_transaction(&transaction) {
+        Ok(sig) => println!("✅ Config Account Initialized!\n🔗 Txn Link: {}", sig),
+        Err(err) => println!("❌ Failed to Initialize Config Account: {:?}", err),
+    }
 }
 
-
-fn process_init_pda(rpc: String,args: InitPdaArgs) {
+fn process_init_pda(rpc: String, args: InitPdaArgs) {
     println!(
         "{} {} (Validator Vote Pubkey: {}) {}",
         "🚀 Initializing with commission:".green(),
@@ -137,13 +193,12 @@ fn process_scheduler_control(args: SchedulerControlArgs) {
 
 fn process_update_commission(args: UpdateCommissionArgs) {
     if let Some(commission) = args.commission_bps {
-        println!(
-            "{} {}",
-            "🔄 Updating commission to:".yellow(),
-            commission
-        );
+        println!("{} {}", "🔄 Updating commission to:".yellow(), commission);
     } else {
-        println!("{}", "⚠️ No commission value provided. No changes made.".red());
+        println!(
+            "{}",
+            "⚠️ No commission value provided. No changes made.".red()
+        );
     }
 }
 
@@ -153,11 +208,17 @@ fn process_close() {
 
 fn main() {
     let cli = Cli::parse();
-    match cli.command {
-        Commands::InitPda(args) => process_init_pda(cli.rpc, args),
-        Commands::InitConfig(args) => process_init_config(cli.rpc, args),
-        Commands::SchedulerControl(args) => process_scheduler_control(args),
-        Commands::UpdateCommission(args) => process_update_commission(args),
+
+    // RPC client
+    let rpc_client = Arc::new(RpcClient::new_with_commitment(
+        cli.rpc.clone(),
+        CommitmentConfig::confirmed(),
+    ));
+    match &cli.command {
+        Commands::InitPda(args) => process_init_pda(cli.rpc.clone(), args.clone()),
+        Commands::InitConfig(args) => process_init_config(rpc_client, cli.keypair, args.clone()),
+        Commands::SchedulerControl(args) => process_scheduler_control(args.clone()),
+        Commands::UpdateCommission(args) => process_update_commission(args.clone()),
         Commands::Close => process_close(),
     }
 }
