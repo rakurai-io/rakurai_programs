@@ -1,0 +1,17 @@
+[package]
+name = "rakurai_cli"
+version = "0.1.0"
+description = "Created with Anchor"
+edition = "2021"
+
+[dependencies]
+solana-sdk = "=2.1.11"
+solana-client = "=2.1.11"
+multisig = { path = "../programs/multisig" }
+clap = { version = "4.4", features = ["derive"] }
+colored = "2.0"
+
+[[bin]]
+name = "rakurai-multisig"
+path = "src/bin/multisig_cli.rs"
+
