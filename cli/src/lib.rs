@@ -1,6 +1,7 @@
 pub mod clap_args;
 use {
     anchor_lang::AccountDeserialize,
+    colored::*,
     multisig::state::MultiSigAccount,
     solana_client::rpc_client::RpcClient,
     solana_sdk::{
@@ -71,42 +72,69 @@ pub fn get_multisig_account(
     }
 }
 
-pub fn display_config_account(multisig_account: MultiSigAccount) {
+pub fn display_multisig_account(multisig_account: MultiSigAccount) {
+    println!("{}", "🗳️ Validator".bold().underline().blue());
     println!(
-        "🗳️ Validator Vote Account:        {:?}",
-        multisig_account.validator_vote_account
+        "   {} {:<10} {}",
+        "✅".green(),
+        "Enabled:",
+        multisig_account.is_enabled.to_string().blue()
     );
     println!(
-        "💰 Validator Commission BPS:      {:?}",
-        multisig_account.validator_commission_bps
+        "   {} {:<10} {}",
+        "💰".green(),
+        "Commission:",
+        multisig_account
+            .validator_commission_bps
+            .to_string()
+            .magenta()
     );
     println!(
-        "🔑 Validator Authority:           {:?}",
-        multisig_account.validator_authority
-    );
-    println!("📜 Multisig Config Account Info:");
-    println!("----------------------------------");
-    println!(
-        "🔑 Block Builder Authority:       {:?}",
-        multisig_account.block_builder_authority
+        "   {} {:<10} {}",
+        "🔑".red(),
+        "Authority:",
+        multisig_account.validator_authority.to_string()
     );
     println!(
-        "🏦 Block Builder Commission Acc:  {:?}",
-        multisig_account.block_builder_commission_account
+        "   {} {:<10} {}",
+        "🗳️".cyan(),
+        " Vote Pubkey:",
+        multisig_account.validator_vote_account.to_string()
+    );
+
+    println!("{}", "📜 Block Builder".bold().underline().blue());
+    println!(
+        "   {} {:<10} {}",
+        "💰".green(),
+        "Commission:",
+        multisig_account
+            .block_builder_commission_bps
+            .to_string()
+            .magenta()
     );
     println!(
-        "💰 Block Builder Commission BPS:  {:?}",
-        multisig_account.block_builder_commission_bps
+        "   {} {:<10} {}",
+        "🔑".red(),
+        "Authority:",
+        multisig_account.block_builder_authority.to_string()
     );
     println!(
-        "✅ Is Enabled:                    {:?}",
-        multisig_account.is_enabled
+        "   {} {:<10} {}",
+        "🏦".cyan(),
+        "Commission Account:",
+        multisig_account
+            .block_builder_commission_account
+            .to_string()
     );
-    println!(
-        "📝 Proposer:                      {:?}",
-        multisig_account.proposer
-    );
-    println!("----------------------------------");
+    if let Some(proposer) = multisig_account.proposer {
+        println!("{}", "📝 Proposer".bold().underline().blue());
+        println!(
+            "   {} {:<10} {}",
+            "📝".cyan(),
+            "Proposer:",
+            proposer.to_string()
+        );
+    }
 }
 
 pub fn get_vote_account(

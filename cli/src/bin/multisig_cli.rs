@@ -15,9 +15,10 @@ use {
     rakurai_cli::{
         clap_args::{
             Cli, ClosePdaArgs, Commands, InitConfigArgs, InitPdaArgs, SchedulerControlArgs,
-            UpdateCommissionArgs,
+            ShowPdaArgs, UpdateCommissionArgs,
         },
-        get_multisig_account, get_vote_account, sign_and_send_transaction,
+        display_multisig_account, get_multisig_account, get_vote_account,
+        sign_and_send_transaction,
     },
     solana_client::rpc_client::RpcClient,
     solana_sdk::{
@@ -300,6 +301,24 @@ fn process_close(
     sign_and_send_transaction(rpc_client.clone(), update_approval_instruction, &kp)
 }
 
+fn process_show(
+    rpc_client: Arc<RpcClient>,
+    args: ShowPdaArgs,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let vote_pubkey = args.vote_pubkey;
+
+    let (multisig_pda, _) = derive_multisig_account_address(&multisig::id(), &vote_pubkey);
+
+    let multisig_account =
+        get_multisig_account(rpc_client.clone(), multisig_pda).map_err(|err| {
+            eprintln!("❌ Failed to fetch multisig account: {:?}", err);
+            err
+        })?;
+    println!("📌 PDA: {}", multisig_pda);
+    display_multisig_account(multisig_account);
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
@@ -320,6 +339,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             process_update_commission(rpc_client.clone(), cli.keypair, args.clone())?
         }
         Commands::Close(args) => process_close(rpc_client.clone(), cli.keypair, args.clone())?,
+        Commands::Show(args) => process_show(rpc_client.clone(), args.clone())?,
     }
 
     Ok(())

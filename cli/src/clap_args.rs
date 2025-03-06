@@ -18,11 +18,11 @@ pub struct Cli {
     pub command: Commands,
 
     /// Path to the keypair file (must be a valid Solana keypair)
-    #[arg(short, long, default_value = "~/.config/solana/id.json", value_parser = parse_keypair, help = "Path to the Solana keypair")]
+    #[arg(short, long, global = true, default_value = "~/.config/solana/id.json", value_parser = parse_keypair, help = "Path to the Solana keypair")]
     pub keypair: Arc<Keypair>,
 
     /// RPC URL for sending transactions
-    #[arg(short, long, default_value = "t", value_parser = normalize_to_url_if_moniker, help = "Solana RPC endpoint to send transactions through")]
+    #[arg(short, long, global = true, default_value = "t", value_parser = normalize_to_url_if_moniker, help = "Solana RPC endpoint to send transactions through")]
     pub rpc: String,
 }
 
@@ -43,6 +43,9 @@ pub enum Commands {
 
     /// Close the multisig account
     Close(ClosePdaArgs),
+
+    /// Display multisig account info
+    Show(ShowPdaArgs),
 }
 
 #[derive(Args, Clone)]
@@ -111,6 +114,14 @@ pub struct UpdateCommissionArgs {
 #[derive(Args, Clone)]
 #[command(arg_required_else_help = true, color = clap::ColorChoice::Always)]
 pub struct ClosePdaArgs {
+    /// Validator vote account pubkey
+    #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account pubkey")]
+    pub vote_pubkey: Pubkey,
+}
+
+#[derive(Args, Clone)]
+#[command(arg_required_else_help = true, color = clap::ColorChoice::Always)]
+pub struct ShowPdaArgs {
     /// Validator vote account pubkey
     #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account pubkey")]
     pub vote_pubkey: Pubkey,
