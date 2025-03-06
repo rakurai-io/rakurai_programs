@@ -87,6 +87,7 @@ pub struct InitializeMultiSigAccountAccounts {
     pub system_program: Pubkey,
     pub multisig_account: Pubkey,
     pub validator_vote_account: Pubkey,
+    pub validator_identity_account: Pubkey,
 }
 pub fn initialize_multi_sig_account_ix(
     program_id: Pubkey,
@@ -103,6 +104,7 @@ pub fn initialize_multi_sig_account_ix(
         multisig_account,
         system_program,
         validator_vote_account,
+        validator_identity_account,
         signer,
     } = accounts;
 
@@ -119,6 +121,7 @@ pub fn initialize_multi_sig_account_ix(
             system_program,
             multisig_account,
             validator_vote_account,
+            validator_identity_account,
         }
         .to_account_metas(None),
     }
@@ -130,7 +133,7 @@ pub struct UpdateMultiSigApprovalArgs {
 pub struct UpdateMultiSigApprovalAccounts {
     pub config: Pubkey,
     pub multisig_account: Pubkey,
-    pub validator_vote_account: Pubkey,
+    pub validator_identity_account: Pubkey,
     pub signer: Pubkey,
 }
 pub fn update_multi_sig_approval_ix(
@@ -143,7 +146,7 @@ pub fn update_multi_sig_approval_ix(
     let UpdateMultiSigApprovalAccounts {
         config,
         multisig_account,
-        validator_vote_account,
+        validator_identity_account,
         signer,
     } = accounts;
 
@@ -152,7 +155,7 @@ pub fn update_multi_sig_approval_ix(
         data: crate::instruction::UpdateMultiSigApproval { grant_approval }.data(),
         accounts: crate::accounts::UpdateMultiSigApproval {
             config,
-            validator_vote_account,
+            validator_identity_account,
             multisig_account,
             signer,
         }
@@ -166,7 +169,7 @@ pub struct UpdateMultiSigCommissionArgs {
 pub struct UpdateMultiSigCommissionAccounts {
     pub config: Pubkey,
     pub multisig_account: Pubkey,
-    pub validator_vote_account: Pubkey,
+    pub validator_identity_account: Pubkey,
     pub signer: Pubkey,
 }
 pub fn update_multi_sig_commission_ix(
@@ -181,7 +184,7 @@ pub fn update_multi_sig_commission_ix(
     let UpdateMultiSigCommissionAccounts {
         config,
         multisig_account,
-        validator_vote_account,
+        validator_identity_account,
         signer,
     } = accounts;
 
@@ -193,7 +196,7 @@ pub fn update_multi_sig_commission_ix(
         .data(),
         accounts: crate::accounts::UpdateMultiSigCommission {
             config,
-            validator_vote_account,
+            validator_identity_account,
             multisig_account,
             signer,
         }
@@ -205,7 +208,7 @@ pub struct CloseMultiSigAccountArgs;
 pub struct CloseMultiSigAccounts {
     pub config: Pubkey,
     pub multisig_account: Pubkey,
-    pub validator_vote_account: Pubkey,
+    pub validator_identity_account: Pubkey,
     pub signer: Pubkey,
 }
 pub fn close_multi_sig_account_ix(
@@ -216,7 +219,7 @@ pub fn close_multi_sig_account_ix(
     let CloseMultiSigAccounts {
         config,
         multisig_account,
-        validator_vote_account,
+        validator_identity_account,
         signer,
     } = accounts;
 
@@ -225,7 +228,7 @@ pub fn close_multi_sig_account_ix(
         data: crate::instruction::CloseMultiSigAccount {}.data(),
         accounts: crate::accounts::CloseMultiSigAccount {
             config,
-            validator_vote_account,
+            validator_identity_account,
             multisig_account,
             signer,
         }

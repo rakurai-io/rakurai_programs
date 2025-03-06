@@ -6,10 +6,10 @@ use crate::{Config, MultiSigAccount};
 
 pub fn derive_multisig_account_address(
     multisig_program_id: &Pubkey,
-    vote_pubkey: &Pubkey,
+    identity_pubkey: &Pubkey,
 ) -> (Pubkey, u8) {
     Pubkey::find_program_address(
-        &[MultiSigAccount::SEED, vote_pubkey.to_bytes().as_ref()],
+        &[MultiSigAccount::SEED, identity_pubkey.to_bytes().as_ref()],
         multisig_program_id,
     )
 }

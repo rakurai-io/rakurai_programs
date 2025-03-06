@@ -13,7 +13,7 @@ serde = "1.0.138"
 serde_derive = "1.0.103"
 serde_json = "1.0.140"
 shellexpand = "3.1.0"
-solana-client = "=2.1.11"
+solana-rpc-client = "=2.1.11"
 solana-sdk = "=2.1.11"
 multisig = { path = "../programs/multisig" }
 
