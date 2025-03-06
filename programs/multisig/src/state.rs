@@ -21,7 +21,7 @@ pub struct MultiSigAccount {
     pub proposer: Option<Pubkey>,
     pub validator_authority: Pubkey,
     pub validator_commission_bps: u16,
-    pub validator_vote_account: Pubkey,
+    pub validator_identity_pubkey: Pubkey,
     pub block_builder_authority: Pubkey,
     pub block_builder_commission_bps: u16,
     pub block_builder_commission_account: Pubkey,
@@ -59,7 +59,7 @@ impl MultiSigAccount {
 
     pub fn validate(&self) -> Result<()> {
         let default_pubkey = Pubkey::default();
-        if self.validator_vote_account == default_pubkey
+        if self.validator_identity_pubkey == default_pubkey
             || self.validator_authority == default_pubkey
             || self.block_builder_commission_account == default_pubkey
         {

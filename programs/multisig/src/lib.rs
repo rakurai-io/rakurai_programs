@@ -89,7 +89,7 @@ pub mod multi_sig {
         multisig_account.is_enabled = false;
         multisig_account.proposer = Some(ctx.accounts.signer.key());
         multisig_account.validator_commission_bps = validator_commission_bps;
-        multisig_account.validator_vote_account = ctx.accounts.validator_vote_account.key();
+        multisig_account.validator_identity_pubkey = validator_vote_state.node_pubkey.key();
         multisig_account.block_builder_commission_bps =
             ctx.accounts.config.block_builder_commission_bps;
         multisig_account.block_builder_commission_account =
