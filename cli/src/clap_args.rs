@@ -29,6 +29,7 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Initialize block builder config account
+    #[command(hide = true)]
     InitConfig(InitConfigArgs),
 
     /// Initialize a new multisig account
