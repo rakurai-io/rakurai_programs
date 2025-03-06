@@ -9,7 +9,7 @@ use {
 #[command(
     author,
     version,
-    about = "A comprehensive CLI tool for managing commission approvals",
+    about = "A comprehensive CLI tool for managing rakurai multisig account",
     arg_required_else_help = true,
     color = clap::ColorChoice::Always
 )]
@@ -51,15 +51,15 @@ pub struct InitConfigArgs {
     #[arg(short = 'c', long = "commission_bps", value_parser = validate_commission, help = "Block builder commission percentage in base points")]
     pub block_builder_commission_bps: Option<u16>,
 
-    /// Block builder commission account public key
+    /// Block builder commission account pubkey
     #[arg(short = 'a', long = "commission_account", value_parser = parse_pubkey, help = "Block builder commission account pubkey")]
     pub block_builder_commission_account: Option<Pubkey>,
 
-    /// Block builder authority public key
+    /// Block builder authority pubkey
     #[arg(short = 'b', long = "authority", value_parser = parse_pubkey, help = "Block builder multisig authority pubkey")]
     pub block_builder_authority: Option<Pubkey>,
 
-    /// Config authority public key
+    /// Config authority pubkey
     #[arg(short = 'x', long = "config_authority", value_parser = parse_pubkey, help = "Config account authority pubkey")]
     pub config_authority: Option<Pubkey>,
 }
@@ -71,8 +71,8 @@ pub struct InitPdaArgs {
     #[arg(short = 'c', long = "commission_bps", required = true, value_parser = validate_commission, help = "Commission percentage in base points")]
     pub commission_bps: u16,
 
-    /// Validator vote account public key
-    #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account public key")]
+    /// Validator vote account pubkey
+    #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account pubkey")]
     pub vote_pubkey: Pubkey,
 }
 
@@ -90,8 +90,8 @@ pub struct SchedulerControlArgs {
     )]
     pub disable_scheduler: bool,
 
-    /// Validator vote account public key
-    #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account public key")]
+    /// Validator vote account pubkey
+    #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account pubkey")]
     pub vote_pubkey: Pubkey,
 }
 
@@ -99,18 +99,18 @@ pub struct SchedulerControlArgs {
 #[command(arg_required_else_help = true, color = clap::ColorChoice::Always)]
 pub struct UpdateCommissionArgs {
     /// New commission value in base points (0 to 10,000). If omitted, no change is made.
-    #[arg(short = 'c', long = "commission_bps", value_parser = validate_commission, help = "New commission value in base points (e.g., 500 for 5%)")]
+    #[arg(short = 'c', long = "commission_bps", value_parser = validate_commission, help = "New commission value in base points")]
     pub commission_bps: Option<u16>,
 
-    /// Validator vote account public key
-    #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account public key")]
+    /// Validator vote account pubkey
+    #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account pubkey")]
     pub vote_pubkey: Pubkey,
 }
 
 #[derive(Args, Clone)]
 #[command(arg_required_else_help = true, color = clap::ColorChoice::Always)]
 pub struct ClosePdaArgs {
-    /// Validator vote account public key
-    #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account public key")]
+    /// Validator vote account pubkey
+    #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account pubkey")]
     pub vote_pubkey: Pubkey,
 }

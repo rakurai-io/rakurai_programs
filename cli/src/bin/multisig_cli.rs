@@ -97,7 +97,7 @@ fn process_init_pda(
         return Err("Unauthorized signer".into());
     }
 
-    println!("📌 Derived Config PDA: {} (Bump: {})", multisig_pda, bump);
+    println!("📌 Derived Multisig PDA: {} (Bump: {})", multisig_pda, bump);
     println!(
         "{} {}\n{} {}\n{} {}",
         "🚀 Validator commission:".green(),

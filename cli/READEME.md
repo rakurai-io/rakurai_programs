@@ -1,35 +1,160 @@
-# Block Reward Distribution Program
+# Multisig CLI
 
 ## Overview
-The Block Reward Distribution Program is a designed to manage and distribute validator block rewards. The program supports the configuration of key parameters such as reward distribution accounts, validator commission rates, and fund expiration settings.
 
-# Test Case: init_config_account
+This CLI tool provides a comprehensive interface for managing rakurai multisig setup. validator operators can initialize, update commissions, enable or disable schedulers, and close accounts.
 
-## Description
-This test initializes the configuration account for the block reward distribution program. The configuration account holds settings such as the authority, expiration criteria, expiration account and validator commission limits.
+## Installation
 
-## Required Environment Variables
-- `TEST_WALLET`: Path to the keypair file for the payer account.
-- `RPC_URL`: RPC endpoint URL.
-- `PROGRAM_ID`: Program ID of the deployed block reward distribution program.
-  
-```bash
-TEST_WALLET=~/.config/solana/id.json && RPC_URL=https://api.devnet.solana.com && PROGRAM_ID=ProgramID && cargo test init_config_account -- --nocapture
+Ensure you have Rust and Cargo installed before using this CLI tool.
+
+```sh
+# Install CLI tool 
+cargo install --path .
 ```
+
+## Usage
+
+Run the CLI tool with the following command:
+
+```sh
+rakurai-multisig-cli [OPTIONS] <COMMAND>
+```
+
+### Global Options
+
+- `-k, --keypair <PATH>`: Path to the Solana keypair file (default: `~/.config/solana/id.json`).
+- `-r, --rpc <URL>`: RPC URL for sending transactions (default: Testnet).
+
 ---
 
-# Test Case: create_reward_distribution_account
+## Commands
 
-## Description
-This test creates a reward distribution account linked to a specific validator's vote account. The account is used to manage and distribute rewards for the validator.
+### 1. `init-config`
 
-## Required Environment Variables
-- `TEST_WALLET`: Path to the keypair file for the payer account. (keypair linked to vote account)
-- `RPC_URL`: RPC endpoint URL.
-- `PROGRAM_ID` (Optional): Program ID of the deployed block reward distribution program.
-- `VOTE_PUBKEY`: Public key of the validator's vote account.
+#### Description
+Initializes the block builder config account.
 
-```bash
-TEST_WALLET=~/.config/solana/id.json && RPC_URL=https://api.devnet.solana.com && PROGRAM_ID=ProgramID && VOTE_PUBKEY=ValidatorVotePubkey && cargo test create_reward_distribution_account -- --nocapture
+#### Usage
+
+```sh
+rakurai-multisig-cli init-config [OPTIONS]
 ```
+
+#### Options
+
+- `-c, --commission_bps <VALUE>`: Block Builder commission percentage in base points (0-10,000).
+- `-a, --commission_account <PUBKEY>`: Block builder commission account pubkey.
+- `-b, --authority <PUBKEY>`: bBlock builder multisig authority pubkey.
+- `-x, --config_authority <PUBKEY>`: Config account authority pubkey.
+
+#### Example
+
+```sh
+rakurai-multisig-cli init-config -c 500 -a <PUBKEY> -b <PUBKEY> -x <PUBKEY>
+```
+
 ---
+
+### 2. `init-pda`
+
+#### Description
+Initializes a new multisig PDA (Program Derived Address) account.
+
+#### Usage
+
+```sh
+rakurai-multisig-cli init-pda --commission_bps <VALUE> --vote_pubkey <PUBKEY>
+```
+
+#### Options
+
+- `-c, --commission_bps <VALUE>`: Validator commission percentage in base points.
+- `-v, --vote_pubkey <PUBKEY>`: Validator vote account pubkey.
+
+#### Example
+
+```sh
+rakurai-multisig-cli init-pda -c 500 -v <PUBKEY>
+```
+
+---
+
+### 3. `scheduler-control`
+
+#### Description
+Enables or disables the scheduler.
+
+#### Usage
+
+```sh
+rakurai-multisig-cli scheduler-control [OPTIONS]
+```
+
+#### Options
+
+- `-e, --disable_scheduler`: Flag to disable the scheduler (default: enable).
+- `-v, --vote_pubkey <PUBKEY>`: Validator vote account pubkey.
+
+#### Example
+
+```sh
+rakurai-multisig-cli scheduler-control -e -v <PUBKEY>
+```
+
+---
+
+### 4. `update-commission`
+
+#### Description
+Updates the validator commission.
+
+#### Usage
+
+```sh
+rakurai-multisig-cli update-commission [OPTIONS]
+```
+
+#### Options
+
+- `-c, --commission_bps <VALUE>`: New commission value in base points (optional, if omitted no change is made).
+- `-v, --vote_pubkey <PUBKEY>`: Validator vote account pubkey.
+
+#### Example
+
+```sh
+rakurai-multisig-cli update-commission -c 700 -v <PUBKEY>
+```
+
+---
+
+### 5. `close`
+
+#### Description
+Closes the multisig account.
+
+#### Usage
+
+```sh
+rakurai-multisig-cli close --vote_pubkey <PUBKEY>
+```
+
+#### Options
+
+- `-v, --vote_pubkey <PUBKEY>`: Validator vote account pubkey.
+
+#### Example
+
+```sh
+rakurai-multisig-cli close -v <PUBKEY>
+```
+
+---
+
+## Notes
+
+- Ensure your keypair has the necessary permissions to execute transactions.
+- Use a valid RPC URL to interact with the Solana blockchain.
+- Commission values are in base points (e.g., `500` means `5%`).
+
+
