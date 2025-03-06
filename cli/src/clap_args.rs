@@ -18,7 +18,7 @@ pub struct Cli {
     pub command: Commands,
 
     /// Path to the keypair file (must be a valid Solana keypair)
-    #[arg(short, long, default_value = "~/.config/solana/test_identity.json", value_parser = parse_keypair, help = "Path to the Solana keypair")]
+    #[arg(short, long, default_value = "~/.config/solana/id.json", value_parser = parse_keypair, help = "Path to the Solana keypair")]
     pub keypair: Arc<Keypair>,
 
     /// RPC URL for sending transactions
