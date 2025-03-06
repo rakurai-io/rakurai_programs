@@ -58,18 +58,9 @@ pub fn get_multisig_account(
     rpc_client: Arc<RpcClient>,
     multisig_pda: Pubkey,
 ) -> Result<MultiSigAccount, Box<dyn std::error::Error>> {
-    let account_data = rpc_client
-        .get_account_data(&multisig_pda)
-        .expect("❌ Failed to fetch multisig account data");
-
+    let account_data = rpc_client.get_account_data(&multisig_pda)?;
     let mut account_slice = account_data.as_slice();
-    match MultiSigAccount::try_deserialize(&mut account_slice) {
-        Ok(v) => Ok(v),
-        Err(err) => {
-            eprintln!("❌ Failed to deserialize multisig account: {:?}", err);
-            return Err(err.into());
-        }
-    }
+    MultiSigAccount::try_deserialize(&mut account_slice).map_err(Into::into)
 }
 
 pub fn display_multisig_account(multisig_account: MultiSigAccount) {
@@ -141,20 +132,9 @@ pub fn get_vote_account(
     rpc_client: Arc<RpcClient>,
     vote_pubkey: Pubkey,
 ) -> Result<VoteState, Box<dyn std::error::Error>> {
-    let account_info = match rpc_client.get_account(&vote_pubkey) {
-        Ok(info) => info,
-        Err(err) => {
-            eprintln!("❌ Failed to fetch vote account info: {:?}", err);
-            return Err(err.into());
-        }
-    };
-    match bincode::deserialize::<VoteStateVersions>(&account_info.data) {
-        Ok(v) => Ok(v.convert_to_current()),
-        Err(err) => {
-            eprintln!("❌ Failed to deserialize vote account state: {:?}", err);
-            return Err(err.into());
-        }
-    }
+    let account_info = rpc_client.get_account(&vote_pubkey)?;
+    let vote_state_versions: VoteStateVersions = bincode::deserialize(&account_info.data)?;
+    Ok(vote_state_versions.convert_to_current())
 }
 
 pub fn sign_and_send_transaction(

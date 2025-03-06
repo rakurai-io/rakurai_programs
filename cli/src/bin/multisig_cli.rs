@@ -86,9 +86,6 @@ fn process_init_pda(
     let validator_commission_bps = args.commission_bps;
     let vote_pubkey = args.vote_pubkey;
 
-    let (config_pda, _) = derive_config_account_address(&multisig::id());
-    let (multisig_pda, bump) = derive_multisig_account_address(&multisig::id(), &vote_pubkey);
-
     let vote_state = get_vote_account(rpc_client.clone(), vote_pubkey)?;
     if vote_state.node_pubkey != signer_pubkey {
         eprintln!(
@@ -97,6 +94,10 @@ fn process_init_pda(
         );
         return Err("Unauthorized signer".into());
     }
+
+    let (config_pda, _) = derive_config_account_address(&multisig::id());
+    let (multisig_pda, bump) =
+        derive_multisig_account_address(&multisig::id(), &vote_state.node_pubkey);
 
     println!("📌 Derived Multisig PDA: {} (Bump: {})", multisig_pda, bump);
     println!(
@@ -140,11 +141,7 @@ fn process_scheduler_control(
 
     let (config_pda, _) = derive_config_account_address(&multisig::id());
     let (multisig_pda, bump) = derive_multisig_account_address(&multisig::id(), &identity_pubkey);
-    let multisig_account =
-        get_multisig_account(rpc_client.clone(), multisig_pda).map_err(|err| {
-            eprintln!("❌ Failed to fetch multisig account: {:?}", err);
-            err
-        })?;
+    let multisig_account = get_multisig_account(rpc_client.clone(), multisig_pda)?;
     if !(identity_pubkey == signer_pubkey
         || multisig_account.block_builder_authority == signer_pubkey)
     {
@@ -202,11 +199,7 @@ fn process_update_commission(
         "🔗 Signer:".cyan(),
         signer_pubkey
     );
-    let multisig_account =
-        get_multisig_account(rpc_client.clone(), multisig_pda).map_err(|err| {
-            eprintln!("❌ Failed to fetch multisig account: {:?}", err);
-            err
-        })?;
+    let multisig_account = get_multisig_account(rpc_client.clone(), multisig_pda)?;
     if !(signer_pubkey == identity_pubkey
         || signer_pubkey == multisig_account.block_builder_authority)
     {
@@ -259,11 +252,7 @@ fn process_close(
     let (config_pda, _) = derive_config_account_address(&multisig::id());
     let (multisig_pda, bump) = derive_multisig_account_address(&multisig::id(), &identity_pubkey);
 
-    let multisig_account =
-        get_multisig_account(rpc_client.clone(), multisig_pda).map_err(|err| {
-            eprintln!("❌ Failed to fetch multisig account: {:?}", err);
-            err
-        })?;
+    let multisig_account = get_multisig_account(rpc_client.clone(), multisig_pda)?;
     if multisig_account.block_builder_authority != signer_pubkey {
         eprintln!(
             "❌ Unauthorized Signer! Expected: BlockBuilder({}), Found: {}",
@@ -301,11 +290,7 @@ fn process_show(
 
     let (multisig_pda, _) = derive_multisig_account_address(&multisig::id(), &identity_pubkey);
 
-    let multisig_account =
-        get_multisig_account(rpc_client.clone(), multisig_pda).map_err(|err| {
-            eprintln!("❌ Failed to fetch multisig account: {:?}", err);
-            err
-        })?;
+    let multisig_account = get_multisig_account(rpc_client.clone(), multisig_pda)?;
     println!("📌 PDA: {}", multisig_pda);
     display_multisig_account(multisig_account);
     Ok(())
