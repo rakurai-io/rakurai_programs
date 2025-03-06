@@ -1,5 +1,5 @@
 use {
-    crate::ErrorCode::{AccountValidationFailure, ArithmeticError},
+    crate::ErrorCode::{AccountValidationFailure, ArithmeticError, MaxCommissionBpsExceeded},
     anchor_lang::prelude::*,
     std::mem::size_of,
 };
@@ -9,7 +9,6 @@ use {
 pub struct Config {
     pub authority: Pubkey,
     pub block_builder_authority: Pubkey,
-    pub max_validator_commission_bps: u16,
     pub block_builder_commission_bps: u16,
     pub block_builder_commission_account: Pubkey,
     pub bump: u8,
@@ -18,11 +17,12 @@ pub struct Config {
 #[account]
 #[derive(Default)]
 pub struct MultiSigAccount {
-    pub validator_vote_account: Pubkey,
     pub is_enabled: bool,
-    pub validator_authority: Pubkey,
     pub proposer: Option<Pubkey>,
+    pub validator_authority: Pubkey,
     pub validator_commission_bps: u16,
+    pub validator_vote_account: Pubkey,
+    pub block_builder_authority: Pubkey,
     pub block_builder_commission_bps: u16,
     pub block_builder_commission_account: Pubkey,
     pub bump: u8,
@@ -44,12 +44,8 @@ impl Config {
             return Err(AccountValidationFailure.into());
         }
 
-        if self.max_validator_commission_bps > MAX_COMMISSION_BPS
-            || self.block_builder_commission_bps > MAX_COMMISSION_BPS
-            || (self.block_builder_commission_bps + self.max_validator_commission_bps)
-                > MAX_COMMISSION_BPS
-        {
-            return Err(AccountValidationFailure.into());
+        if self.block_builder_commission_bps > MAX_COMMISSION_BPS {
+            return Err(MaxCommissionBpsExceeded.into());
         }
 
         Ok(())

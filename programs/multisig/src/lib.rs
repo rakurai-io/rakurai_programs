@@ -23,14 +23,13 @@ security_txt! {
 pub mod sdk;
 pub mod state;
 
-declare_id!("ArEru7KcVzvVzgukQnJhZE4xsAq43bjz2ZcL1C7Wq9d");
+declare_id!("2Q7DK4qWRAQvYNseZ3UnWLQYjZFgyRJurP7NJDvDCusF");
 
 #[program]
 pub mod multi_sig {
     use rakurai_vote_state::VoteState;
 
     use super::*;
-    use crate::ErrorCode::*;
 
     /// Initialize a singleton instance of the [Config] account.
     pub fn initialize(
@@ -39,7 +38,6 @@ pub mod multi_sig {
         block_builder_authority: Pubkey,
         block_builder_commission_account: Pubkey,
         block_builder_commission_bps: u16,
-        max_validator_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
         let cfg = &mut ctx.accounts.config;
@@ -47,7 +45,6 @@ pub mod multi_sig {
         cfg.block_builder_authority = block_builder_authority;
         cfg.block_builder_commission_account = block_builder_commission_account;
         cfg.block_builder_commission_bps = block_builder_commission_bps;
-        cfg.max_validator_commission_bps = max_validator_commission_bps;
         cfg.bump = bump;
         cfg.validate()?;
 
@@ -62,7 +59,6 @@ pub mod multi_sig {
         config.authority = new_config.authority;
         config.block_builder_authority = new_config.block_builder_authority;
         config.block_builder_commission_account = new_config.block_builder_commission_account;
-        config.max_validator_commission_bps = new_config.max_validator_commission_bps;
         config.block_builder_commission_bps = new_config.block_builder_commission_bps;
         config.validate()?;
 
@@ -80,10 +76,6 @@ pub mod multi_sig {
         validator_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
-        if validator_commission_bps > ctx.accounts.config.max_validator_commission_bps {
-            return Err(MaxCommissionFeeBpsExceeded.into());
-        }
-
         if ctx.accounts.validator_vote_account.owner != &solana_program::vote::program::id() {
             return Err(Unauthorized.into());
         }
@@ -94,15 +86,16 @@ pub mod multi_sig {
         }
 
         let multisig_account = &mut ctx.accounts.multisig_account;
-        multisig_account.validator_vote_account = ctx.accounts.validator_vote_account.key();
+        multisig_account.is_enabled = false;
+        multisig_account.proposer = Some(ctx.accounts.signer.key());
         multisig_account.validator_commission_bps = validator_commission_bps;
+        multisig_account.validator_vote_account = ctx.accounts.validator_vote_account.key();
         multisig_account.block_builder_commission_bps =
             ctx.accounts.config.block_builder_commission_bps;
         multisig_account.block_builder_commission_account =
             ctx.accounts.config.block_builder_commission_account;
         multisig_account.validator_authority = ctx.accounts.signer.key();
-        multisig_account.is_enabled = false;
-        multisig_account.proposer = Some(ctx.accounts.signer.key());
+        multisig_account.block_builder_authority = ctx.accounts.config.block_builder_authority;
         multisig_account.bump = bump;
         multisig_account.validate()?;
 
@@ -118,6 +111,7 @@ pub mod multi_sig {
         grant_approval: bool,
     ) -> Result<()> {
         UpdateMultiSigApproval::auth(&ctx)?;
+        let msg;
 
         let multisig_account = &mut ctx.accounts.multisig_account;
 
@@ -125,16 +119,15 @@ pub mod multi_sig {
             if multisig_account.proposer.is_none()
                 || multisig_account.proposer == Some(ctx.accounts.signer.key())
             {
+                msg = "Proposal Pending".to_string();
                 multisig_account.proposer = Some(ctx.accounts.signer.key());
-            } else if multisig_account.validator_authority == ctx.accounts.signer.key()
-                || ctx.accounts.config.block_builder_authority == ctx.accounts.signer.key()
-            {
+            } else {
+                msg = "Proposal Accepted | Approval granted".to_string();
                 multisig_account.proposer = None;
                 multisig_account.is_enabled = true;
-            } else {
-                return Err(AccountValidationFailure.into());
             }
         } else {
+            msg = "Permission Revoked".to_string();
             multisig_account.is_enabled = false;
         }
 
@@ -142,6 +135,8 @@ pub mod multi_sig {
 
         emit!(UpdateMultiSigApprovalEvent {
             multisig_account: multisig_account.key(),
+            signer: ctx.accounts.signer.key(),
+            msg
         });
 
         Ok(())
@@ -155,31 +150,19 @@ pub mod multi_sig {
 
         let multisig_account = &mut ctx.accounts.multisig_account;
 
-        if multisig_account.proposer.is_none()
-            || multisig_account.proposer == Some(ctx.accounts.signer.key())
-        {
-            multisig_account.proposer = Some(ctx.accounts.signer.key());
-        } else if multisig_account.validator_authority == ctx.accounts.signer.key()
-            || ctx.accounts.config.block_builder_authority == ctx.accounts.signer.key()
-        {
-            multisig_account.proposer = None;
-            multisig_account.is_enabled = true;
-        } else {
-            return Err(AccountValidationFailure.into());
-        }
-
-        if let Some(bps) = validator_commission_bps {
-            if bps > ctx.accounts.config.max_validator_commission_bps {
-                return Err(MaxCommissionFeeBpsExceeded.into());
+        if ctx.accounts.signer.key() == multisig_account.validator_authority.key() {
+            if let Some(bps) = validator_commission_bps {
+                if bps > 10000 {
+                    return Err(ErrorCode::MaxCommissionBpsExceeded.into());
+                }
+                multisig_account.validator_commission_bps = bps;
             }
-            multisig_account.validator_commission_bps = bps;
+        } else {
+            multisig_account.block_builder_commission_bps =
+                ctx.accounts.config.block_builder_commission_bps;
+            multisig_account.block_builder_commission_account =
+                ctx.accounts.config.block_builder_commission_account;
         }
-
-        multisig_account.block_builder_commission_bps =
-            ctx.accounts.config.block_builder_commission_bps;
-        multisig_account.block_builder_commission_account =
-            ctx.accounts.config.block_builder_commission_account;
-
         emit!(UpdateMultiSigCommissionEvent {
             multisig_account: multisig_account.key(),
             operator_commission: multisig_account.validator_commission_bps,
@@ -215,23 +198,8 @@ pub enum ErrorCode {
     #[msg("Encountered an arithmetic under/overflow error.")]
     ArithmeticError,
 
-    #[msg("Supplied invalid parameters.")]
-    InvalidParameters,
-
-    #[msg("The given proof is invalid.")]
-    InvalidProof,
-
-    #[msg("Failed to deserialize the supplied vote account data.")]
-    InvalidVoteAccountData,
-
-    #[msg("Commission basis points must be less than or equal to the Config account's max_commission_bps.")]
-    MaxCommissionFeeBpsExceeded,
-
-    #[msg("The given MultiSigAccount is not ready to be closed.")]
-    PrematureCloseMultiSigAccount,
-
-    #[msg("The given ClaimStatus account is not ready to be closed.")]
-    PrematureCloseClaimStatus,
+    #[msg("Validator's commission basis points must be less than or equal to 10_000")]
+    MaxCommissionBpsExceeded,
 
     #[msg("Unauthorized signer.")]
     Unauthorized,
@@ -265,10 +233,10 @@ pub struct UpdateConfig<'info> {
 
 impl UpdateConfig<'_> {
     fn auth(ctx: &Context<UpdateConfig>) -> Result<()> {
-        if ctx.accounts.config.authority != ctx.accounts.authority.key() {
-            Err(Unauthorized.into())
-        } else {
+        if ctx.accounts.config.authority == ctx.accounts.authority.key() {
             Ok(())
+        } else {
+            Err(Unauthorized.into())
         }
     }
 }
@@ -285,7 +253,6 @@ pub struct InitializeMultiSigAccount<'info> {
         seeds = [
             MultiSigAccount::SEED,
             validator_vote_account.key().as_ref(),
-            Clock::get().unwrap().epoch.to_le_bytes().as_ref(),
         ],
         bump,
         payer = signer,
@@ -298,17 +265,18 @@ pub struct InitializeMultiSigAccount<'info> {
     pub signer: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
+
 #[derive(Accounts)]
 pub struct UpdateMultiSigApproval<'info> {
     pub config: Account<'info, Config>,
     #[account(
         mut,
-        close = validator_vote_account,
         seeds = [
             MultiSigAccount::SEED,
             validator_vote_account.key().as_ref(),
         ],
         bump = multisig_account.bump,
+        rent_exempt = enforce,
     )]
     pub multisig_account: Account<'info, MultiSigAccount>,
     #[account(mut)]
@@ -319,12 +287,13 @@ pub struct UpdateMultiSigApproval<'info> {
 
 impl UpdateMultiSigApproval<'_> {
     fn auth(ctx: &Context<UpdateMultiSigApproval>) -> Result<()> {
-        if ctx.accounts.signer.key() != ctx.accounts.config.block_builder_authority.key()
-            || ctx.accounts.signer.key() != ctx.accounts.multisig_account.validator_authority.key()
+        if ctx.accounts.signer.key() == ctx.accounts.multisig_account.validator_authority.key()
+            || ctx.accounts.signer.key()
+                == ctx.accounts.multisig_account.block_builder_authority.key()
         {
-            Err(Unauthorized.into())
-        } else {
             Ok(())
+        } else {
+            Err(Unauthorized.into())
         }
     }
 }
@@ -334,12 +303,12 @@ pub struct UpdateMultiSigCommission<'info> {
     pub config: Account<'info, Config>,
     #[account(
         mut,
-        close = validator_vote_account,
         seeds = [
             MultiSigAccount::SEED,
             validator_vote_account.key().as_ref(),
         ],
         bump = multisig_account.bump,
+        rent_exempt = enforce,
     )]
     pub multisig_account: Account<'info, MultiSigAccount>,
     #[account(mut)]
@@ -350,12 +319,13 @@ pub struct UpdateMultiSigCommission<'info> {
 
 impl UpdateMultiSigCommission<'_> {
     fn auth(ctx: &Context<UpdateMultiSigCommission>) -> Result<()> {
-        if ctx.accounts.signer.key() != ctx.accounts.config.block_builder_authority.key()
-            || ctx.accounts.signer.key() != ctx.accounts.multisig_account.validator_authority.key()
+        if ctx.accounts.signer.key() == ctx.accounts.multisig_account.validator_authority.key()
+            || ctx.accounts.signer.key()
+                == ctx.accounts.multisig_account.block_builder_authority.key()
         {
-            Err(Unauthorized.into())
-        } else {
             Ok(())
+        } else {
+            Err(Unauthorized.into())
         }
     }
 }
@@ -371,6 +341,7 @@ pub struct CloseMultiSigAccount<'info> {
             validator_vote_account.key().as_ref(),
         ],
         bump = multisig_account.bump,
+        rent_exempt = enforce,
     )]
     pub multisig_account: Account<'info, MultiSigAccount>,
     #[account(mut)]
@@ -381,10 +352,11 @@ pub struct CloseMultiSigAccount<'info> {
 
 impl CloseMultiSigAccount<'_> {
     fn auth(ctx: &Context<CloseMultiSigAccount>) -> Result<()> {
-        if ctx.accounts.signer.key() != ctx.accounts.config.block_builder_authority.key() {
-            Err(Unauthorized.into())
-        } else {
+        if ctx.accounts.signer.key() == ctx.accounts.multisig_account.block_builder_authority.key()
+        {
             Ok(())
+        } else {
+            Err(Unauthorized.into())
         }
     }
 }
@@ -405,6 +377,8 @@ pub struct MultiSigAccountInitializedEvent {
 #[event]
 pub struct UpdateMultiSigApprovalEvent {
     pub multisig_account: Pubkey,
+    pub signer: Pubkey,
+    pub msg: String,
 }
 
 #[event]
