@@ -1,16 +1,28 @@
-# Multisig CLI
+# Rakurai Multisig CLI
 
 ## Overview
 
-This CLI tool provides a comprehensive interface for managing rakurai multisig setup. validator operators can initialize, update commissions, enable or disable schedulers, and close accounts.
+The **Rakurai Multisig CLI** provides a powerful command-line interface to manage a multisig setup for validator operators. It allows users to:
+- **Initialize**
+- **Update validator commissions**
+- **Enable/disable the scheduler**
+- **Close**
+
+This tool is designed for **Solana validator operators** who require multisig-based governance for commission updates and related operations.
+
+---
 
 ## Installation
 
-Ensure you have Rust and Cargo installed before using this CLI tool.
+Ensure you have **Rust and Cargo** installed before proceeding.
 
 ```sh
-# Install CLI tool 
+# Install the CLI tool globally
 cargo install --path .
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# To check if the CLI is installed correctly:
+which rakurai-multisig
 ```
 
 ## Usage
@@ -18,7 +30,7 @@ cargo install --path .
 Run the CLI tool with the following command:
 
 ```sh
-rakurai-multisig-cli [OPTIONS] <COMMAND>
+rakurai-multisig [OPTIONS] <COMMAND>
 ```
 
 ### Global Options
@@ -38,20 +50,20 @@ Initializes the block builder config account.
 #### Usage
 
 ```sh
-rakurai-multisig-cli init-config [OPTIONS]
+rakurai-multisig init-config [OPTIONS]
 ```
 
 #### Options
 
 - `-c, --commission_bps <VALUE>`: Block Builder commission percentage in base points (0-10,000).
 - `-a, --commission_account <PUBKEY>`: Block builder commission account pubkey.
-- `-b, --authority <PUBKEY>`: bBlock builder multisig authority pubkey.
+- `-b, --authority <PUBKEY>`: Block builder multisig authority pubkey.
 - `-x, --config_authority <PUBKEY>`: Config account authority pubkey.
 
 #### Example
 
 ```sh
-rakurai-multisig-cli init-config -c 500 -a <PUBKEY> -b <PUBKEY> -x <PUBKEY>
+rakurai-multisig init-config -c 500 -a <PUBKEY> -b <PUBKEY> -x <PUBKEY>
 ```
 
 ---
@@ -64,7 +76,7 @@ Initializes a new multisig PDA (Program Derived Address) account.
 #### Usage
 
 ```sh
-rakurai-multisig-cli init-pda --commission_bps <VALUE> --vote_pubkey <PUBKEY>
+rakurai-multisig init-pda --commission_bps <VALUE> --vote_pubkey <PUBKEY>
 ```
 
 #### Options
@@ -75,7 +87,7 @@ rakurai-multisig-cli init-pda --commission_bps <VALUE> --vote_pubkey <PUBKEY>
 #### Example
 
 ```sh
-rakurai-multisig-cli init-pda -c 500 -v <PUBKEY>
+rakurai-multisig init-pda -c 500 -v <PUBKEY>
 ```
 
 ---
@@ -88,7 +100,7 @@ Enables or disables the scheduler.
 #### Usage
 
 ```sh
-rakurai-multisig-cli scheduler-control [OPTIONS]
+rakurai-multisig scheduler-control [OPTIONS]
 ```
 
 #### Options
@@ -99,7 +111,7 @@ rakurai-multisig-cli scheduler-control [OPTIONS]
 #### Example
 
 ```sh
-rakurai-multisig-cli scheduler-control -e -v <PUBKEY>
+rakurai-multisig scheduler-control -e -v <PUBKEY>
 ```
 
 ---
@@ -112,7 +124,7 @@ Updates the validator commission.
 #### Usage
 
 ```sh
-rakurai-multisig-cli update-commission [OPTIONS]
+rakurai-multisig update-commission [OPTIONS]
 ```
 
 #### Options
@@ -123,7 +135,7 @@ rakurai-multisig-cli update-commission [OPTIONS]
 #### Example
 
 ```sh
-rakurai-multisig-cli update-commission -c 700 -v <PUBKEY>
+rakurai-multisig update-commission -c 700 -v <PUBKEY>
 ```
 
 ---
@@ -136,7 +148,7 @@ Closes the multisig account.
 #### Usage
 
 ```sh
-rakurai-multisig-cli close --vote_pubkey <PUBKEY>
+rakurai-multisig close --vote_pubkey <PUBKEY>
 ```
 
 #### Options
@@ -146,7 +158,7 @@ rakurai-multisig-cli close --vote_pubkey <PUBKEY>
 #### Example
 
 ```sh
-rakurai-multisig-cli close -v <PUBKEY>
+rakurai-multisig close -v <PUBKEY>
 ```
 
 ---
