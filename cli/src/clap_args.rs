@@ -85,7 +85,7 @@ pub struct InitPdaArgs {
 pub struct SchedulerControlArgs {
     /// Disable the scheduler if the flag is present (default: Enable)
     #[arg(
-        short = 'e',
+        short = 'd',
         long = "disable_scheduler",
         default_value_t = true,
         default_missing_value = "false",
@@ -94,9 +94,9 @@ pub struct SchedulerControlArgs {
     )]
     pub disable_scheduler: bool,
 
-    /// Validator vote account pubkey
-    #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account pubkey")]
-    pub vote_pubkey: Pubkey,
+    /// Validator identity account pubkey
+    #[arg(short = 'i', long = "identity_pubkey", required = true, value_parser = parse_pubkey, help = "Validator identity account pubkey")]
+    pub identity_pubkey: Pubkey,
 }
 
 #[derive(Args, Clone)]
@@ -106,23 +106,23 @@ pub struct UpdateCommissionArgs {
     #[arg(short = 'c', long = "commission_bps", value_parser = validate_commission, help = "New commission value in base points")]
     pub commission_bps: Option<u16>,
 
-    /// Validator vote account pubkey
-    #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account pubkey")]
-    pub vote_pubkey: Pubkey,
+    /// Validator identity account pubkey
+    #[arg(short = 'i', long = "identity_pubkey", required = true, value_parser = parse_pubkey, help = "Validator identity account pubkey")]
+    pub identity_pubkey: Pubkey,
 }
 
 #[derive(Args, Clone)]
 #[command(arg_required_else_help = true, color = clap::ColorChoice::Always)]
 pub struct ClosePdaArgs {
-    /// Validator vote account pubkey
-    #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account pubkey")]
-    pub vote_pubkey: Pubkey,
+    /// Validator identity account pubkey
+    #[arg(short = 'i', long = "identity_pubkey", required = true, value_parser = parse_pubkey, help = "Validator identity account pubkey")]
+    pub identity_pubkey: Pubkey,
 }
 
 #[derive(Args, Clone)]
 #[command(arg_required_else_help = true, color = clap::ColorChoice::Always)]
 pub struct ShowPdaArgs {
-    /// Validator vote account pubkey
-    #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account pubkey")]
-    pub vote_pubkey: Pubkey,
+    /// Validator identity account pubkey
+    #[arg(short = 'i', long = "identity_pubkey", required = true, value_parser = parse_pubkey, help = "Validator identity account pubkey")]
+    pub identity_pubkey: Pubkey,
 }

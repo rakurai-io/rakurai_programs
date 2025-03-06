@@ -119,6 +119,7 @@ fn process_init_pda(
             config: config_pda,
             system_program: system_program::id(),
             validator_vote_account: vote_pubkey,
+            validator_identity_account: vote_state.node_pubkey,
             multisig_account: multisig_pda,
             signer: signer_pubkey,
         },
@@ -135,25 +136,21 @@ fn process_scheduler_control(
     let signer_pubkey = kp.pubkey();
 
     let disable_scheduler = args.disable_scheduler;
-    let vote_pubkey = args.vote_pubkey;
+    let identity_pubkey = args.identity_pubkey;
 
     let (config_pda, _) = derive_config_account_address(&multisig::id());
-    let (multisig_pda, bump) = derive_multisig_account_address(&multisig::id(), &vote_pubkey);
-    let vote_state = get_vote_account(rpc_client.clone(), vote_pubkey).map_err(|err| {
-        eprintln!("❌ Failed to fetch vote account: {:?}", err);
-        err
-    })?;
+    let (multisig_pda, bump) = derive_multisig_account_address(&multisig::id(), &identity_pubkey);
     let multisig_account =
         get_multisig_account(rpc_client.clone(), multisig_pda).map_err(|err| {
             eprintln!("❌ Failed to fetch multisig account: {:?}", err);
             err
         })?;
-    if !(vote_state.node_pubkey == signer_pubkey
+    if !(identity_pubkey == signer_pubkey
         || multisig_account.block_builder_authority == signer_pubkey)
     {
         eprintln!(
             "❌ Unauthorized Signer! Expected: Validator({}) or BlockBuilder({}), Found: {}",
-            vote_state.node_pubkey, multisig_account.block_builder_authority, signer_pubkey
+            identity_pubkey, multisig_account.block_builder_authority, signer_pubkey
         );
         return Err("Unauthorized signer".into());
     }
@@ -163,8 +160,8 @@ fn process_scheduler_control(
         "{} {}\n{} {}\n{} {}",
         "🚀 Scheduler Enabled:".green(),
         disable_scheduler,
-        "🏦 Vote Pubkey:".blue(),
-        vote_pubkey,
+        "🏦 Identity Pubkey:".blue(),
+        identity_pubkey,
         "🔗 Signer:".cyan(),
         signer_pubkey
     );
@@ -175,7 +172,7 @@ fn process_scheduler_control(
         },
         UpdateMultiSigApprovalAccounts {
             config: config_pda,
-            validator_vote_account: vote_pubkey,
+            validator_identity_account: identity_pubkey,
             multisig_account: multisig_pda,
             signer: signer_pubkey,
         },
@@ -190,41 +187,36 @@ fn process_update_commission(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let signer_pubkey = kp.pubkey();
     let commission_bps = args.commission_bps;
-    let vote_pubkey = args.vote_pubkey;
+    let identity_pubkey = args.identity_pubkey;
 
     let (config_pda, _) = derive_config_account_address(&multisig::id());
-    let (multisig_pda, bump) = derive_multisig_account_address(&multisig::id(), &vote_pubkey);
+    let (multisig_pda, bump) = derive_multisig_account_address(&multisig::id(), &identity_pubkey);
 
     println!("📌 Derived Multisig PDA: {} (Bump: {})", multisig_pda, bump);
     println!(
         "{} {}\n{} {}\n{} {}",
         "🚀 Commission BPS:".green(),
         commission_bps.unwrap_or_default(),
-        "🏦 Vote Pubkey:".blue(),
-        vote_pubkey,
+        "🏦 Identity Pubkey:".blue(),
+        identity_pubkey,
         "🔗 Signer:".cyan(),
         signer_pubkey
     );
-
-    let vote_state = get_vote_account(rpc_client.clone(), vote_pubkey).map_err(|err| {
-        eprintln!("❌ Failed to fetch vote account: {:?}", err);
-        err
-    })?;
     let multisig_account =
         get_multisig_account(rpc_client.clone(), multisig_pda).map_err(|err| {
             eprintln!("❌ Failed to fetch multisig account: {:?}", err);
             err
         })?;
-    if !(signer_pubkey == vote_state.node_pubkey
+    if !(signer_pubkey == identity_pubkey
         || signer_pubkey == multisig_account.block_builder_authority)
     {
         eprintln!(
             "❌ Unauthorized Signer! Expected: Validator({}) or BlockBuilder({}), Found: {}",
-            vote_state.node_pubkey, multisig_account.block_builder_authority, signer_pubkey
+            identity_pubkey, multisig_account.block_builder_authority, signer_pubkey
         );
         return Err("Unauthorized signer".into());
     }
-    if signer_pubkey == vote_state.node_pubkey {
+    if signer_pubkey == identity_pubkey {
         if let Some(new_commission) = commission_bps {
             if new_commission == multisig_account.validator_commission_bps {
                 eprintln!("❌ No transaction required, commission value is unchanged.");
@@ -248,7 +240,7 @@ fn process_update_commission(
         },
         UpdateMultiSigCommissionAccounts {
             config: config_pda,
-            validator_vote_account: vote_pubkey,
+            validator_identity_account: identity_pubkey,
             multisig_account: multisig_pda,
             signer: signer_pubkey,
         },
@@ -262,10 +254,10 @@ fn process_close(
     args: ClosePdaArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let signer_pubkey = kp.pubkey();
-    let vote_pubkey = args.vote_pubkey;
+    let identity_pubkey = args.identity_pubkey;
 
     let (config_pda, _) = derive_config_account_address(&multisig::id());
-    let (multisig_pda, bump) = derive_multisig_account_address(&multisig::id(), &vote_pubkey);
+    let (multisig_pda, bump) = derive_multisig_account_address(&multisig::id(), &identity_pubkey);
 
     let multisig_account =
         get_multisig_account(rpc_client.clone(), multisig_pda).map_err(|err| {
@@ -283,8 +275,8 @@ fn process_close(
     println!("📌 Derived Multisig PDA: {} (Bump: {})", multisig_pda, bump);
     println!(
         "{} {}\n{} {}",
-        "🏦 Vote Pubkey:".blue(),
-        vote_pubkey,
+        "🏦 Identity Pubkey:".blue(),
+        identity_pubkey,
         "🔗 Signer:".cyan(),
         signer_pubkey
     );
@@ -293,7 +285,7 @@ fn process_close(
         CloseMultiSigAccountArgs {},
         CloseMultiSigAccounts {
             config: config_pda,
-            validator_vote_account: vote_pubkey,
+            validator_identity_account: identity_pubkey,
             multisig_account: multisig_pda,
             signer: signer_pubkey,
         },
@@ -305,9 +297,9 @@ fn process_show(
     rpc_client: Arc<RpcClient>,
     args: ShowPdaArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let vote_pubkey = args.vote_pubkey;
+    let identity_pubkey = args.identity_pubkey;
 
-    let (multisig_pda, _) = derive_multisig_account_address(&multisig::id(), &vote_pubkey);
+    let (multisig_pda, _) = derive_multisig_account_address(&multisig::id(), &identity_pubkey);
 
     let multisig_account =
         get_multisig_account(rpc_client.clone(), multisig_pda).map_err(|err| {

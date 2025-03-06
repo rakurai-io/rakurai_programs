@@ -76,13 +76,14 @@ Initializes a new multisig PDA (Program Derived Address) account.
 #### Usage
 
 ```sh
-rakurai-multisig init-pda --commission_bps <VALUE> --vote_pubkey <PUBKEY>
+rakurai-multisig init-pda --commission_bps <VALUE> --identity_pubkey <PUBKEY>
 ```
 
 #### Options
 
 - `-c, --commission_bps <VALUE>`: Validator commission percentage in base points.
 - `-v, --vote_pubkey <PUBKEY>`: Validator vote account pubkey.
+- `-i, --identity_pubkey <PUBKEY>`: Validator identity account pubkey.
 
 #### Example
 
@@ -106,12 +107,12 @@ rakurai-multisig scheduler-control [OPTIONS]
 #### Options
 
 - `-e, --disable_scheduler`: Flag to disable the scheduler (default: enable).
-- `-v, --vote_pubkey <PUBKEY>`: Validator vote account pubkey.
+- `-i, --identity_pubkey <PUBKEY>`: Validator identity account pubkey.
 
 #### Example
 
 ```sh
-rakurai-multisig scheduler-control -e -v <PUBKEY>
+rakurai-multisig scheduler-control -e iv <PUBKEY>
 ```
 
 ---
@@ -130,12 +131,12 @@ rakurai-multisig update-commission [OPTIONS]
 #### Options
 
 - `-c, --commission_bps <VALUE>`: New commission value in base points (optional, if omitted no change is made).
-- `-v, --vote_pubkey <PUBKEY>`: Validator vote account pubkey.
+- `-i, --identity_pubkey <PUBKEY>`: Validator identity account pubkey.
 
 #### Example
 
 ```sh
-rakurai-multisig update-commission -c 700 -v <PUBKEY>
+rakurai-multisig update-commission -c 700 -i <PUBKEY>
 ```
 
 ---
@@ -148,17 +149,17 @@ Closes the multisig account.
 #### Usage
 
 ```sh
-rakurai-multisig close --vote_pubkey <PUBKEY>
+rakurai-multisig close --identity_pubkey <PUBKEY>
 ```
 
 #### Options
 
-- `-v, --vote_pubkey <PUBKEY>`: Validator vote account pubkey.
+- `-i, --identity_pubkey <PUBKEY>`: Validator identity account pubkey.
 
 #### Example
 
 ```sh
-rakurai-multisig close -v <PUBKEY>
+rakurai-multisig close iv <PUBKEY>
 ```
 
 ---

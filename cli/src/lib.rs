@@ -98,8 +98,8 @@ pub fn display_multisig_account(multisig_account: MultiSigAccount) {
     println!(
         "   {} {:<10} {}",
         "🗳️".cyan(),
-        " Vote Pubkey:",
-        multisig_account.validator_vote_account.to_string()
+        " Identity Pubkey:",
+        multisig_account.validator_identity_pubkey.to_string()
     );
 
     println!("{}", "📜 Block Builder".bold().underline().blue());
