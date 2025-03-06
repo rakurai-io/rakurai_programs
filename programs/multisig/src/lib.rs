@@ -261,10 +261,19 @@ pub struct InitializeMultiSigAccount<'info> {
     pub signer: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
+
 #[derive(Accounts)]
 pub struct UpdateMultiSigApproval<'info> {
     pub config: Account<'info, Config>,
-    #[account(mut,rent_exempt = enforce,)]
+    #[account(
+        mut,
+        seeds = [
+            MultiSigAccount::SEED,
+            validator_vote_account.key().as_ref(),
+        ],
+        bump = multisig_account.bump,
+        rent_exempt = enforce,
+    )]
     pub multisig_account: Account<'info, MultiSigAccount>,
     #[account(mut)]
     pub validator_vote_account: AccountInfo<'info>,
@@ -288,7 +297,15 @@ impl UpdateMultiSigApproval<'_> {
 #[derive(Accounts)]
 pub struct UpdateMultiSigCommission<'info> {
     pub config: Account<'info, Config>,
-    #[account(mut,rent_exempt = enforce,)]
+    #[account(
+        mut,
+        seeds = [
+            MultiSigAccount::SEED,
+            validator_vote_account.key().as_ref(),
+        ],
+        bump = multisig_account.bump,
+        rent_exempt = enforce,
+    )]
     pub multisig_account: Account<'info, MultiSigAccount>,
     #[account(mut)]
     pub validator_vote_account: AccountInfo<'info>,
@@ -312,7 +329,16 @@ impl UpdateMultiSigCommission<'_> {
 #[derive(Accounts)]
 pub struct CloseMultiSigAccount<'info> {
     pub config: Account<'info, Config>,
-    #[account(mut,rent_exempt = enforce,)]
+    #[account(
+        mut,
+        close = validator_vote_account,
+        seeds = [
+            MultiSigAccount::SEED,
+            validator_vote_account.key().as_ref(),
+        ],
+        bump = multisig_account.bump,
+        rent_exempt = enforce,
+    )]
     pub multisig_account: Account<'info, MultiSigAccount>,
     #[account(mut)]
     pub validator_vote_account: AccountInfo<'info>,

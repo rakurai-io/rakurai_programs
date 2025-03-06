@@ -1,5 +1,17 @@
+pub mod clap_args;
 use {
-    solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::EncodableKey},
+    anchor_lang::AccountDeserialize,
+    multisig::state::MultiSigAccount,
+    solana_client::rpc_client::RpcClient,
+    solana_sdk::{
+        instruction::Instruction,
+        message::Message,
+        pubkey::Pubkey,
+        signature::Keypair,
+        signer::{EncodableKey, Signer},
+        transaction::Transaction,
+        vote::state::{VoteState, VoteStateVersions},
+    },
     std::{str::FromStr, sync::Arc},
 };
 
@@ -39,4 +51,106 @@ pub fn parse_keypair(path: &str) -> Result<Arc<Keypair>, String> {
     Keypair::read_from_file(&expanded_path)
         .map(Arc::new)
         .map_err(|_| format!("Invalid keypair format in file: {}", expanded_path))
+}
+
+pub fn get_multisig_account(
+    rpc_client: Arc<RpcClient>,
+    multisig_pda: Pubkey,
+) -> Result<MultiSigAccount, Box<dyn std::error::Error>> {
+    let account_data = rpc_client
+        .get_account_data(&multisig_pda)
+        .expect("❌ Failed to fetch multisig account data");
+
+    let mut account_slice = account_data.as_slice();
+    match MultiSigAccount::try_deserialize(&mut account_slice) {
+        Ok(v) => Ok(v),
+        Err(err) => {
+            eprintln!("❌ Failed to deserialize multisig account: {:?}", err);
+            return Err(err.into());
+        }
+    }
+}
+
+pub fn display_config_account(multisig_account: MultiSigAccount) {
+    println!(
+        "🗳️ Validator Vote Account:        {:?}",
+        multisig_account.validator_vote_account
+    );
+    println!(
+        "💰 Validator Commission BPS:      {:?}",
+        multisig_account.validator_commission_bps
+    );
+    println!(
+        "🔑 Validator Authority:           {:?}",
+        multisig_account.validator_authority
+    );
+    println!("📜 Multisig Config Account Info:");
+    println!("----------------------------------");
+    println!(
+        "🔑 Block Builder Authority:       {:?}",
+        multisig_account.block_builder_authority
+    );
+    println!(
+        "🏦 Block Builder Commission Acc:  {:?}",
+        multisig_account.block_builder_commission_account
+    );
+    println!(
+        "💰 Block Builder Commission BPS:  {:?}",
+        multisig_account.block_builder_commission_bps
+    );
+    println!(
+        "✅ Is Enabled:                    {:?}",
+        multisig_account.is_enabled
+    );
+    println!(
+        "📝 Proposer:                      {:?}",
+        multisig_account.proposer
+    );
+    println!("----------------------------------");
+}
+
+pub fn get_vote_account(
+    rpc_client: Arc<RpcClient>,
+    vote_pubkey: Pubkey,
+) -> Result<VoteState, Box<dyn std::error::Error>> {
+    let account_info = match rpc_client.get_account(&vote_pubkey) {
+        Ok(info) => info,
+        Err(err) => {
+            eprintln!("❌ Failed to fetch vote account info: {:?}", err);
+            return Err(err.into());
+        }
+    };
+    match bincode::deserialize::<VoteStateVersions>(&account_info.data) {
+        Ok(v) => Ok(v.convert_to_current()),
+        Err(err) => {
+            eprintln!("❌ Failed to deserialize vote account state: {:?}", err);
+            return Err(err.into());
+        }
+    }
+}
+
+pub fn sign_and_send_transaction(
+    rpc_client: Arc<RpcClient>,
+    instruction: Instruction,
+    signer: &Keypair,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match rpc_client.get_latest_blockhash() {
+        Ok(hash) => {
+            let transaction = Transaction::new(
+                &[&signer],
+                Message::new(&[instruction], Some(&signer.pubkey())),
+                hash,
+            );
+            match rpc_client.send_and_confirm_transaction(&transaction) {
+                Ok(sig) => {
+                    println!("✅ Transaction Confirmed \n🔗 Txn Signature: {:?}", sig);
+                    Ok(())
+                }
+                Err(err) => Err(err.into()),
+            }
+        }
+        Err(err) => {
+            return Err(err.into());
+        }
+    }
 }
