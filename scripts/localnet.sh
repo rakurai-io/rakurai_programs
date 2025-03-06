@@ -11,7 +11,7 @@ RPC_URL="http://127.0.0.1:8899"
 AUTHORITY_KEYPAIR_FILE="rakurai_multisig_authority.json"
 
 # Generate authority keypair
-solana-keygen new --silent --no-bip39-passphrase --force --outfile "$AUTHORITY_KEYPAIR_FILE"
+solana-keygen new --silent --no-bip39-passphrase --outfile "$AUTHORITY_KEYPAIR_FILE"
 AUTHORITY_KEYPAIR_PUBKEY=$(solana-keygen pubkey "$AUTHORITY_KEYPAIR_FILE")
 
 echo "🔹 Using Authority Pubkey: $AUTHORITY_KEYPAIR_PUBKEY"
@@ -29,11 +29,10 @@ anchor deploy --provider.cluster "$RPC_URL" --provider.wallet "$AUTHORITY_KEYPAI
 
 # Build CLI
 echo "🛠️ Building CLI..."
-cd /home/ubuntu/rakurai_jito_private/rakurai_programs/cli
-cargo install --path .
+cargo install --path cli --bin rakurai-multisig
 
 echo "🔑 Initializing Multisig Config..."
-rakurai-multisig init-config --commission_bps 500 --authority $AUTHORITY_KEYPAIR_PUBKEY -r "$RPC_URL" -k "./$AUTHORITY_KEYPAIR_FILE"
+rakurai-multisig init-config --commission_bps 500 --authority $AUTHORITY_KEYPAIR_PUBKEY -r "$RPC_URL" -k "$AUTHORITY_KEYPAIR_FILE"
 
 echo "✅ Setup complete!"
-rm "$AUTHORITY_KEYPAIR_FILE"
+# rm "$AUTHORITY_KEYPAIR_FILE"
