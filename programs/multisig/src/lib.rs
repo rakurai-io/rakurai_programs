@@ -179,7 +179,7 @@ pub mod multi_sig {
 
         let amount = MultiSigAccount::claim_expired(
             multisig_account.to_account_info(),
-            ctx.accounts.validator_vote_account.to_account_info(),
+            ctx.accounts.validator_identity_account.to_account_info(),
         )?;
         emit!(MultiSigAccountClosedEvent {
             multisig_account: multisig_account.key(),
@@ -252,7 +252,7 @@ pub struct InitializeMultiSigAccount<'info> {
         init,
         seeds = [
             MultiSigAccount::SEED,
-            validator_vote_account.key().as_ref(),
+            validator_identity_account.key().as_ref(),
         ],
         bump,
         payer = signer,
@@ -261,6 +261,7 @@ pub struct InitializeMultiSigAccount<'info> {
     )]
     pub multisig_account: Account<'info, MultiSigAccount>,
     pub validator_vote_account: AccountInfo<'info>,
+    pub validator_identity_account: AccountInfo<'info>,
     #[account(mut)]
     pub signer: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -273,14 +274,14 @@ pub struct UpdateMultiSigApproval<'info> {
         mut,
         seeds = [
             MultiSigAccount::SEED,
-            validator_vote_account.key().as_ref(),
+            validator_identity_account.key().as_ref(),
         ],
         bump = multisig_account.bump,
         rent_exempt = enforce,
     )]
     pub multisig_account: Account<'info, MultiSigAccount>,
     #[account(mut)]
-    pub validator_vote_account: AccountInfo<'info>,
+    pub validator_identity_account: AccountInfo<'info>,
     #[account(mut)]
     pub signer: Signer<'info>,
 }
@@ -305,14 +306,14 @@ pub struct UpdateMultiSigCommission<'info> {
         mut,
         seeds = [
             MultiSigAccount::SEED,
-            validator_vote_account.key().as_ref(),
+            validator_identity_account.key().as_ref(),
         ],
         bump = multisig_account.bump,
         rent_exempt = enforce,
     )]
     pub multisig_account: Account<'info, MultiSigAccount>,
     #[account(mut)]
-    pub validator_vote_account: AccountInfo<'info>,
+    pub validator_identity_account: AccountInfo<'info>,
     #[account(mut)]
     pub signer: Signer<'info>,
 }
@@ -335,17 +336,17 @@ pub struct CloseMultiSigAccount<'info> {
     pub config: Account<'info, Config>,
     #[account(
         mut,
-        close = validator_vote_account,
+        close = validator_identity_account,
         seeds = [
             MultiSigAccount::SEED,
-            validator_vote_account.key().as_ref(),
+            validator_identity_account.key().as_ref(),
         ],
         bump = multisig_account.bump,
         rent_exempt = enforce,
     )]
     pub multisig_account: Account<'info, MultiSigAccount>,
     #[account(mut)]
-    pub validator_vote_account: AccountInfo<'info>,
+    pub validator_identity_account: AccountInfo<'info>,
     #[account(mut)]
     pub signer: Signer<'info>,
 }
