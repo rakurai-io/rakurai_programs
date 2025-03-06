@@ -1,5 +1,5 @@
 use {
-    crate::ErrorCode::{AccountValidationFailure, ArithmeticError},
+    crate::ErrorCode::{AccountValidationFailure, ArithmeticError, MaxCommissionBpsExceeded},
     anchor_lang::prelude::*,
     std::mem::size_of,
 };
@@ -45,7 +45,7 @@ impl Config {
         }
 
         if self.block_builder_commission_bps > MAX_COMMISSION_BPS {
-            return Err(AccountValidationFailure.into());
+            return Err(MaxCommissionBpsExceeded.into());
         }
 
         Ok(())

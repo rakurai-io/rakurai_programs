@@ -153,8 +153,9 @@ pub mod multi_sig {
         if ctx.accounts.signer.key() == multisig_account.validator_authority.key() {
             if let Some(bps) = validator_commission_bps {
                 if bps > 10000 {
-                    multisig_account.validator_commission_bps = bps;
+                    return Err(ErrorCode::MaxCommissionBpsExceeded.into());
                 }
+                multisig_account.validator_commission_bps = bps;
             }
         } else {
             multisig_account.block_builder_commission_bps =
@@ -196,6 +197,9 @@ pub enum ErrorCode {
 
     #[msg("Encountered an arithmetic under/overflow error.")]
     ArithmeticError,
+
+    #[msg("Validator's commission basis points must be less than or equal to 10_000")]
+    MaxCommissionBpsExceeded,
 
     #[msg("Unauthorized signer.")]
     Unauthorized,
