@@ -31,7 +31,7 @@ pub struct RakuraiActivationAccount {
 const HEADER_SIZE: usize = 8;
 
 impl RakuraiActivationConfigAccount {
-    pub const SEED: &'static [u8] = b"RAKURAI_ACTIVATION_CONFIG_ACCOUNT";
+    pub const SEED: &'static [u8] = b"ACTIVATION_CONFIG_ACCOUNT";
     pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
 
     pub fn validate(&self) -> Result<()> {

@@ -80,7 +80,7 @@ pub struct MerkleRoot {
 const HEADER_SIZE: usize = 8;
 
 impl RewardDistributionConfigAccount {
-    pub const SEED: &'static [u8] = b"REWARD_DISTRIBUTION_CONFIG_ACCOUNT";
+    pub const SEED: &'static [u8] = b"RD_CONFIG_ACCOUNT";
     pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
 
     pub fn validate(&self) -> Result<()> {

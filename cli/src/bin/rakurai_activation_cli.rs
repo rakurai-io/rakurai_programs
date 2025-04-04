@@ -2,10 +2,11 @@ use {
     clap::Parser,
     colored::*,
     rakurai_activation::sdk::{
-        derive_config_account_address, derive_multisig_account_address,
+        derive_activation_account_address, derive_config_account_address,
         instruction::{
-            close_rakurai_activation_account_ix, initialize_ix, initialize_rakurai_activation_account_ix,
-            update_rakurai_activation_approval_ix, update_rakurai_activation_commission_ix, CloseRakuraiActivationAccountArgs,
+            close_rakurai_activation_account_ix, initialize_ix,
+            initialize_rakurai_activation_account_ix, update_rakurai_activation_approval_ix,
+            update_rakurai_activation_commission_ix, CloseRakuraiActivationAccountArgs,
             CloseRakuraiActivationAccounts, InitializeAccounts, InitializeArgs,
             InitializeRakuraiActivationAccountAccounts, InitializeRakuraiActivationAccountArgs,
             UpdateRakuraiActivationApprovalAccounts, UpdateRakuraiActivationApprovalArgs,
@@ -17,7 +18,7 @@ use {
             Cli, ClosePdaArgs, Commands, InitConfigArgs, InitPdaArgs, SchedulerControlArgs,
             ShowPdaArgs, UpdateCommissionArgs,
         },
-        display_multisig_account, get_multisig_account, get_vote_account,
+        display_activation_account, get_activation_account, get_vote_account,
         sign_and_send_transaction,
     },
     solana_rpc_client::rpc_client::RpcClient,
@@ -96,10 +97,13 @@ fn process_init_pda(
     }
 
     let (config_pda, _) = derive_config_account_address(&rakurai_activation::id());
-    let (multisig_pda, bump) =
-        derive_multisig_account_address(&rakurai_activation::id(), &vote_state.node_pubkey);
+    let (activation_pda, bump) =
+        derive_activation_account_address(&rakurai_activation::id(), &vote_state.node_pubkey);
 
-    println!("📌 Derived Multisig PDA: {} (Bump: {})", multisig_pda, bump);
+    println!(
+        "📌 Derived Activation PDA: {} (Bump: {})",
+        activation_pda, bump
+    );
     println!(
         "{} {}\n{} {}\n{} {}",
         "🚀 Validator commission:".green(),
@@ -121,7 +125,7 @@ fn process_init_pda(
             system_program: system_program::id(),
             validator_vote_account: vote_pubkey,
             validator_identity_account: vote_state.node_pubkey,
-            multisig_account: multisig_pda,
+            activation_account: activation_pda,
             signer: signer_pubkey,
         },
     );
@@ -140,20 +144,23 @@ fn process_scheduler_control(
     let identity_pubkey = args.identity_pubkey;
 
     let (config_pda, _) = derive_config_account_address(&rakurai_activation::id());
-    let (multisig_pda, bump) =
-        derive_multisig_account_address(&rakurai_activation::id(), &identity_pubkey);
-    let multisig_account = get_multisig_account(rpc_client.clone(), multisig_pda)?;
+    let (activation_pda, bump) =
+        derive_activation_account_address(&rakurai_activation::id(), &identity_pubkey);
+    let activation_account = get_activation_account(rpc_client.clone(), activation_pda)?;
     if !(identity_pubkey == signer_pubkey
-        || multisig_account.block_builder_authority == signer_pubkey)
+        || activation_account.block_builder_authority == signer_pubkey)
     {
         eprintln!(
             "❌ Unauthorized Signer! Expected: Validator({}) or BlockBuilder({}), Found: {}",
-            identity_pubkey, multisig_account.block_builder_authority, signer_pubkey
+            identity_pubkey, activation_account.block_builder_authority, signer_pubkey
         );
         return Err("Unauthorized signer".into());
     }
 
-    println!("📌 Derived Multisig PDA: {} (Bump: {})", multisig_pda, bump);
+    println!(
+        "📌 Derived Activation PDA: {} (Bump: {})",
+        activation_pda, bump
+    );
     println!(
         "{} {}\n{} {}\n{} {}",
         "🚀 Scheduler Enabled:".green(),
@@ -171,7 +178,7 @@ fn process_scheduler_control(
         UpdateRakuraiActivationApprovalAccounts {
             config: config_pda,
             validator_identity_account: identity_pubkey,
-            multisig_account: multisig_pda,
+            activation_account: activation_pda,
             signer: signer_pubkey,
         },
     );
@@ -188,9 +195,13 @@ fn process_update_commission(
     let identity_pubkey = args.identity_pubkey;
 
     let (config_pda, _) = derive_config_account_address(&rakurai_activation::id());
-    let (multisig_pda, bump) = derive_multisig_account_address(&rakurai_activation::id(), &identity_pubkey);
+    let (activation_pda, bump) =
+        derive_activation_account_address(&rakurai_activation::id(), &identity_pubkey);
 
-    println!("📌 Derived Multisig PDA: {} (Bump: {})", multisig_pda, bump);
+    println!(
+        "📌 Derived Activation PDA: {} (Bump: {})",
+        activation_pda, bump
+    );
     println!(
         "{} {}\n{} {}\n{} {}",
         "🚀 Commission BPS:".green(),
@@ -200,19 +211,19 @@ fn process_update_commission(
         "🔗 Signer:".cyan(),
         signer_pubkey
     );
-    let multisig_account = get_multisig_account(rpc_client.clone(), multisig_pda)?;
+    let activation_account = get_activation_account(rpc_client.clone(), activation_pda)?;
     if !(signer_pubkey == identity_pubkey
-        || signer_pubkey == multisig_account.block_builder_authority)
+        || signer_pubkey == activation_account.block_builder_authority)
     {
         eprintln!(
             "❌ Unauthorized Signer! Expected: Validator({}) or BlockBuilder({}), Found: {}",
-            identity_pubkey, multisig_account.block_builder_authority, signer_pubkey
+            identity_pubkey, activation_account.block_builder_authority, signer_pubkey
         );
         return Err("Unauthorized signer".into());
     }
     if signer_pubkey == identity_pubkey {
         if let Some(new_commission) = commission_bps {
-            if new_commission == multisig_account.validator_commission_bps {
+            if new_commission == activation_account.validator_commission_bps {
                 eprintln!("❌ No transaction required, commission value is unchanged.");
                 return Err("No update needed".into());
             }
@@ -220,7 +231,7 @@ fn process_update_commission(
             eprintln!("❌ No commission value provided for validator update.");
             return Err("Missing commission value".into());
         }
-    } else if signer_pubkey == multisig_account.block_builder_authority {
+    } else if signer_pubkey == activation_account.block_builder_authority {
         if commission_bps.is_some() {
             eprintln!("❌ Block Builder is not allowed to update commission.");
             return Err("Unauthorized update".into());
@@ -235,7 +246,7 @@ fn process_update_commission(
         UpdateRakuraiActivationCommissionAccounts {
             config: config_pda,
             validator_identity_account: identity_pubkey,
-            multisig_account: multisig_pda,
+            activation_account: activation_pda,
             signer: signer_pubkey,
         },
     );
@@ -251,18 +262,22 @@ fn process_close(
     let identity_pubkey = args.identity_pubkey;
 
     let (config_pda, _) = derive_config_account_address(&rakurai_activation::id());
-    let (multisig_pda, bump) = derive_multisig_account_address(&rakurai_activation::id(), &identity_pubkey);
+    let (activation_pda, bump) =
+        derive_activation_account_address(&rakurai_activation::id(), &identity_pubkey);
 
-    let multisig_account = get_multisig_account(rpc_client.clone(), multisig_pda)?;
-    if multisig_account.block_builder_authority != signer_pubkey {
+    let activation_account = get_activation_account(rpc_client.clone(), activation_pda)?;
+    if activation_account.block_builder_authority != signer_pubkey {
         eprintln!(
             "❌ Unauthorized Signer! Expected: BlockBuilder({}), Found: {}",
-            multisig_account.block_builder_authority, signer_pubkey
+            activation_account.block_builder_authority, signer_pubkey
         );
         return Err("Unauthorized signer".into());
     }
 
-    println!("📌 Derived Multisig PDA: {} (Bump: {})", multisig_pda, bump);
+    println!(
+        "📌 Derived Activation PDA: {} (Bump: {})",
+        activation_pda, bump
+    );
     println!(
         "{} {}\n{} {}",
         "🏦 Identity Pubkey:".blue(),
@@ -276,7 +291,7 @@ fn process_close(
         CloseRakuraiActivationAccounts {
             config: config_pda,
             validator_identity_account: identity_pubkey,
-            multisig_account: multisig_pda,
+            activation_account: activation_pda,
             signer: signer_pubkey,
         },
     );
@@ -289,11 +304,12 @@ fn process_show(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let identity_pubkey = args.identity_pubkey;
 
-    let (multisig_pda, _) = derive_multisig_account_address(&rakurai_activation::id(), &identity_pubkey);
+    let (activation_pda, _) =
+        derive_activation_account_address(&rakurai_activation::id(), &identity_pubkey);
 
-    let multisig_account = get_multisig_account(rpc_client.clone(), multisig_pda)?;
-    println!("📌 PDA: {}", multisig_pda);
-    display_multisig_account(multisig_account);
+    let activation_account = get_activation_account(rpc_client.clone(), activation_pda)?;
+    println!("📌 PDA: {}", activation_pda);
+    display_activation_account(activation_account);
     Ok(())
 }
 

@@ -1,8 +1,8 @@
-# Rakurai Multisig CLI
+# Rakurai Activation CLI
 
 ## Overview
 
-The **Rakurai Multisig CLI** provides a powerful command-line interface to manage a multisig setup for validator operators. It allows users to:
+The **Rakurai Activation CLI** provides a powerful command-line interface to manage a activation setup for validator operators. It allows users to:
 - **Initialize**
 - **Update validator commissions**
 - **Enable/disable the scheduler**
@@ -22,7 +22,7 @@ cargo install --path .
 export PATH="$HOME/.cargo/bin:$PATH"
 
 # To check if the CLI is installed correctly:
-which rakurai-multisig
+which rakurai-activation
 ```
 
 ## Usage
@@ -30,7 +30,7 @@ which rakurai-multisig
 Run the CLI tool with the following command:
 
 ```sh
-rakurai-multisig [OPTIONS] <COMMAND>
+rakurai-activation [OPTIONS] <COMMAND>
 ```
 
 ### Global Options
@@ -50,20 +50,20 @@ Initializes the block builder config account.
 #### Usage
 
 ```sh
-rakurai-multisig init-config [OPTIONS]
+rakurai-activation init-config [OPTIONS]
 ```
 
 #### Options
 
 - `-c, --commission_bps <VALUE>`: Block Builder commission percentage in base points (0-10,000).
 - `-a, --commission_account <PUBKEY>`: Block builder commission account pubkey.
-- `-b, --authority <PUBKEY>`: Block builder multisig authority pubkey.
+- `-b, --authority <PUBKEY>`: Block builder activation authority pubkey.
 - `-x, --config_authority <PUBKEY>`: Config account authority pubkey.
 
 #### Example
 
 ```sh
-rakurai-multisig init-config -c 500 -a <PUBKEY> -b <PUBKEY> -x <PUBKEY>
+rakurai-activation init-config -c 500 -a <PUBKEY> -b <PUBKEY> -x <PUBKEY>
 ```
 
 ---
@@ -71,12 +71,12 @@ rakurai-multisig init-config -c 500 -a <PUBKEY> -b <PUBKEY> -x <PUBKEY>
 ### 2. `init-pda`
 
 #### Description
-Initializes a new multisig PDA (Program Derived Address) account.
+Initializes a new activation PDA (Program Derived Address) account.
 
 #### Usage
 
 ```sh
-rakurai-multisig init-pda --commission_bps <VALUE> --identity_pubkey <PUBKEY>
+rakurai-activation init-pda --commission_bps <VALUE> --identity_pubkey <PUBKEY>
 ```
 
 #### Options
@@ -88,7 +88,7 @@ rakurai-multisig init-pda --commission_bps <VALUE> --identity_pubkey <PUBKEY>
 #### Example
 
 ```sh
-rakurai-multisig init-pda -c 500 -v <PUBKEY>
+rakurai-activation init-pda -c 500 -v <PUBKEY>
 ```
 
 ---
@@ -101,7 +101,7 @@ Enables or disables the scheduler.
 #### Usage
 
 ```sh
-rakurai-multisig scheduler-control [OPTIONS]
+rakurai-activation scheduler-control [OPTIONS]
 ```
 
 #### Options
@@ -112,7 +112,7 @@ rakurai-multisig scheduler-control [OPTIONS]
 #### Example
 
 ```sh
-rakurai-multisig scheduler-control -e iv <PUBKEY>
+rakurai-activation scheduler-control -e iv <PUBKEY>
 ```
 
 ---
@@ -125,7 +125,7 @@ Updates the validator commission.
 #### Usage
 
 ```sh
-rakurai-multisig update-commission [OPTIONS]
+rakurai-activation update-commission [OPTIONS]
 ```
 
 #### Options
@@ -136,7 +136,7 @@ rakurai-multisig update-commission [OPTIONS]
 #### Example
 
 ```sh
-rakurai-multisig update-commission -c 700 -i <PUBKEY>
+rakurai-activation update-commission -c 700 -i <PUBKEY>
 ```
 
 ---
@@ -144,12 +144,12 @@ rakurai-multisig update-commission -c 700 -i <PUBKEY>
 ### 5. `close`
 
 #### Description
-Closes the multisig account.
+Closes the activation account.
 
 #### Usage
 
 ```sh
-rakurai-multisig close --identity_pubkey <PUBKEY>
+rakurai-activation close --identity_pubkey <PUBKEY>
 ```
 
 #### Options
@@ -159,7 +159,7 @@ rakurai-multisig close --identity_pubkey <PUBKEY>
 #### Example
 
 ```sh
-rakurai-multisig close iv <PUBKEY>
+rakurai-activation close iv <PUBKEY>
 ```
 
 ---

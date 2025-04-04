@@ -8,7 +8,7 @@ fi
 VOTE_ACCOUNT_PUBKEY=$(solana-keygen pubkey $1)
 IDENTITY_KEYPAIR=$2
 RPC_URL="http://127.0.0.1:8899"
-AUTHORITY_KEYPAIR_FILE="rakurai_multisig_authority.json"
+AUTHORITY_KEYPAIR_FILE="rakurai_activation_authority.json"
 
 # Generate authority keypair
 solana-keygen new --silent --no-bip39-passphrase --outfile "$AUTHORITY_KEYPAIR_FILE"
@@ -20,19 +20,19 @@ echo "💰 Airdropping SOL to authority..."
 solana airdrop 20 "$AUTHORITY_KEYPAIR_PUBKEY" --url "$RPC_URL"
 
 echo "🚀 Building Anchor Program..."
-anchor build --program-name multisig
+anchor build --program-name rakurai_activation
 anchor keys sync
-anchor build --program-name multisig
+anchor build --program-name rakurai_activation
 
 echo "🚀 Deploying Anchor Program..."
-anchor deploy --provider.cluster "$RPC_URL" --provider.wallet "$AUTHORITY_KEYPAIR_FILE"  --program-name multisig
+anchor deploy --provider.cluster "$RPC_URL" --provider.wallet "$AUTHORITY_KEYPAIR_FILE"  --program-name rakurai_activation
 
 # Build CLI
 echo "🛠️ Building CLI..."
-cargo install --path cli --bin rakurai-multisig
+cargo install --path cli --bin rakurai-activation
 
-echo "🔑 Initializing Multisig Config..."
-rakurai-multisig init-config --commission_bps 500 --authority $AUTHORITY_KEYPAIR_PUBKEY -r "$RPC_URL" -k "$AUTHORITY_KEYPAIR_FILE"
+echo "🔑 Initializing Activation Config Account..."
+rakurai-activation init-config --commission_bps 500 --authority $AUTHORITY_KEYPAIR_PUBKEY -r "$RPC_URL" -k "$AUTHORITY_KEYPAIR_FILE"
 
 echo "✅ Setup complete!"
 # rm "$AUTHORITY_KEYPAIR_FILE"

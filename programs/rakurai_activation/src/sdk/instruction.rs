@@ -85,7 +85,7 @@ pub struct InitializeRakuraiActivationAccountAccounts {
     pub config: Pubkey,
     pub signer: Pubkey,
     pub system_program: Pubkey,
-    pub multisig_account: Pubkey,
+    pub activation_account: Pubkey,
     pub validator_vote_account: Pubkey,
     pub validator_identity_account: Pubkey,
 }
@@ -101,7 +101,7 @@ pub fn initialize_rakurai_activation_account_ix(
 
     let InitializeRakuraiActivationAccountAccounts {
         config,
-        multisig_account,
+        activation_account,
         system_program,
         validator_vote_account,
         validator_identity_account,
@@ -119,7 +119,7 @@ pub fn initialize_rakurai_activation_account_ix(
             config,
             signer,
             system_program,
-            multisig_account,
+            activation_account,
             validator_vote_account,
             validator_identity_account,
         }
@@ -132,7 +132,7 @@ pub struct UpdateRakuraiActivationApprovalArgs {
 }
 pub struct UpdateRakuraiActivationApprovalAccounts {
     pub config: Pubkey,
-    pub multisig_account: Pubkey,
+    pub activation_account: Pubkey,
     pub validator_identity_account: Pubkey,
     pub signer: Pubkey,
 }
@@ -145,7 +145,7 @@ pub fn update_rakurai_activation_approval_ix(
 
     let UpdateRakuraiActivationApprovalAccounts {
         config,
-        multisig_account,
+        activation_account,
         validator_identity_account,
         signer,
     } = accounts;
@@ -156,7 +156,7 @@ pub fn update_rakurai_activation_approval_ix(
         accounts: crate::accounts::UpdateRakuraiActivationApproval {
             config,
             validator_identity_account,
-            multisig_account,
+            activation_account,
             signer,
         }
         .to_account_metas(None),
@@ -168,7 +168,7 @@ pub struct UpdateRakuraiActivationCommissionArgs {
 }
 pub struct UpdateRakuraiActivationCommissionAccounts {
     pub config: Pubkey,
-    pub multisig_account: Pubkey,
+    pub activation_account: Pubkey,
     pub validator_identity_account: Pubkey,
     pub signer: Pubkey,
 }
@@ -183,7 +183,7 @@ pub fn update_rakurai_activation_commission_ix(
 
     let UpdateRakuraiActivationCommissionAccounts {
         config,
-        multisig_account,
+        activation_account,
         validator_identity_account,
         signer,
     } = accounts;
@@ -197,7 +197,7 @@ pub fn update_rakurai_activation_commission_ix(
         accounts: crate::accounts::UpdateRakuraiActivationCommission {
             config,
             validator_identity_account,
-            multisig_account,
+            activation_account,
             signer,
         }
         .to_account_metas(None),
@@ -207,7 +207,7 @@ pub fn update_rakurai_activation_commission_ix(
 pub struct CloseRakuraiActivationAccountArgs;
 pub struct CloseRakuraiActivationAccounts {
     pub config: Pubkey,
-    pub multisig_account: Pubkey,
+    pub activation_account: Pubkey,
     pub validator_identity_account: Pubkey,
     pub signer: Pubkey,
 }
@@ -218,7 +218,7 @@ pub fn close_rakurai_activation_account_ix(
 ) -> Instruction {
     let CloseRakuraiActivationAccounts {
         config,
-        multisig_account,
+        activation_account,
         validator_identity_account,
         signer,
     } = accounts;
@@ -229,7 +229,7 @@ pub fn close_rakurai_activation_account_ix(
         accounts: crate::accounts::CloseRakuraiActivationAccount {
             config,
             validator_identity_account,
-            multisig_account,
+            activation_account,
             signer,
         }
         .to_account_metas(None),

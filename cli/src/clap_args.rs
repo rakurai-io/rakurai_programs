@@ -9,7 +9,7 @@ use {
 #[command(
     author,
     version,
-    about = "A comprehensive CLI tool for managing rakurai multisig account",
+    about = "A comprehensive CLI tool for managing rakurai Activation account",
     arg_required_else_help = true,
     color = clap::ColorChoice::Always
 )]
@@ -32,7 +32,7 @@ pub enum Commands {
     #[command(hide = true)]
     InitConfig(InitConfigArgs),
 
-    /// Initialize a new multisig account
+    /// Initialize a new Activation account
     InitPda(InitPdaArgs),
 
     /// Enable or disable the scheduler
@@ -41,10 +41,10 @@ pub enum Commands {
     /// Update the validator commission
     UpdateCommission(UpdateCommissionArgs),
 
-    /// Close the multisig account
+    /// Close the Activation account
     Close(ClosePdaArgs),
 
-    /// Display multisig account info
+    /// Display Activation account info
     Show(ShowPdaArgs),
 }
 
@@ -60,7 +60,7 @@ pub struct InitConfigArgs {
     pub block_builder_commission_account: Option<Pubkey>,
 
     /// Block builder authority pubkey
-    #[arg(short = 'b', long = "authority", value_parser = parse_pubkey, help = "Block builder multisig authority pubkey")]
+    #[arg(short = 'b', long = "authority", value_parser = parse_pubkey, help = "Block builder activation authority pubkey")]
     pub block_builder_authority: Option<Pubkey>,
 
     /// Config authority pubkey
