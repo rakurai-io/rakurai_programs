@@ -73,7 +73,8 @@ pub mod reward_distribution {
             return Err(Unauthorized.into());
         }
 
-        let validator_vote_state = VoteState::deserialize(&ctx.accounts.validator_vote_account)?;
+        let validator_vote_state =
+            VoteState::deserialize(&ctx.accounts.validator_vote_account).unwrap();
         if &validator_vote_state.node_pubkey != ctx.accounts.signer.key {
             return Err(Unauthorized.into());
         }
