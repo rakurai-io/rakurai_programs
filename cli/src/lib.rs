@@ -2,7 +2,7 @@ pub mod clap_args;
 use {
     anchor_lang::AccountDeserialize,
     colored::*,
-    multisig::state::MultiSigAccount,
+    rakurai_activation::state::RakuraiActivationAccount,
     solana_rpc_client::rpc_client::RpcClient,
     solana_sdk::{
         instruction::Instruction,
@@ -57,13 +57,13 @@ pub fn parse_keypair(path: &str) -> Result<Arc<Keypair>, String> {
 pub fn get_multisig_account(
     rpc_client: Arc<RpcClient>,
     multisig_pda: Pubkey,
-) -> Result<MultiSigAccount, Box<dyn std::error::Error>> {
+) -> Result<RakuraiActivationAccount, Box<dyn std::error::Error>> {
     let account_data = rpc_client.get_account_data(&multisig_pda)?;
     let mut account_slice = account_data.as_slice();
-    MultiSigAccount::try_deserialize(&mut account_slice).map_err(Into::into)
+    RakuraiActivationAccount::try_deserialize(&mut account_slice).map_err(Into::into)
 }
 
-pub fn display_multisig_account(multisig_account: MultiSigAccount) {
+pub fn display_multisig_account(multisig_account: RakuraiActivationAccount) {
     println!("{}", "🗳️ Validator".bold().underline().blue());
     println!(
         "   {} {:<10} {}",

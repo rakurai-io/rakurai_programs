@@ -15,8 +15,8 @@ serde_json = "1.0.140"
 shellexpand = "3.1.0"
 solana-rpc-client = "=2.1.11"
 solana-sdk = "=2.1.11"
-multisig = { path = "../programs/multisig" }
+rakurai_activation = { path = "../programs/rakurai_activation" }
 
 [[bin]]
-name = "rakurai-multisig"
-path = "src/bin/multisig_cli.rs"
+name = "rakurai-activation"
+path = "src/bin/rakurai_activation_cli.rs"

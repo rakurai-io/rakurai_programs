@@ -6,7 +6,7 @@ use {
 
 #[account]
 #[derive(Default)]
-pub struct Config {
+pub struct RakuraiActivationConfigAccount {
     pub authority: Pubkey,
     pub block_builder_authority: Pubkey,
     pub block_builder_commission_bps: u16,
@@ -16,7 +16,7 @@ pub struct Config {
 
 #[account]
 #[derive(Default)]
-pub struct MultiSigAccount {
+pub struct RakuraiActivationAccount {
     pub is_enabled: bool,
     pub proposer: Option<Pubkey>,
     pub validator_authority: Pubkey,
@@ -30,8 +30,8 @@ pub struct MultiSigAccount {
 
 const HEADER_SIZE: usize = 8;
 
-impl Config {
-    pub const SEED: &'static [u8] = b"CONFIG_ACCOUNT";
+impl RakuraiActivationConfigAccount {
+    pub const SEED: &'static [u8] = b"RAKURAI_ACTIVATION_CONFIG_ACCOUNT";
     pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
 
     pub fn validate(&self) -> Result<()> {
@@ -52,8 +52,8 @@ impl Config {
     }
 }
 
-impl MultiSigAccount {
-    pub const SEED: &'static [u8] = b"MULTISIG_ACCOUNT";
+impl RakuraiActivationAccount {
+    pub const SEED: &'static [u8] = b"RAKURAI_ACTIVATION_ACCOUNT";
 
     pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
 

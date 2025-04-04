@@ -3,14 +3,14 @@ use anchor_lang::prelude::*;
 use {default_env::default_env, solana_security_txt::security_txt};
 
 use crate::{
-    state::{Config, MultiSigAccount},
+    state::{RakuraiActivationConfigAccount, RakuraiActivationAccount},
     ErrorCode::Unauthorized,
 };
 
 #[cfg(not(feature = "no-entrypoint"))]
 security_txt! {
     // Required fields
-    name: "Rakurai MultiSig Program",
+    name: "Rakurai RakuraiActivation Program",
     project_url: "https://rakurai.io/",
     contacts: "https://rakurai.io/company",
     policy: "https://rakurai.io/faq",
@@ -31,7 +31,7 @@ pub mod multi_sig {
 
     use super::*;
 
-    /// Initialize a singleton instance of the [Config] account.
+    /// Initialize a singleton instance of the [RakuraiActivationConfigAccount] account.
     pub fn initialize(
         ctx: Context<Initialize>,
         authority: Pubkey,
@@ -51,8 +51,8 @@ pub mod multi_sig {
         Ok(())
     }
 
-    /// Update config fields. Only the [Config] authority can invoke this.
-    pub fn update_config(ctx: Context<UpdateConfig>, new_config: Config) -> Result<()> {
+    /// Update config fields. Only the [RakuraiActivationConfigAccount] authority can invoke this.
+    pub fn update_config(ctx: Context<UpdateConfig>, new_config: RakuraiActivationConfigAccount) -> Result<()> {
         UpdateConfig::auth(&ctx)?;
 
         let config = &mut ctx.accounts.config;
@@ -69,10 +69,10 @@ pub mod multi_sig {
         Ok(())
     }
 
-    /// Initialize a new [MultiSigAccount] associated with the given validator vote key
+    /// Initialize a new [RakuraiActivationAccount] associated with the given validator vote key
     /// and current epoch.
-    pub fn initialize_multi_sig_account(
-        ctx: Context<InitializeMultiSigAccount>,
+    pub fn initialize_rakurai_activation_account(
+        ctx: Context<InitializeRakuraiActivationAccount>,
         validator_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
@@ -99,18 +99,18 @@ pub mod multi_sig {
         multisig_account.bump = bump;
         multisig_account.validate()?;
 
-        emit!(MultiSigAccountInitializedEvent {
+        emit!(RakuraiActivationAccountInitializedEvent {
             multisig_account: multisig_account.key(),
         });
 
         Ok(())
     }
 
-    pub fn update_multi_sig_approval(
-        ctx: Context<UpdateMultiSigApproval>,
+    pub fn update_rakurai_activation_approval(
+        ctx: Context<UpdateRakuraiActivationApproval>,
         grant_approval: bool,
     ) -> Result<()> {
-        UpdateMultiSigApproval::auth(&ctx)?;
+        UpdateRakuraiActivationApproval::auth(&ctx)?;
         let msg;
 
         let multisig_account = &mut ctx.accounts.multisig_account;
@@ -133,7 +133,7 @@ pub mod multi_sig {
 
         multisig_account.validate()?;
 
-        emit!(UpdateMultiSigApprovalEvent {
+        emit!(UpdateRakuraiActivationApprovalEvent {
             multisig_account: multisig_account.key(),
             signer: ctx.accounts.signer.key(),
             msg
@@ -142,11 +142,11 @@ pub mod multi_sig {
         Ok(())
     }
 
-    pub fn update_multi_sig_commission(
-        ctx: Context<UpdateMultiSigCommission>,
+    pub fn update_rakurai_activation_commission(
+        ctx: Context<UpdateRakuraiActivationCommission>,
         validator_commission_bps: Option<u16>,
     ) -> Result<()> {
-        UpdateMultiSigCommission::auth(&ctx)?;
+        UpdateRakuraiActivationCommission::auth(&ctx)?;
 
         let multisig_account = &mut ctx.accounts.multisig_account;
 
@@ -163,7 +163,7 @@ pub mod multi_sig {
             multisig_account.block_builder_commission_account =
                 ctx.accounts.config.block_builder_commission_account;
         }
-        emit!(UpdateMultiSigCommissionEvent {
+        emit!(UpdateRakuraiActivationCommissionEvent {
             multisig_account: multisig_account.key(),
             operator_commission: multisig_account.validator_commission_bps,
             block_builder_commission: multisig_account.block_builder_commission_bps,
@@ -172,16 +172,16 @@ pub mod multi_sig {
         Ok(())
     }
 
-    pub fn close_multi_sig_account(ctx: Context<CloseMultiSigAccount>) -> Result<()> {
-        CloseMultiSigAccount::auth(&ctx)?;
+    pub fn close_rakurai_activation_account(ctx: Context<CloseRakuraiActivationAccount>) -> Result<()> {
+        CloseRakuraiActivationAccount::auth(&ctx)?;
 
         let multisig_account = &mut ctx.accounts.multisig_account;
 
-        let amount = MultiSigAccount::claim_expired(
+        let amount = RakuraiActivationAccount::claim_expired(
             multisig_account.to_account_info(),
             ctx.accounts.validator_identity_account.to_account_info(),
         )?;
-        emit!(MultiSigAccountClosedEvent {
+        emit!(RakuraiActivationAccountClosedEvent {
             multisig_account: multisig_account.key(),
             amount_claimed: amount,
         });
@@ -209,13 +209,13 @@ pub enum ErrorCode {
 pub struct Initialize<'info> {
     #[account(
         init,
-        seeds = [Config::SEED],
+        seeds = [RakuraiActivationConfigAccount::SEED],
         bump,
         payer = initializer,
-        space = Config::SIZE,
+        space = RakuraiActivationConfigAccount::SIZE,
         rent_exempt = enforce
     )]
-    pub config: Account<'info, Config>,
+    pub config: Account<'info, RakuraiActivationConfigAccount>,
 
     pub system_program: Program<'info, System>,
 
@@ -226,7 +226,7 @@ pub struct Initialize<'info> {
 #[derive(Accounts)]
 pub struct UpdateConfig<'info> {
     #[account(mut, rent_exempt = enforce)]
-    pub config: Account<'info, Config>,
+    pub config: Account<'info, RakuraiActivationConfigAccount>,
     #[account(mut)]
     pub authority: Signer<'info>,
 }
@@ -246,20 +246,20 @@ impl UpdateConfig<'_> {
     _validator_commission_bps: u16,
     _bump: u8
 )]
-pub struct InitializeMultiSigAccount<'info> {
-    pub config: Account<'info, Config>,
+pub struct InitializeRakuraiActivationAccount<'info> {
+    pub config: Account<'info, RakuraiActivationConfigAccount>,
     #[account(
         init,
         seeds = [
-            MultiSigAccount::SEED,
+            RakuraiActivationAccount::SEED,
             validator_identity_account.key().as_ref(),
         ],
         bump,
         payer = signer,
-        space = MultiSigAccount::SIZE,
+        space = RakuraiActivationAccount::SIZE,
         rent_exempt = enforce
     )]
-    pub multisig_account: Account<'info, MultiSigAccount>,
+    pub multisig_account: Account<'info, RakuraiActivationAccount>,
     pub validator_vote_account: AccountInfo<'info>,
     pub validator_identity_account: AccountInfo<'info>,
     #[account(mut)]
@@ -268,26 +268,26 @@ pub struct InitializeMultiSigAccount<'info> {
 }
 
 #[derive(Accounts)]
-pub struct UpdateMultiSigApproval<'info> {
-    pub config: Account<'info, Config>,
+pub struct UpdateRakuraiActivationApproval<'info> {
+    pub config: Account<'info, RakuraiActivationConfigAccount>,
     #[account(
         mut,
         seeds = [
-            MultiSigAccount::SEED,
+            RakuraiActivationAccount::SEED,
             validator_identity_account.key().as_ref(),
         ],
         bump = multisig_account.bump,
         rent_exempt = enforce,
     )]
-    pub multisig_account: Account<'info, MultiSigAccount>,
+    pub multisig_account: Account<'info, RakuraiActivationAccount>,
     #[account(mut)]
     pub validator_identity_account: AccountInfo<'info>,
     #[account(mut)]
     pub signer: Signer<'info>,
 }
 
-impl UpdateMultiSigApproval<'_> {
-    fn auth(ctx: &Context<UpdateMultiSigApproval>) -> Result<()> {
+impl UpdateRakuraiActivationApproval<'_> {
+    fn auth(ctx: &Context<UpdateRakuraiActivationApproval>) -> Result<()> {
         if ctx.accounts.signer.key() == ctx.accounts.multisig_account.validator_authority.key()
             || ctx.accounts.signer.key()
                 == ctx.accounts.multisig_account.block_builder_authority.key()
@@ -300,26 +300,26 @@ impl UpdateMultiSigApproval<'_> {
 }
 
 #[derive(Accounts)]
-pub struct UpdateMultiSigCommission<'info> {
-    pub config: Account<'info, Config>,
+pub struct UpdateRakuraiActivationCommission<'info> {
+    pub config: Account<'info, RakuraiActivationConfigAccount>,
     #[account(
         mut,
         seeds = [
-            MultiSigAccount::SEED,
+            RakuraiActivationAccount::SEED,
             validator_identity_account.key().as_ref(),
         ],
         bump = multisig_account.bump,
         rent_exempt = enforce,
     )]
-    pub multisig_account: Account<'info, MultiSigAccount>,
+    pub multisig_account: Account<'info, RakuraiActivationAccount>,
     #[account(mut)]
     pub validator_identity_account: AccountInfo<'info>,
     #[account(mut)]
     pub signer: Signer<'info>,
 }
 
-impl UpdateMultiSigCommission<'_> {
-    fn auth(ctx: &Context<UpdateMultiSigCommission>) -> Result<()> {
+impl UpdateRakuraiActivationCommission<'_> {
+    fn auth(ctx: &Context<UpdateRakuraiActivationCommission>) -> Result<()> {
         if ctx.accounts.signer.key() == ctx.accounts.multisig_account.validator_authority.key()
             || ctx.accounts.signer.key()
                 == ctx.accounts.multisig_account.block_builder_authority.key()
@@ -332,27 +332,27 @@ impl UpdateMultiSigCommission<'_> {
 }
 
 #[derive(Accounts)]
-pub struct CloseMultiSigAccount<'info> {
-    pub config: Account<'info, Config>,
+pub struct CloseRakuraiActivationAccount<'info> {
+    pub config: Account<'info, RakuraiActivationConfigAccount>,
     #[account(
         mut,
         close = validator_identity_account,
         seeds = [
-            MultiSigAccount::SEED,
+            RakuraiActivationAccount::SEED,
             validator_identity_account.key().as_ref(),
         ],
         bump = multisig_account.bump,
         rent_exempt = enforce,
     )]
-    pub multisig_account: Account<'info, MultiSigAccount>,
+    pub multisig_account: Account<'info, RakuraiActivationAccount>,
     #[account(mut)]
     pub validator_identity_account: AccountInfo<'info>,
     #[account(mut)]
     pub signer: Signer<'info>,
 }
 
-impl CloseMultiSigAccount<'_> {
-    fn auth(ctx: &Context<CloseMultiSigAccount>) -> Result<()> {
+impl CloseRakuraiActivationAccount<'_> {
+    fn auth(ctx: &Context<CloseRakuraiActivationAccount>) -> Result<()> {
         if ctx.accounts.signer.key() == ctx.accounts.multisig_account.block_builder_authority.key()
         {
             Ok(())
@@ -371,26 +371,26 @@ pub struct ConfigUpdatedEvent {
 }
 
 #[event]
-pub struct MultiSigAccountInitializedEvent {
+pub struct RakuraiActivationAccountInitializedEvent {
     pub multisig_account: Pubkey,
 }
 
 #[event]
-pub struct UpdateMultiSigApprovalEvent {
+pub struct UpdateRakuraiActivationApprovalEvent {
     pub multisig_account: Pubkey,
     pub signer: Pubkey,
     pub msg: String,
 }
 
 #[event]
-pub struct UpdateMultiSigCommissionEvent {
+pub struct UpdateRakuraiActivationCommissionEvent {
     pub multisig_account: Pubkey,
     pub operator_commission: u16,
     pub block_builder_commission: u16,
 }
 
 #[event]
-pub struct MultiSigAccountClosedEvent {
+pub struct RakuraiActivationAccountClosedEvent {
     pub multisig_account: Pubkey,
     pub amount_claimed: u64,
 }

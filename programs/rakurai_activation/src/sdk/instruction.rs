@@ -2,7 +2,7 @@ use anchor_lang::{
     prelude::Pubkey, solana_program::instruction::Instruction, InstructionData, ToAccountMetas,
 };
 
-use crate::Config;
+use crate::RakuraiActivationConfigAccount;
 
 pub struct InitializeArgs {
     pub authority: Pubkey,
@@ -55,7 +55,7 @@ pub fn initialize_ix(
 }
 
 pub struct UpdateConfigArgs {
-    new_config: Config,
+    new_config: RakuraiActivationConfigAccount,
 }
 pub struct UpdateConfigAccounts {
     pub config: Pubkey,
@@ -77,11 +77,11 @@ pub fn update_config_ix(
     }
 }
 
-pub struct InitializeMultiSigAccountArgs {
+pub struct InitializeRakuraiActivationAccountArgs {
     pub validator_commission_bps: u16,
     pub bump: u8,
 }
-pub struct InitializeMultiSigAccountAccounts {
+pub struct InitializeRakuraiActivationAccountAccounts {
     pub config: Pubkey,
     pub signer: Pubkey,
     pub system_program: Pubkey,
@@ -89,17 +89,17 @@ pub struct InitializeMultiSigAccountAccounts {
     pub validator_vote_account: Pubkey,
     pub validator_identity_account: Pubkey,
 }
-pub fn initialize_multi_sig_account_ix(
+pub fn initialize_rakurai_activation_account_ix(
     program_id: Pubkey,
-    args: InitializeMultiSigAccountArgs,
-    accounts: InitializeMultiSigAccountAccounts,
+    args: InitializeRakuraiActivationAccountArgs,
+    accounts: InitializeRakuraiActivationAccountAccounts,
 ) -> Instruction {
-    let InitializeMultiSigAccountArgs {
+    let InitializeRakuraiActivationAccountArgs {
         validator_commission_bps,
         bump,
     } = args;
 
-    let InitializeMultiSigAccountAccounts {
+    let InitializeRakuraiActivationAccountAccounts {
         config,
         multisig_account,
         system_program,
@@ -110,12 +110,12 @@ pub fn initialize_multi_sig_account_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::InitializeMultiSigAccount {
+        data: crate::instruction::InitializeRakuraiActivationAccount {
             validator_commission_bps,
             bump,
         }
         .data(),
-        accounts: crate::accounts::InitializeMultiSigAccount {
+        accounts: crate::accounts::InitializeRakuraiActivationAccount {
             config,
             signer,
             system_program,
@@ -127,23 +127,23 @@ pub fn initialize_multi_sig_account_ix(
     }
 }
 
-pub struct UpdateMultiSigApprovalArgs {
+pub struct UpdateRakuraiActivationApprovalArgs {
     pub grant_approval: bool,
 }
-pub struct UpdateMultiSigApprovalAccounts {
+pub struct UpdateRakuraiActivationApprovalAccounts {
     pub config: Pubkey,
     pub multisig_account: Pubkey,
     pub validator_identity_account: Pubkey,
     pub signer: Pubkey,
 }
-pub fn update_multi_sig_approval_ix(
+pub fn update_rakurai_activation_approval_ix(
     program_id: Pubkey,
-    args: UpdateMultiSigApprovalArgs,
-    accounts: UpdateMultiSigApprovalAccounts,
+    args: UpdateRakuraiActivationApprovalArgs,
+    accounts: UpdateRakuraiActivationApprovalAccounts,
 ) -> Instruction {
-    let UpdateMultiSigApprovalArgs { grant_approval } = args;
+    let UpdateRakuraiActivationApprovalArgs { grant_approval } = args;
 
-    let UpdateMultiSigApprovalAccounts {
+    let UpdateRakuraiActivationApprovalAccounts {
         config,
         multisig_account,
         validator_identity_account,
@@ -152,8 +152,8 @@ pub fn update_multi_sig_approval_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::UpdateMultiSigApproval { grant_approval }.data(),
-        accounts: crate::accounts::UpdateMultiSigApproval {
+        data: crate::instruction::UpdateRakuraiActivationApproval { grant_approval }.data(),
+        accounts: crate::accounts::UpdateRakuraiActivationApproval {
             config,
             validator_identity_account,
             multisig_account,
@@ -163,25 +163,25 @@ pub fn update_multi_sig_approval_ix(
     }
 }
 
-pub struct UpdateMultiSigCommissionArgs {
+pub struct UpdateRakuraiActivationCommissionArgs {
     pub validator_commission_bps: Option<u16>,
 }
-pub struct UpdateMultiSigCommissionAccounts {
+pub struct UpdateRakuraiActivationCommissionAccounts {
     pub config: Pubkey,
     pub multisig_account: Pubkey,
     pub validator_identity_account: Pubkey,
     pub signer: Pubkey,
 }
-pub fn update_multi_sig_commission_ix(
+pub fn update_rakurai_activation_commission_ix(
     program_id: Pubkey,
-    args: UpdateMultiSigCommissionArgs,
-    accounts: UpdateMultiSigCommissionAccounts,
+    args: UpdateRakuraiActivationCommissionArgs,
+    accounts: UpdateRakuraiActivationCommissionAccounts,
 ) -> Instruction {
-    let UpdateMultiSigCommissionArgs {
+    let UpdateRakuraiActivationCommissionArgs {
         validator_commission_bps,
     } = args;
 
-    let UpdateMultiSigCommissionAccounts {
+    let UpdateRakuraiActivationCommissionAccounts {
         config,
         multisig_account,
         validator_identity_account,
@@ -190,11 +190,11 @@ pub fn update_multi_sig_commission_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::UpdateMultiSigCommission {
+        data: crate::instruction::UpdateRakuraiActivationCommission {
             validator_commission_bps,
         }
         .data(),
-        accounts: crate::accounts::UpdateMultiSigCommission {
+        accounts: crate::accounts::UpdateRakuraiActivationCommission {
             config,
             validator_identity_account,
             multisig_account,
@@ -204,19 +204,19 @@ pub fn update_multi_sig_commission_ix(
     }
 }
 
-pub struct CloseMultiSigAccountArgs;
-pub struct CloseMultiSigAccounts {
+pub struct CloseRakuraiActivationAccountArgs;
+pub struct CloseRakuraiActivationAccounts {
     pub config: Pubkey,
     pub multisig_account: Pubkey,
     pub validator_identity_account: Pubkey,
     pub signer: Pubkey,
 }
-pub fn close_multi_sig_account_ix(
+pub fn close_rakurai_activation_account_ix(
     program_id: Pubkey,
-    _args: CloseMultiSigAccountArgs,
-    accounts: CloseMultiSigAccounts,
+    _args: CloseRakuraiActivationAccountArgs,
+    accounts: CloseRakuraiActivationAccounts,
 ) -> Instruction {
-    let CloseMultiSigAccounts {
+    let CloseRakuraiActivationAccounts {
         config,
         multisig_account,
         validator_identity_account,
@@ -225,8 +225,8 @@ pub fn close_multi_sig_account_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::CloseMultiSigAccount {}.data(),
-        accounts: crate::accounts::CloseMultiSigAccount {
+        data: crate::instruction::CloseRakuraiActivationAccount {}.data(),
+        accounts: crate::accounts::CloseRakuraiActivationAccount {
             config,
             validator_identity_account,
             multisig_account,
