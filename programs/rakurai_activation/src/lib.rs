@@ -26,7 +26,7 @@ pub mod state;
 declare_id!("2Q7DK4qWRAQvYNseZ3UnWLQYjZFgyRJurP7NJDvDCusF");
 
 #[program]
-pub mod multi_sig {
+pub mod rakurai_activation {
     use rakurai_vote_state::VoteState;
 
     use super::*;
