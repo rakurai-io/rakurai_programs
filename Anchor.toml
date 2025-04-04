@@ -6,7 +6,7 @@ skip-lint = false
 
 [programs.testnet]
 rakurai_activation = "2Q7DK4qWRAQvYNseZ3UnWLQYjZFgyRJurP7NJDvDCusF"
-block_reward_distribution = "ArEru7KcVzvVzgukQnJhZE4xsAq43bjz2ZcL1C7Wq9d"
+reward_distribution = "ArEru7KcVzvVzgukQnJhZE4xsAq43bjz2ZcL1C7Wq9d"
 
 [registry]
 url = "https://api.apr.dev"
@@ -16,5 +16,5 @@ cluster = "Testnet"
 wallet = "~/.config/solana/id.json"
 
 [workspace]
-members = ["programs/block_reward_distribution", "programs/rakurai_activation"]
+members = ["programs/reward_distribution", "programs/rakurai_activation"]
 exclude = ["programs/vote_state"]

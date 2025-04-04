@@ -2,7 +2,7 @@ pub mod instruction;
 
 use anchor_lang::{prelude::Pubkey, solana_program::clock::Epoch};
 
-use crate::{Config, RewardDistributionAccount};
+use crate::{RewardCollectionAccount, RewardDistributionConfigAccount};
 
 pub fn derive_reward_distribution_account_address(
     reward_distribution_program_id: &Pubkey,
@@ -11,7 +11,7 @@ pub fn derive_reward_distribution_account_address(
 ) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[
-            RewardDistributionAccount::SEED,
+            RewardCollectionAccount::SEED,
             vote_pubkey.to_bytes().as_ref(),
             epoch.to_le_bytes().as_ref(),
         ],
@@ -20,5 +20,8 @@ pub fn derive_reward_distribution_account_address(
 }
 
 pub fn derive_config_account_address(reward_distribution_program_id: &Pubkey) -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[Config::SEED], reward_distribution_program_id)
+    Pubkey::find_program_address(
+        &[RewardDistributionConfigAccount::SEED],
+        reward_distribution_program_id,
+    )
 }

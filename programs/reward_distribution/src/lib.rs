@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 use {default_env::default_env, solana_security_txt::security_txt};
 
 use crate::{
-    state::{ClaimStatus, Config, MerkleRoot, RewardDistributionAccount},
+    state::{ClaimStatus, MerkleRoot, RewardCollectionAccount, RewardDistributionConfigAccount},
     ErrorCode::Unauthorized,
 };
 
@@ -33,7 +33,7 @@ pub mod reward_distribution {
     use super::*;
     use crate::ErrorCode::*;
 
-    /// Initialize a singleton instance of the [Config] account.
+    /// Initialize a singleton instance of the [RewardDistributionConfigAccount] account.
     pub fn initialize(
         ctx: Context<Initialize>,
         authority: Pubkey,
@@ -51,10 +51,10 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Initialize a new [RewardDistributionAccount] associated with the given validator vote key
+    /// Initialize a new [RewardCollectionAccount] associated with the given validator vote key
     /// and current epoch.
-    pub fn initialize_reward_distribution_account(
-        ctx: Context<InitializeRewardDistributionAccount>,
+    pub fn initialize_reward_collection_account(
+        ctx: Context<InitializeRewardCollectionAccount>,
         merkle_root_upload_authority: Pubkey,
         validator_commission_bps: u16,
         rakurai_commission_pubkey: Pubkey,
@@ -95,15 +95,18 @@ pub mod reward_distribution {
         distribution_acc.bump = bump;
         distribution_acc.validate()?;
 
-        emit!(RewardDistributionAccountInitializedEvent {
+        emit!(RewardCollectionAccountInitializedEvent {
             reward_distribution_account: distribution_acc.key(),
         });
 
         Ok(())
     }
 
-    /// Update config fields. Only the [Config] authority can invoke this.
-    pub fn update_config(ctx: Context<UpdateConfig>, new_config: Config) -> Result<()> {
+    /// Update config fields. Only the [RewardDistributionConfigAccount] authority can invoke this.
+    pub fn update_config(
+        ctx: Context<UpdateConfig>,
+        new_config: RewardDistributionConfigAccount,
+    ) -> Result<()> {
         UpdateConfig::auth(&ctx)?;
 
         let config = &mut ctx.accounts.config;
@@ -119,7 +122,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Uploads a merkle root to the provided [RewardDistributionAccount]. This instruction may be
+    /// Uploads a merkle root to the provided [RewardCollectionAccount]. This instruction may be
     /// invoked many times as long as the account is at least one epoch old and not expired; and
     /// no funds have already been claimed. Only the `merkle_root_upload_authority` has the
     /// authority to invoke.
@@ -144,7 +147,7 @@ pub mod reward_distribution {
         }
 
         if current_epoch > distribution_acc.expires_at {
-            return Err(ExpiredRewardDistributionAccount.into());
+            return Err(ExpiredRewardCollectionAccount.into());
         }
 
         distribution_acc.merkle_root = Some(MerkleRoot {
@@ -164,7 +167,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Anyone can invoke this only after the [RewardDistributionAccount] has expired.
+    /// Anyone can invoke this only after the [RewardCollectionAccount] has expired.
     /// This instruction will return any rent back to `claimant` and close the account
     pub fn close_claim_status(ctx: Context<CloseClaimStatus>) -> Result<()> {
         let claim_status = &ctx.accounts.claim_status;
@@ -182,28 +185,28 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Anyone can invoke this only after the [RewardDistributionAccount] has expired.
+    /// Anyone can invoke this only after the [RewardCollectionAccount] has expired.
     /// This instruction will send any unclaimed funds to the designated `expired_funds_account`
     /// before closing and returning the rent exempt funds to the validator.
-    pub fn close_reward_distribution_account(
-        ctx: Context<CloseRewardDistributionAccount>,
+    pub fn close_reward_collection_account(
+        ctx: Context<CloseRewardCollectionAccount>,
         _epoch: u64,
     ) -> Result<()> {
-        CloseRewardDistributionAccount::auth(&ctx)?;
+        CloseRewardCollectionAccount::auth(&ctx)?;
 
         let reward_distribution_account = &mut ctx.accounts.reward_distribution_account;
 
         if Clock::get()?.epoch <= reward_distribution_account.expires_at {
-            return Err(PrematureCloseRewardDistributionAccount.into());
+            return Err(PrematureCloseRewardCollectionAccount.into());
         }
 
-        let expired_amount = RewardDistributionAccount::claim_expired(
+        let expired_amount = RewardCollectionAccount::claim_expired(
             reward_distribution_account.to_account_info(),
             ctx.accounts.expired_funds_account.to_account_info(),
         )?;
         reward_distribution_account.validate()?;
 
-        emit!(RewardDistributionAccountClosedEvent {
+        emit!(RewardCollectionAccountClosedEvent {
             expired_funds_account: ctx.accounts.expired_funds_account.key(),
             reward_distribution_account: reward_distribution_account.key(),
             expired_amount,
@@ -212,7 +215,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Claims tokens from the [RewardDistributionAccount].
+    /// Claims tokens from the [RewardCollectionAccount].
     pub fn claim(ctx: Context<Claim>, bump: u8, amount: u64, proof: Vec<[u8; 32]>) -> Result<()> {
         let claim_status = &mut ctx.accounts.claim_status;
         claim_status.bump = bump;
@@ -222,7 +225,7 @@ pub mod reward_distribution {
 
         let clock = Clock::get()?;
         if clock.epoch > reward_distribution_account.expires_at {
-            return Err(ExpiredRewardDistributionAccount.into());
+            return Err(ExpiredRewardCollectionAccount.into());
         }
 
         // Redundant check since we shouldn't be able to init a claim status account using the same seeds.
@@ -251,7 +254,7 @@ pub mod reward_distribution {
             return Err(InvalidProof.into());
         }
 
-        RewardDistributionAccount::claim(
+        RewardCollectionAccount::claim(
             reward_distribution_info,
             claimant_account.to_account_info(),
             amount,
@@ -308,12 +311,10 @@ pub enum ErrorCode {
     #[msg("The maximum number of claims has been exceeded.")]
     ExceedsMaxNumNodes,
 
-    #[msg("The given RewardDistributionAccount has expired.")]
-    ExpiredRewardDistributionAccount,
+    #[msg("The given RewardCollectionAccount has expired.")]
+    ExpiredRewardCollectionAccount,
 
-    #[msg(
-        "The funds for the given index and RewardDistributionAccount have already been claimed."
-    )]
+    #[msg("The funds for the given index and RewardCollectionAccount have already been claimed.")]
     FundsAlreadyClaimed,
 
     #[msg("Supplied invalid parameters.")]
@@ -325,11 +326,11 @@ pub enum ErrorCode {
     #[msg("Failed to deserialize the supplied vote account data.")]
     InvalidVoteAccountData,
 
-    #[msg("Validator's commission basis points must be less than or equal to the Config account's max_commission_bps.")]
+    #[msg("Validator's commission basis points must be less than or equal to the RewardDistributionConfigAccount account's max_commission_bps.")]
     MaxCommissionFeeBpsExceeded,
 
-    #[msg("The given RewardDistributionAccount is not ready to be closed.")]
-    PrematureCloseRewardDistributionAccount,
+    #[msg("The given RewardCollectionAccount is not ready to be closed.")]
+    PrematureCloseRewardCollectionAccount,
 
     #[msg("The given ClaimStatus account is not ready to be closed.")]
     PrematureCloseClaimStatus,
@@ -337,7 +338,7 @@ pub enum ErrorCode {
     #[msg("Must wait till at least one epoch after the reward distribution account was created to upload the merkle root.")]
     PrematureMerkleRootUpload,
 
-    #[msg("No merkle root has been uploaded to the given RewardDistributionAccount.")]
+    #[msg("No merkle root has been uploaded to the given RewardCollectionAccount.")]
     RootNotUploaded,
 
     #[msg("Unauthorized signer.")]
@@ -346,8 +347,8 @@ pub enum ErrorCode {
 
 #[derive(Accounts)]
 pub struct CloseClaimStatus<'info> {
-    #[account(seeds = [Config::SEED], bump)]
-    pub config: Account<'info, Config>,
+    #[account(seeds = [RewardDistributionConfigAccount::SEED], bump)]
+    pub config: Account<'info, RewardDistributionConfigAccount>,
 
     // bypass seed check since owner check prevents attacker from passing in invalid data
     // account can only be transferred to us if it is zeroed, failing the deserialization check
@@ -368,13 +369,13 @@ pub struct CloseClaimStatus<'info> {
 pub struct Initialize<'info> {
     #[account(
         init,
-        seeds = [Config::SEED],
+        seeds = [RewardDistributionConfigAccount::SEED],
         bump,
         payer = initializer,
-        space = Config::SIZE,
+        space = RewardDistributionConfigAccount::SIZE,
         rent_exempt = enforce
     )]
-    pub config: Account<'info, Config>,
+    pub config: Account<'info, RewardDistributionConfigAccount>,
 
     pub system_program: Program<'info, System>,
 
@@ -388,22 +389,22 @@ pub struct Initialize<'info> {
     _validator_commission_bps: u16,
     _bump: u8
 )]
-pub struct InitializeRewardDistributionAccount<'info> {
-    pub config: Account<'info, Config>,
+pub struct InitializeRewardCollectionAccount<'info> {
+    pub config: Account<'info, RewardDistributionConfigAccount>,
 
     #[account(
         init,
         seeds = [
-            RewardDistributionAccount::SEED,
+            RewardCollectionAccount::SEED,
             validator_vote_account.key().as_ref(),
             Clock::get().unwrap().epoch.to_le_bytes().as_ref(),
         ],
         bump,
         payer = signer,
-        space = RewardDistributionAccount::SIZE,
+        space = RewardCollectionAccount::SIZE,
         rent_exempt = enforce
     )]
-    pub reward_distribution_account: Account<'info, RewardDistributionAccount>,
+    pub reward_distribution_account: Account<'info, RewardCollectionAccount>,
 
     /// CHECK: Safe because we check the vote program is the owner before deserialization.
     /// The validator's vote account is used to check this transaction's signer is also the authorized withdrawer.
@@ -419,7 +420,7 @@ pub struct InitializeRewardDistributionAccount<'info> {
 #[derive(Accounts)]
 pub struct UpdateConfig<'info> {
     #[account(mut, rent_exempt = enforce)]
-    pub config: Account<'info, Config>,
+    pub config: Account<'info, RewardDistributionConfigAccount>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -437,8 +438,8 @@ impl UpdateConfig<'_> {
 
 #[derive(Accounts)]
 #[instruction(epoch: u64)]
-pub struct CloseRewardDistributionAccount<'info> {
-    pub config: Account<'info, Config>,
+pub struct CloseRewardCollectionAccount<'info> {
+    pub config: Account<'info, RewardDistributionConfigAccount>,
 
     /// CHECK: safe see auth fn
     #[account(mut)]
@@ -448,13 +449,13 @@ pub struct CloseRewardDistributionAccount<'info> {
         mut,
         close = validator_vote_account,
         seeds = [
-            RewardDistributionAccount::SEED,
+            RewardCollectionAccount::SEED,
             validator_vote_account.key().as_ref(),
             epoch.to_le_bytes().as_ref(),
         ],
         bump = reward_distribution_account.bump,
     )]
-    pub reward_distribution_account: Account<'info, RewardDistributionAccount>,
+    pub reward_distribution_account: Account<'info, RewardCollectionAccount>,
 
     /// CHECK: safe see auth fn
     #[account(mut)]
@@ -465,8 +466,8 @@ pub struct CloseRewardDistributionAccount<'info> {
     pub signer: Signer<'info>,
 }
 
-impl CloseRewardDistributionAccount<'_> {
-    fn auth(ctx: &Context<CloseRewardDistributionAccount>) -> Result<()> {
+impl CloseRewardCollectionAccount<'_> {
+    fn auth(ctx: &Context<CloseRewardCollectionAccount>) -> Result<()> {
         if ctx
             .accounts
             .reward_distribution_account
@@ -483,10 +484,10 @@ impl CloseRewardDistributionAccount<'_> {
 #[derive(Accounts)]
 #[instruction(_bump: u8, _amount: u64, _proof: Vec<[u8; 32]>)]
 pub struct Claim<'info> {
-    pub config: Account<'info, Config>,
+    pub config: Account<'info, RewardDistributionConfigAccount>,
 
     #[account(mut, rent_exempt = enforce)]
-    pub reward_distribution_account: Account<'info, RewardDistributionAccount>,
+    pub reward_distribution_account: Account<'info, RewardCollectionAccount>,
 
     /// Status of the claim. Used to prevent the same party from claiming multiple times.
     #[account(
@@ -517,10 +518,10 @@ pub struct Claim<'info> {
 
 #[derive(Accounts)]
 pub struct UploadMerkleRoot<'info> {
-    pub config: Account<'info, Config>,
+    pub config: Account<'info, RewardDistributionConfigAccount>,
 
     #[account(mut, rent_exempt = enforce)]
-    pub reward_distribution_account: Account<'info, RewardDistributionAccount>,
+    pub reward_distribution_account: Account<'info, RewardCollectionAccount>,
 
     #[account(mut)]
     pub merkle_root_upload_authority: Signer<'info>,
@@ -544,7 +545,7 @@ impl UploadMerkleRoot<'_> {
 // Events
 
 #[event]
-pub struct RewardDistributionAccountInitializedEvent {
+pub struct RewardCollectionAccountInitializedEvent {
     pub reward_distribution_account: Pubkey,
 }
 
@@ -569,7 +570,7 @@ pub struct ConfigUpdatedEvent {
 
 #[event]
 pub struct ClaimedEvent {
-    /// [RewardDistributionAccount] claimed from.
+    /// [RewardCollectionAccount] claimed from.
     pub reward_distribution_account: Pubkey,
 
     /// User that paid for the claim, may or may not be the same as claimant.
@@ -592,11 +593,11 @@ pub struct MerkleRootUploadedEvent {
 }
 
 #[event]
-pub struct RewardDistributionAccountClosedEvent {
+pub struct RewardCollectionAccountClosedEvent {
     /// Account where unclaimed funds were transferred to.
     pub expired_funds_account: Pubkey,
 
-    /// [RewardDistributionAccount] closed.
+    /// [RewardCollectionAccount] closed.
     pub reward_distribution_account: Pubkey,
 
     /// Unclaimed amount transferred.

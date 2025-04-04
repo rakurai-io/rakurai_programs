@@ -3,7 +3,7 @@ use anchor_lang::{
     prelude::Pubkey, solana_program::instruction::Instruction, InstructionData, ToAccountMetas,
 };
 
-use crate::Config;
+use crate::RewardDistributionConfigAccount;
 
 pub struct InitializeArgs {
     pub authority: Pubkey,
@@ -52,26 +52,26 @@ pub fn initialize_ix(
     }
 }
 
-pub struct InitializeRewardDistributionAccountArgs {
+pub struct InitializeRewardCollectionAccountArgs {
     pub merkle_root_upload_authority: Pubkey,
     pub validator_commission_bps: u16,
     pub rakurai_commission_pubkey: Pubkey,
     pub rakurai_commission_bps: u16,
     pub bump: u8,
 }
-pub struct InitializeRewardDistributionAccountAccounts {
+pub struct InitializeRewardCollectionAccountAccounts {
     pub config: Pubkey,
     pub signer: Pubkey,
     pub system_program: Pubkey,
     pub reward_distribution_account: Pubkey,
     pub validator_vote_account: Pubkey,
 }
-pub fn initialize_reward_distribution_account_ix(
+pub fn initialize_reward_collection_account_ix(
     program_id: Pubkey,
-    args: InitializeRewardDistributionAccountArgs,
-    accounts: InitializeRewardDistributionAccountAccounts,
+    args: InitializeRewardCollectionAccountArgs,
+    accounts: InitializeRewardCollectionAccountAccounts,
 ) -> Instruction {
-    let InitializeRewardDistributionAccountArgs {
+    let InitializeRewardCollectionAccountArgs {
         merkle_root_upload_authority,
         validator_commission_bps,
         rakurai_commission_pubkey,
@@ -79,7 +79,7 @@ pub fn initialize_reward_distribution_account_ix(
         bump,
     } = args;
 
-    let InitializeRewardDistributionAccountAccounts {
+    let InitializeRewardCollectionAccountAccounts {
         config,
         reward_distribution_account,
         system_program,
@@ -89,7 +89,7 @@ pub fn initialize_reward_distribution_account_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::InitializeRewardDistributionAccount {
+        data: crate::instruction::InitializeRewardCollectionAccount {
             merkle_root_upload_authority,
             validator_commission_bps,
             rakurai_commission_pubkey,
@@ -97,7 +97,7 @@ pub fn initialize_reward_distribution_account_ix(
             bump,
         }
         .data(),
-        accounts: crate::accounts::InitializeRewardDistributionAccount {
+        accounts: crate::accounts::InitializeRewardCollectionAccount {
             config,
             signer,
             system_program,
@@ -138,7 +138,7 @@ pub fn close_claim_status_ix(
 }
 
 pub struct UpdateConfigArgs {
-    new_config: Config,
+    new_config: RewardDistributionConfigAccount,
 }
 pub struct UpdateConfigAccounts {
     pub config: Pubkey,
@@ -204,24 +204,24 @@ pub fn upload_merkle_root_ix(
     }
 }
 
-pub struct CloseRewardDistributionAccountArgs {
+pub struct CloseRewardCollectionAccountArgs {
     pub _epoch: u64,
 }
-pub struct CloseRewardDistributionAccounts {
+pub struct CloseRewardCollectionAccounts {
     pub config: Pubkey,
     pub reward_distribution_account: Pubkey,
     pub validator_vote_account: Pubkey,
     pub expired_funds_account: Pubkey,
     pub signer: Pubkey,
 }
-pub fn close_reward_distribution_account_ix(
+pub fn close_reward_collection_account_ix(
     program_id: Pubkey,
-    args: CloseRewardDistributionAccountArgs,
-    accounts: CloseRewardDistributionAccounts,
+    args: CloseRewardCollectionAccountArgs,
+    accounts: CloseRewardCollectionAccounts,
 ) -> Instruction {
-    let CloseRewardDistributionAccountArgs { _epoch } = args;
+    let CloseRewardCollectionAccountArgs { _epoch } = args;
 
-    let CloseRewardDistributionAccounts {
+    let CloseRewardCollectionAccounts {
         config,
         reward_distribution_account,
         validator_vote_account,
@@ -231,8 +231,8 @@ pub fn close_reward_distribution_account_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::CloseRewardDistributionAccount { _epoch }.data(),
-        accounts: crate::accounts::CloseRewardDistributionAccount {
+        data: crate::instruction::CloseRewardCollectionAccount { _epoch }.data(),
+        accounts: crate::accounts::CloseRewardCollectionAccount {
             config,
             validator_vote_account,
             expired_funds_account,

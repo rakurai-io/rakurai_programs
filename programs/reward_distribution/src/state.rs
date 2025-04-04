@@ -8,7 +8,7 @@ use crate::ErrorCode::{AccountValidationFailure, ArithmeticError};
 
 #[account]
 #[derive(Default)]
-pub struct Config {
+pub struct RewardDistributionConfigAccount {
     /// Account with authority over this PDA.
     pub authority: Pubkey,
 
@@ -25,7 +25,7 @@ pub struct Config {
 /// The account that validators register as **block_reward_receiver**.
 #[account]
 #[derive(Default)]
-pub struct RewardDistributionAccount {
+pub struct RewardCollectionAccount {
     /// The validator's vote account, also the recipient of remaining lamports after
     /// upon closing this account.
     pub validator_vote_account: Pubkey,
@@ -79,8 +79,8 @@ pub struct MerkleRoot {
 
 const HEADER_SIZE: usize = 8;
 
-impl Config {
-    pub const SEED: &'static [u8] = b"CONFIG_ACCOUNT";
+impl RewardDistributionConfigAccount {
+    pub const SEED: &'static [u8] = b"REWARD_DISTRIBUTION_CONFIG_ACCOUNT";
     pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
 
     pub fn validate(&self) -> Result<()> {
@@ -99,8 +99,8 @@ impl Config {
     }
 }
 
-impl RewardDistributionAccount {
-    pub const SEED: &'static [u8] = b"REWARD_DISTRIBUTION_ACCOUNT";
+impl RewardCollectionAccount {
+    pub const SEED: &'static [u8] = b"REWARD_COLLECTION_ACCOUNT";
 
     pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
 
