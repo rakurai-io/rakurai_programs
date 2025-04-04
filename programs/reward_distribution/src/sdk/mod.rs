@@ -4,7 +4,7 @@ use anchor_lang::{prelude::Pubkey, solana_program::clock::Epoch};
 
 use crate::{RewardCollectionAccount, RewardDistributionConfigAccount};
 
-pub fn derive_reward_distribution_account_address(
+pub fn derive_reward_collection_account_address(
     reward_distribution_program_id: &Pubkey,
     vote_pubkey: &Pubkey,
     epoch: Epoch,

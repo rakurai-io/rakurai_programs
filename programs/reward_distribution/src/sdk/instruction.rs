@@ -55,7 +55,7 @@ pub fn initialize_ix(
 pub struct InitializeRewardCollectionAccountArgs {
     pub merkle_root_upload_authority: Pubkey,
     pub validator_commission_bps: u16,
-    pub rakurai_commission_pubkey: Pubkey,
+    pub rakurai_commission_account: Pubkey,
     pub rakurai_commission_bps: u16,
     pub bump: u8,
 }
@@ -63,7 +63,7 @@ pub struct InitializeRewardCollectionAccountAccounts {
     pub config: Pubkey,
     pub signer: Pubkey,
     pub system_program: Pubkey,
-    pub reward_distribution_account: Pubkey,
+    pub reward_collection_account: Pubkey,
     pub validator_vote_account: Pubkey,
 }
 pub fn initialize_reward_collection_account_ix(
@@ -74,14 +74,14 @@ pub fn initialize_reward_collection_account_ix(
     let InitializeRewardCollectionAccountArgs {
         merkle_root_upload_authority,
         validator_commission_bps,
-        rakurai_commission_pubkey,
+        rakurai_commission_account,
         rakurai_commission_bps,
         bump,
     } = args;
 
     let InitializeRewardCollectionAccountAccounts {
         config,
-        reward_distribution_account,
+        reward_collection_account,
         system_program,
         validator_vote_account,
         signer,
@@ -92,7 +92,7 @@ pub fn initialize_reward_collection_account_ix(
         data: crate::instruction::InitializeRewardCollectionAccount {
             merkle_root_upload_authority,
             validator_commission_bps,
-            rakurai_commission_pubkey,
+            rakurai_commission_account,
             rakurai_commission_bps,
             bump,
         }
@@ -101,7 +101,7 @@ pub fn initialize_reward_collection_account_ix(
             config,
             signer,
             system_program,
-            reward_distribution_account,
+            reward_collection_account,
             validator_vote_account,
         }
         .to_account_metas(None),
@@ -168,7 +168,7 @@ pub struct UploadMerkleRootArgs {
 pub struct UploadMerkleRootAccounts {
     pub config: Pubkey,
     pub merkle_root_upload_authority: Pubkey,
-    pub reward_distribution_account: Pubkey,
+    pub reward_collection_account: Pubkey,
 }
 pub fn upload_merkle_root_ix(
     program_id: Pubkey,
@@ -184,7 +184,7 @@ pub fn upload_merkle_root_ix(
     let UploadMerkleRootAccounts {
         config,
         merkle_root_upload_authority,
-        reward_distribution_account,
+        reward_collection_account,
     } = accounts;
 
     Instruction {
@@ -198,7 +198,7 @@ pub fn upload_merkle_root_ix(
         accounts: crate::accounts::UploadMerkleRoot {
             config,
             merkle_root_upload_authority,
-            reward_distribution_account,
+            reward_collection_account,
         }
         .to_account_metas(None),
     }
@@ -209,7 +209,7 @@ pub struct CloseRewardCollectionAccountArgs {
 }
 pub struct CloseRewardCollectionAccounts {
     pub config: Pubkey,
-    pub reward_distribution_account: Pubkey,
+    pub reward_collection_account: Pubkey,
     pub validator_vote_account: Pubkey,
     pub expired_funds_account: Pubkey,
     pub signer: Pubkey,
@@ -223,7 +223,7 @@ pub fn close_reward_collection_account_ix(
 
     let CloseRewardCollectionAccounts {
         config,
-        reward_distribution_account,
+        reward_collection_account,
         validator_vote_account,
         expired_funds_account,
         signer,
@@ -236,7 +236,7 @@ pub fn close_reward_collection_account_ix(
             config,
             validator_vote_account,
             expired_funds_account,
-            reward_distribution_account,
+            reward_collection_account,
             signer,
         }
         .to_account_metas(None),
@@ -250,7 +250,7 @@ pub struct ClaimArgs {
 }
 pub struct ClaimAccounts {
     pub config: Pubkey,
-    pub reward_distribution_account: Pubkey,
+    pub reward_collection_account: Pubkey,
     pub claim_status: Pubkey,
     pub claimant: Pubkey,
     pub payer: Pubkey,
@@ -265,7 +265,7 @@ pub fn claim_ix(program_id: Pubkey, args: ClaimArgs, accounts: ClaimAccounts) ->
 
     let ClaimAccounts {
         config,
-        reward_distribution_account,
+        reward_collection_account,
         claim_status,
         claimant,
         payer,
@@ -282,7 +282,7 @@ pub fn claim_ix(program_id: Pubkey, args: ClaimArgs, accounts: ClaimAccounts) ->
         .data(),
         accounts: crate::accounts::Claim {
             config,
-            reward_distribution_account,
+            reward_collection_account,
             claimant,
             claim_status,
             payer,

@@ -1,79 +1,37 @@
-//! This module is where all PDA structs lives.
-
-use std::mem::size_of;
-
-use anchor_lang::prelude::*;
-
 use crate::ErrorCode::{AccountValidationFailure, ArithmeticError};
+use anchor_lang::prelude::*;
+use std::mem::size_of;
 
 #[account]
 #[derive(Default)]
 pub struct RewardDistributionConfigAccount {
-    /// Account with authority over this PDA.
     pub authority: Pubkey,
-
-    /// Specifies the number of epochs a merkle root is valid for before expiring.
     pub num_epochs_valid: u64,
-
-    /// The maximum commission a validator can set on their distribution account.
     pub max_commission_bps: u16,
-
-    /// The bump used to generate this account
     pub bump: u8,
 }
 
-/// The account that validators register as **block_reward_receiver**.
 #[account]
 #[derive(Default)]
 pub struct RewardCollectionAccount {
-    /// The validator's vote account, also the recipient of remaining lamports after
-    /// upon closing this account.
     pub validator_vote_account: Pubkey,
-
-    /// The only account authorized to upload a merkle-root for this account.
     pub merkle_root_upload_authority: Pubkey,
-
-    /// The merkle root used to verify user claims from this account.
     pub merkle_root: Option<MerkleRoot>,
-
-    /// Epoch for which this account was created.  
-    pub epoch_created_at: u64,
-
-    /// The commission basis points this validator charges.
+    pub creation_epoch: u64,
     pub validator_commission_bps: u16,
-
-    /// The commission basis points rakurai will charges on total rewards.
     pub rakurai_commission_bps: u16,
-
-    /// The account where rakurai commission will get transferred.
-    pub rakurai_commission_pubkey: Pubkey,
-
-    /// The epoch (upto and including) that rewards can be claimed.
+    pub rakurai_commission_account: Pubkey,
     pub expires_at: u64,
-
-    /// We want to expire funds after some time so that validators can be refunded the rent.
-    /// Expired funds will get transferred to this account.
     pub expired_funds_account: Pubkey,
-
-    /// The bump used to generate this account
     pub bump: u8,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
 pub struct MerkleRoot {
-    /// The 256-bit merkle root.
     pub root: [u8; 32],
-
-    /// Maximum number of funds that can ever be claimed from this [MerkleRoot].
     pub max_total_claim: u64,
-
-    /// Maximum number of nodes that can ever be claimed from this [MerkleRoot].
     pub max_num_nodes: u64,
-
-    /// Total funds that have been claimed.
     pub total_funds_claimed: u64,
-
-    /// Number of nodes that have been claimed.
     pub num_nodes_claimed: u64,
 }
 
@@ -108,7 +66,7 @@ impl RewardCollectionAccount {
         let default_pubkey = Pubkey::default();
         if self.validator_vote_account == default_pubkey
             || self.merkle_root_upload_authority == default_pubkey
-            || self.rakurai_commission_pubkey == default_pubkey
+            || self.rakurai_commission_account == default_pubkey
         {
             return Err(AccountValidationFailure.into());
         }
@@ -149,35 +107,19 @@ impl RewardCollectionAccount {
     }
 }
 
-/// Gives us an audit trail of who and what was claimed; also enforces and only-once claim by any party.
 #[account]
 #[derive(Default)]
 pub struct ClaimStatus {
-    /// If true, the tokens have been claimed.
     pub is_claimed: bool,
-
-    /// Authority that claimed the tokens. Allows for delegated rewards claiming.
     pub claimant: Pubkey,
-
-    /// The payer who created the claim.
     pub claim_status_payer: Pubkey,
-
-    /// When the funds were claimed.
     pub slot_claimed_at: u64,
-
-    /// Amount of funds claimed.
     pub amount: u64,
-
-    /// The epoch (upto and including) that rewards funds can be claimed.
-    /// Copied since TDA can be closed, need to track to avoid making multiple claims
     pub expires_at: u64,
-
-    /// The bump used to generate this account
     pub bump: u8,
 }
 
 impl ClaimStatus {
     pub const SEED: &'static [u8] = b"CLAIM_STATUS";
-
     pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
 }

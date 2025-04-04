@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 #[cfg(not(feature = "no-entrypoint"))]
-use {default_env::default_env, solana_security_txt::security_txt};
+use solana_security_txt::security_txt;
 
 use crate::{
     state::{ClaimStatus, MerkleRoot, RewardCollectionAccount, RewardDistributionConfigAccount},
@@ -13,12 +13,7 @@ security_txt! {
     name: "Rakurai Block Reward Distribution Program",
     project_url: "https://rakurai.io/",
     contacts: "https://rakurai.io/company",
-    policy: "https://rakurai.io/faq",
-    // Optional Fields
-    preferred_languages: "en",
-    source_code: "https://github.com/rakurai-io/rakurai_programs",
-    source_revision: default_env!("GIT_SHA", "GIT_SHA_MISSING"),
-    source_release: default_env!("GIT_REF_NAME", "GIT_REF_NAME_MISSING")
+    policy: "https://rakurai.io/faq"
 }
 pub mod merkle_proof;
 pub mod sdk;
@@ -57,7 +52,7 @@ pub mod reward_distribution {
         ctx: Context<InitializeRewardCollectionAccount>,
         merkle_root_upload_authority: Pubkey,
         validator_commission_bps: u16,
-        rakurai_commission_pubkey: Pubkey,
+        rakurai_commission_account: Pubkey,
         rakurai_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
@@ -81,23 +76,23 @@ pub mod reward_distribution {
 
         let current_epoch = Clock::get()?.epoch;
 
-        let distribution_acc = &mut ctx.accounts.reward_distribution_account;
-        distribution_acc.validator_vote_account = ctx.accounts.validator_vote_account.key();
-        distribution_acc.epoch_created_at = current_epoch;
-        distribution_acc.validator_commission_bps = validator_commission_bps;
-        distribution_acc.rakurai_commission_bps = rakurai_commission_bps;
-        distribution_acc.rakurai_commission_pubkey = rakurai_commission_pubkey;
-        distribution_acc.merkle_root_upload_authority = merkle_root_upload_authority;
-        distribution_acc.merkle_root = None;
-        distribution_acc.expires_at = current_epoch
+        let reward_collection_acc = &mut ctx.accounts.reward_collection_account;
+        reward_collection_acc.validator_vote_account = ctx.accounts.validator_vote_account.key();
+        reward_collection_acc.creation_epoch = current_epoch;
+        reward_collection_acc.validator_commission_bps = validator_commission_bps;
+        reward_collection_acc.rakurai_commission_bps = rakurai_commission_bps;
+        reward_collection_acc.rakurai_commission_account = rakurai_commission_account;
+        reward_collection_acc.merkle_root_upload_authority = merkle_root_upload_authority;
+        reward_collection_acc.merkle_root = None;
+        reward_collection_acc.expires_at = current_epoch
             .checked_add(ctx.accounts.config.num_epochs_valid)
             .ok_or(ArithmeticError)?;
-        distribution_acc.expired_funds_account = ctx.accounts.signer.key();
-        distribution_acc.bump = bump;
-        distribution_acc.validate()?;
+        reward_collection_acc.expired_funds_account = ctx.accounts.signer.key();
+        reward_collection_acc.bump = bump;
+        reward_collection_acc.validate()?;
 
         emit!(RewardCollectionAccountInitializedEvent {
-            reward_distribution_account: distribution_acc.key(),
+            reward_collection_account: reward_collection_acc.key(),
         });
 
         Ok(())
@@ -136,33 +131,33 @@ pub mod reward_distribution {
         UploadMerkleRoot::auth(&ctx)?;
 
         let current_epoch = Clock::get()?.epoch;
-        let distribution_acc = &mut ctx.accounts.reward_distribution_account;
+        let reward_collection_acc = &mut ctx.accounts.reward_collection_account;
 
-        if let Some(merkle_root) = &distribution_acc.merkle_root {
+        if let Some(merkle_root) = &reward_collection_acc.merkle_root {
             if merkle_root.num_nodes_claimed > 0 {
                 return Err(Unauthorized.into());
             }
         }
-        if current_epoch <= distribution_acc.epoch_created_at {
+        if current_epoch <= reward_collection_acc.creation_epoch {
             return Err(PrematureMerkleRootUpload.into());
         }
 
-        if current_epoch > distribution_acc.expires_at {
+        if current_epoch > reward_collection_acc.expires_at {
             return Err(ExpiredRewardCollectionAccount.into());
         }
 
-        distribution_acc.merkle_root = Some(MerkleRoot {
+        reward_collection_acc.merkle_root = Some(MerkleRoot {
             root,
             max_total_claim,
             max_num_nodes,
             total_funds_claimed: 0,
             num_nodes_claimed: 0,
         });
-        distribution_acc.validate()?;
+        reward_collection_acc.validate()?;
 
         emit!(MerkleRootUploadedEvent {
             merkle_root_upload_authority: ctx.accounts.merkle_root_upload_authority.key(),
-            reward_distribution_account: distribution_acc.key(),
+            reward_collection_account: reward_collection_acc.key(),
         });
 
         Ok(())
@@ -195,21 +190,21 @@ pub mod reward_distribution {
     ) -> Result<()> {
         CloseRewardCollectionAccount::auth(&ctx)?;
 
-        let reward_distribution_account = &mut ctx.accounts.reward_distribution_account;
+        let reward_collection_account = &mut ctx.accounts.reward_collection_account;
 
-        if Clock::get()?.epoch <= reward_distribution_account.expires_at {
+        if Clock::get()?.epoch <= reward_collection_account.expires_at {
             return Err(PrematureCloseRewardCollectionAccount.into());
         }
 
         let expired_amount = RewardCollectionAccount::claim_expired(
-            reward_distribution_account.to_account_info(),
+            reward_collection_account.to_account_info(),
             ctx.accounts.expired_funds_account.to_account_info(),
         )?;
-        reward_distribution_account.validate()?;
+        reward_collection_account.validate()?;
 
         emit!(RewardCollectionAccountClosedEvent {
             expired_funds_account: ctx.accounts.expired_funds_account.key(),
-            reward_distribution_account: reward_distribution_account.key(),
+            reward_collection_account: reward_collection_account.key(),
             expired_amount,
         });
 
@@ -222,10 +217,10 @@ pub mod reward_distribution {
         claim_status.bump = bump;
 
         let claimant_account = &mut ctx.accounts.claimant;
-        let reward_distribution_account = &mut ctx.accounts.reward_distribution_account;
+        let reward_collection_account = &mut ctx.accounts.reward_collection_account;
 
         let clock = Clock::get()?;
-        if clock.epoch > reward_distribution_account.expires_at {
+        if clock.epoch > reward_collection_account.expires_at {
             return Err(ExpiredRewardCollectionAccount.into());
         }
 
@@ -234,9 +229,9 @@ pub mod reward_distribution {
             return Err(FundsAlreadyClaimed.into());
         }
 
-        let reward_distribution_info = reward_distribution_account.to_account_info();
-        let reward_distribution_epoch_expires_at = reward_distribution_account.expires_at;
-        let merkle_root = reward_distribution_account
+        let reward_distribution_info = reward_collection_account.to_account_info();
+        let reward_distribution_epoch_expires_at = reward_collection_account.expires_at;
+        let merkle_root = reward_collection_account
             .merkle_root
             .as_mut()
             .ok_or(RootNotUploaded)?;
@@ -286,13 +281,13 @@ pub mod reward_distribution {
         }
 
         emit!(ClaimedEvent {
-            reward_distribution_account: reward_distribution_account.key(),
+            reward_collection_account: reward_collection_account.key(),
             payer: ctx.accounts.payer.key(),
             claimant: claimant_account.key(),
             amount
         });
 
-        reward_distribution_account.validate()?;
+        reward_collection_account.validate()?;
 
         Ok(())
     }
@@ -318,14 +313,8 @@ pub enum ErrorCode {
     #[msg("The funds for the given index and RewardCollectionAccount have already been claimed.")]
     FundsAlreadyClaimed,
 
-    #[msg("Supplied invalid parameters.")]
-    InvalidParameters,
-
     #[msg("The given proof is invalid.")]
     InvalidProof,
-
-    #[msg("Failed to deserialize the supplied vote account data.")]
-    InvalidVoteAccountData,
 
     #[msg("Validator's commission basis points must be less than or equal to the RewardDistributionConfigAccount account's max_commission_bps.")]
     MaxCommissionFeeBpsExceeded,
@@ -405,7 +394,7 @@ pub struct InitializeRewardCollectionAccount<'info> {
         space = RewardCollectionAccount::SIZE,
         rent_exempt = enforce
     )]
-    pub reward_distribution_account: Account<'info, RewardCollectionAccount>,
+    pub reward_collection_account: Account<'info, RewardCollectionAccount>,
 
     /// CHECK: Safe because we check the vote program is the owner before deserialization.
     /// The validator's vote account is used to check this transaction's signer is also the authorized withdrawer.
@@ -454,9 +443,9 @@ pub struct CloseRewardCollectionAccount<'info> {
             validator_vote_account.key().as_ref(),
             epoch.to_le_bytes().as_ref(),
         ],
-        bump = reward_distribution_account.bump,
+        bump = reward_collection_account.bump,
     )]
-    pub reward_distribution_account: Account<'info, RewardCollectionAccount>,
+    pub reward_collection_account: Account<'info, RewardCollectionAccount>,
 
     /// CHECK: safe see auth fn
     #[account(mut)]
@@ -469,10 +458,7 @@ pub struct CloseRewardCollectionAccount<'info> {
 
 impl CloseRewardCollectionAccount<'_> {
     fn auth(ctx: &Context<CloseRewardCollectionAccount>) -> Result<()> {
-        if ctx
-            .accounts
-            .reward_distribution_account
-            .expired_funds_account
+        if ctx.accounts.reward_collection_account.expired_funds_account
             != ctx.accounts.expired_funds_account.key()
         {
             Err(Unauthorized.into())
@@ -488,7 +474,7 @@ pub struct Claim<'info> {
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
     #[account(mut, rent_exempt = enforce)]
-    pub reward_distribution_account: Account<'info, RewardCollectionAccount>,
+    pub reward_collection_account: Account<'info, RewardCollectionAccount>,
 
     /// Status of the claim. Used to prevent the same party from claiming multiple times.
     #[account(
@@ -497,7 +483,7 @@ pub struct Claim<'info> {
         seeds = [
             ClaimStatus::SEED,
             claimant.key().as_ref(),
-            reward_distribution_account.key().as_ref()
+            reward_collection_account.key().as_ref()
         ],
         bump,
         space = ClaimStatus::SIZE,
@@ -522,7 +508,7 @@ pub struct UploadMerkleRoot<'info> {
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
     #[account(mut, rent_exempt = enforce)]
-    pub reward_distribution_account: Account<'info, RewardCollectionAccount>,
+    pub reward_collection_account: Account<'info, RewardCollectionAccount>,
 
     #[account(mut)]
     pub merkle_root_upload_authority: Signer<'info>,
@@ -533,7 +519,7 @@ impl UploadMerkleRoot<'_> {
         if ctx.accounts.merkle_root_upload_authority.key()
             != ctx
                 .accounts
-                .reward_distribution_account
+                .reward_collection_account
                 .merkle_root_upload_authority
         {
             Err(Unauthorized.into())
@@ -547,12 +533,12 @@ impl UploadMerkleRoot<'_> {
 
 #[event]
 pub struct RewardCollectionAccountInitializedEvent {
-    pub reward_distribution_account: Pubkey,
+    pub reward_collection_account: Pubkey,
 }
 
 #[event]
 pub struct ValidatorCommissionBpsUpdatedEvent {
-    pub reward_distribution_account: Pubkey,
+    pub reward_collection_account: Pubkey,
     pub old_commission_bps: u16,
     pub new_commission_bps: u16,
 }
@@ -572,7 +558,7 @@ pub struct ConfigUpdatedEvent {
 #[event]
 pub struct ClaimedEvent {
     /// [RewardCollectionAccount] claimed from.
-    pub reward_distribution_account: Pubkey,
+    pub reward_collection_account: Pubkey,
 
     /// User that paid for the claim, may or may not be the same as claimant.
     pub payer: Pubkey,
@@ -590,7 +576,7 @@ pub struct MerkleRootUploadedEvent {
     pub merkle_root_upload_authority: Pubkey,
 
     /// Where the root was uploaded to.
-    pub reward_distribution_account: Pubkey,
+    pub reward_collection_account: Pubkey,
 }
 
 #[event]
@@ -599,7 +585,7 @@ pub struct RewardCollectionAccountClosedEvent {
     pub expired_funds_account: Pubkey,
 
     /// [RewardCollectionAccount] closed.
-    pub reward_distribution_account: Pubkey,
+    pub reward_collection_account: Pubkey,
 
     /// Unclaimed amount transferred.
     pub expired_amount: u64,

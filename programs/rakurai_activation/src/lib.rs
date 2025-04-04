@@ -1,24 +1,19 @@
 use anchor_lang::prelude::*;
 #[cfg(not(feature = "no-entrypoint"))]
-use {default_env::default_env, solana_security_txt::security_txt};
+use solana_security_txt::security_txt;
 
 use crate::{
-    state::{RakuraiActivationConfigAccount, RakuraiActivationAccount},
+    state::{RakuraiActivationAccount, RakuraiActivationConfigAccount},
     ErrorCode::Unauthorized,
 };
 
 #[cfg(not(feature = "no-entrypoint"))]
 security_txt! {
     // Required fields
-    name: "Rakurai RakuraiActivation Program",
+    name: "Rakurai Multisig Based Activation Program",
     project_url: "https://rakurai.io/",
     contacts: "https://rakurai.io/company",
-    policy: "https://rakurai.io/faq",
-    // Optional Fields
-    preferred_languages: "en",
-    source_code: "https://github.com/rakurai-io/rakurai_programs",
-    source_revision: default_env!("GIT_SHA", "GIT_SHA_MISSING"),
-    source_release: default_env!("GIT_REF_NAME", "GIT_REF_NAME_MISSING")
+    policy: "https://rakurai.io/faq"
 }
 pub mod sdk;
 pub mod state;
@@ -52,7 +47,10 @@ pub mod rakurai_activation {
     }
 
     /// Update config fields. Only the [RakuraiActivationConfigAccount] authority can invoke this.
-    pub fn update_config(ctx: Context<UpdateConfig>, new_config: RakuraiActivationConfigAccount) -> Result<()> {
+    pub fn update_config(
+        ctx: Context<UpdateConfig>,
+        new_config: RakuraiActivationConfigAccount,
+    ) -> Result<()> {
         UpdateConfig::auth(&ctx)?;
 
         let config = &mut ctx.accounts.config;
@@ -80,7 +78,8 @@ pub mod rakurai_activation {
             return Err(Unauthorized.into());
         }
 
-        let validator_vote_state = VoteState::deserialize(&ctx.accounts.validator_vote_account).unwrap();
+        let validator_vote_state =
+            VoteState::deserialize(&ctx.accounts.validator_vote_account).unwrap();
         if &validator_vote_state.node_pubkey != ctx.accounts.signer.key {
             return Err(Unauthorized.into());
         }
@@ -172,7 +171,9 @@ pub mod rakurai_activation {
         Ok(())
     }
 
-    pub fn close_rakurai_activation_account(ctx: Context<CloseRakuraiActivationAccount>) -> Result<()> {
+    pub fn close_rakurai_activation_account(
+        ctx: Context<CloseRakuraiActivationAccount>,
+    ) -> Result<()> {
         CloseRakuraiActivationAccount::auth(&ctx)?;
 
         let activation_account = &mut ctx.accounts.activation_account;
@@ -290,7 +291,11 @@ impl UpdateRakuraiActivationApproval<'_> {
     fn auth(ctx: &Context<UpdateRakuraiActivationApproval>) -> Result<()> {
         if ctx.accounts.signer.key() == ctx.accounts.activation_account.validator_authority.key()
             || ctx.accounts.signer.key()
-                == ctx.accounts.activation_account.block_builder_authority.key()
+                == ctx
+                    .accounts
+                    .activation_account
+                    .block_builder_authority
+                    .key()
         {
             Ok(())
         } else {
@@ -322,7 +327,11 @@ impl UpdateRakuraiActivationCommission<'_> {
     fn auth(ctx: &Context<UpdateRakuraiActivationCommission>) -> Result<()> {
         if ctx.accounts.signer.key() == ctx.accounts.activation_account.validator_authority.key()
             || ctx.accounts.signer.key()
-                == ctx.accounts.activation_account.block_builder_authority.key()
+                == ctx
+                    .accounts
+                    .activation_account
+                    .block_builder_authority
+                    .key()
         {
             Ok(())
         } else {
@@ -353,7 +362,12 @@ pub struct CloseRakuraiActivationAccount<'info> {
 
 impl CloseRakuraiActivationAccount<'_> {
     fn auth(ctx: &Context<CloseRakuraiActivationAccount>) -> Result<()> {
-        if ctx.accounts.signer.key() == ctx.accounts.activation_account.block_builder_authority.key()
+        if ctx.accounts.signer.key()
+            == ctx
+                .accounts
+                .activation_account
+                .block_builder_authority
+                .key()
         {
             Ok(())
         } else {
