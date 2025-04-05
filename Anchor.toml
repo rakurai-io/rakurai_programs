@@ -5,7 +5,7 @@ resolution = true
 skip-lint = false
 
 [programs.testnet]
-rakurai_activation = "7hSaMpkX5A3FVeKv9YVKqPit71jb5fvRKKPFGmfdND2y"
+rakurai_activation = "pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt"
 reward_distribution = "A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB"
 
 [registry]

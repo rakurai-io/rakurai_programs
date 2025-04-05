@@ -18,7 +18,7 @@ security_txt! {
 pub mod sdk;
 pub mod state;
 
-declare_id!("7hSaMpkX5A3FVeKv9YVKqPit71jb5fvRKKPFGmfdND2y");
+declare_id!("pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt");
 
 #[program]
 pub mod rakurai_activation {
