@@ -204,6 +204,39 @@ pub fn upload_merkle_root_ix(
     }
 }
 
+pub struct TransferStakerRewardsArgs {
+    total_rewards: u64,
+}
+pub struct TransferStakerRewardsAccounts {
+    pub rakurai_commission_account: Pubkey,
+    pub reward_collection_account: Pubkey,
+    pub signer: Pubkey,
+}
+pub fn transfer_staker_rewards_ix(
+    program_id: Pubkey,
+    args: TransferStakerRewardsArgs,
+    accounts: TransferStakerRewardsAccounts,
+) -> Instruction {
+    let TransferStakerRewardsArgs { total_rewards } = args;
+
+    let TransferStakerRewardsAccounts {
+        rakurai_commission_account,
+        reward_collection_account,
+        signer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::TransferStakerRewards { total_rewards }.data(),
+        accounts: crate::accounts::TransferStakerRewards {
+            rakurai_commission_account,
+            reward_collection_account,
+            signer,
+        }
+        .to_account_metas(None),
+    }
+}
+
 pub struct CloseRewardCollectionAccountArgs {
     pub _epoch: u64,
 }

@@ -163,6 +163,47 @@ pub mod reward_distribution {
         Ok(())
     }
 
+    pub fn transfer_staker_rewards(
+        ctx: Context<TransferStakerRewards>,
+        total_rewards: u64,
+    ) -> Result<()> {
+        TransferStakerRewards::auth(&ctx)?;
+
+        let reward_collection_acc = &mut ctx.accounts.reward_collection_account;
+        let block_builder_fee = total_rewards
+            .checked_mul(reward_collection_acc.rakurai_commission_bps as u64)
+            .ok_or(ArithmeticError)?
+            .checked_div(10_000)
+            .ok_or(ArithmeticError)?;
+        RewardCollectionAccount::claim(
+            ctx.accounts.signer.to_account_info(),
+            ctx.accounts.rakurai_commission_account.to_account_info(),
+            block_builder_fee,
+        )?;
+
+        let remaining = total_rewards
+            .checked_sub(block_builder_fee)
+            .ok_or(ArithmeticError)?;
+
+        let validator_fee = remaining
+            .checked_mul(reward_collection_acc.validator_commission_bps as u64)
+            .ok_or(ArithmeticError)?
+            .checked_div(10_000)
+            .ok_or(ArithmeticError)?;
+        let staker_rewards = remaining
+            .checked_sub(validator_fee)
+            .ok_or(ArithmeticError)?;
+        RewardCollectionAccount::claim(
+            ctx.accounts.signer.to_account_info(),
+            reward_collection_acc.to_account_info(),
+            staker_rewards,
+        )?;
+
+        emit!(StakerRewardsTransferredEvent { staker_rewards });
+
+        Ok(())
+    }
+
     /// Anyone can invoke this only after the [RewardCollectionAccount] has expired.
     /// This instruction will return any rent back to `claimant` and close the account
     pub fn close_claim_status(ctx: Context<CloseClaimStatus>) -> Result<()> {
@@ -333,6 +374,9 @@ pub enum ErrorCode {
 
     #[msg("Unauthorized signer.")]
     Unauthorized,
+
+    #[msg("Rakurai's commission account must be equal to the RewardCollectionAccount account's rakurai_commission_account.")]
+    InvalidRakuraiCommissionAccount,
 }
 
 #[derive(Accounts)]
@@ -529,6 +573,36 @@ impl UploadMerkleRoot<'_> {
     }
 }
 
+#[derive(Accounts)]
+pub struct TransferStakerRewards<'info> {
+    #[account(mut)]
+    pub rakurai_commission_account: AccountInfo<'info>,
+
+    #[account(mut, rent_exempt = enforce)]
+    pub reward_collection_account: Account<'info, RewardCollectionAccount>,
+
+    #[account(mut)]
+    pub signer: Signer<'info>,
+}
+
+impl TransferStakerRewards<'_> {
+    fn auth(ctx: &Context<TransferStakerRewards>) -> Result<()> {
+        if ctx.accounts.signer.key() != ctx.accounts.reward_collection_account.expired_funds_account
+        {
+            Err(Unauthorized.into())
+        } else if ctx.accounts.rakurai_commission_account.key()
+            != ctx
+                .accounts
+                .reward_collection_account
+                .rakurai_commission_account
+        {
+            Err(InvalidRakuraiCommissionAccount.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
 // Events
 
 #[event]
@@ -577,6 +651,11 @@ pub struct MerkleRootUploadedEvent {
 
     /// Where the root was uploaded to.
     pub reward_collection_account: Pubkey,
+}
+
+#[event]
+pub struct StakerRewardsTransferredEvent {
+    pub staker_rewards: u64,
 }
 
 #[event]
