@@ -210,6 +210,7 @@ pub struct TransferStakerRewardsArgs {
 pub struct TransferStakerRewardsAccounts {
     pub rakurai_commission_account: Pubkey,
     pub reward_collection_account: Pubkey,
+    pub system_program: Pubkey,
     pub signer: Pubkey,
 }
 pub fn transfer_staker_rewards_ix(
@@ -222,6 +223,7 @@ pub fn transfer_staker_rewards_ix(
     let TransferStakerRewardsAccounts {
         rakurai_commission_account,
         reward_collection_account,
+        system_program,
         signer,
     } = accounts;
 
@@ -231,6 +233,7 @@ pub fn transfer_staker_rewards_ix(
         accounts: crate::accounts::TransferStakerRewards {
             rakurai_commission_account,
             reward_collection_account,
+            system_program,
             signer,
         }
         .to_account_metas(None),

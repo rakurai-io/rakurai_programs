@@ -24,6 +24,7 @@ declare_id!("A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB");
 #[program]
 pub mod reward_distribution {
     use rakurai_vote_state::VoteState;
+    use solana_program::{program::invoke, system_instruction};
 
     use super::*;
     use crate::ErrorCode::*;
@@ -173,7 +174,7 @@ pub mod reward_distribution {
             return Err(RewardsTooLow.into());
         }
 
-        let reward_collection_acc = &mut ctx.accounts.reward_collection_account;
+        let reward_collection_acc = &ctx.accounts.reward_collection_account;
         let block_builder_fee = total_rewards
             .checked_mul(reward_collection_acc.rakurai_commission_bps as u64)
             .ok_or(ArithmeticError)?
@@ -192,19 +193,35 @@ pub mod reward_distribution {
         let staker_rewards = remaining
             .checked_sub(validator_fee)
             .ok_or(ArithmeticError)?;
-        
-        if block_builder_fee + staker_rewards + validator_fee != total_rewards {
+        if block_builder_fee + validator_fee + staker_rewards != total_rewards {
             return Err(ArithmeticError.into());
         }
-        RewardCollectionAccount::claim(
-            ctx.accounts.signer.to_account_info(),
-            ctx.accounts.rakurai_commission_account.to_account_info(),
-            block_builder_fee,
+        invoke(
+            &system_instruction::transfer(
+                &ctx.accounts.signer.key(),
+                &&ctx.accounts.reward_collection_account.rakurai_commission_account.key(),
+                block_builder_fee,
+            ),
+            &[
+                ctx.accounts.signer.to_account_info(),
+                ctx.accounts.rakurai_commission_account.clone(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
         )?;
-        RewardCollectionAccount::claim(
-            ctx.accounts.signer.to_account_info(),
-            reward_collection_acc.to_account_info(),
-            staker_rewards,
+        invoke(
+            &system_instruction::transfer(
+                &ctx.accounts.signer.key(),
+                &ctx.accounts
+                    .reward_collection_account
+                    .to_account_info()
+                    .key(),
+                staker_rewards,
+            ),
+            &[
+                ctx.accounts.signer.to_account_info(),
+                ctx.accounts.reward_collection_account.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
         )?;
 
         emit!(StakerRewardsTransferredEvent { staker_rewards });
@@ -587,6 +604,8 @@ pub struct TransferStakerRewards<'info> {
 
     #[account(mut, rent_exempt = enforce)]
     pub reward_collection_account: Account<'info, RewardCollectionAccount>,
+
+    pub system_program: Program<'info, System>,
 
     #[account(mut)]
     pub signer: Signer<'info>,
