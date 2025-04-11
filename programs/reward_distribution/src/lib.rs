@@ -4,7 +4,7 @@ use solana_security_txt::security_txt;
 
 use crate::{
     state::{ClaimStatus, MerkleRoot, RewardCollectionAccount, RewardDistributionConfigAccount},
-    ErrorCode::Unauthorized,
+    ErrorCode::{InvalidRakuraiCommissionAccount, Unauthorized},
 };
 
 #[cfg(not(feature = "no-entrypoint"))]
@@ -87,7 +87,7 @@ pub mod reward_distribution {
         reward_collection_acc.expires_at = current_epoch
             .checked_add(ctx.accounts.config.num_epochs_valid)
             .ok_or(ArithmeticError)?;
-        reward_collection_acc.expired_funds_account = ctx.accounts.signer.key();
+        reward_collection_acc.initializer = ctx.accounts.signer.key();
         reward_collection_acc.bump = bump;
         reward_collection_acc.validate()?;
 
@@ -169,17 +169,16 @@ pub mod reward_distribution {
     ) -> Result<()> {
         TransferStakerRewards::auth(&ctx)?;
 
+        if total_rewards <= 0 {
+            return Err(RewardsTooLow.into());
+        }
+
         let reward_collection_acc = &mut ctx.accounts.reward_collection_account;
         let block_builder_fee = total_rewards
             .checked_mul(reward_collection_acc.rakurai_commission_bps as u64)
             .ok_or(ArithmeticError)?
             .checked_div(10_000)
             .ok_or(ArithmeticError)?;
-        RewardCollectionAccount::claim(
-            ctx.accounts.signer.to_account_info(),
-            ctx.accounts.rakurai_commission_account.to_account_info(),
-            block_builder_fee,
-        )?;
 
         let remaining = total_rewards
             .checked_sub(block_builder_fee)
@@ -193,6 +192,15 @@ pub mod reward_distribution {
         let staker_rewards = remaining
             .checked_sub(validator_fee)
             .ok_or(ArithmeticError)?;
+        
+        if block_builder_fee + staker_rewards + validator_fee != total_rewards {
+            return Err(ArithmeticError.into());
+        }
+        RewardCollectionAccount::claim(
+            ctx.accounts.signer.to_account_info(),
+            ctx.accounts.rakurai_commission_account.to_account_info(),
+            block_builder_fee,
+        )?;
         RewardCollectionAccount::claim(
             ctx.accounts.signer.to_account_info(),
             reward_collection_acc.to_account_info(),
@@ -223,7 +231,7 @@ pub mod reward_distribution {
     }
 
     /// Anyone can invoke this only after the [RewardCollectionAccount] has expired.
-    /// This instruction will send any unclaimed funds to the designated `expired_funds_account`
+    /// This instruction will send any unclaimed funds to the designated `initializer`
     /// before closing and returning the rent exempt funds to the validator.
     pub fn close_reward_collection_account(
         ctx: Context<CloseRewardCollectionAccount>,
@@ -239,12 +247,12 @@ pub mod reward_distribution {
 
         let expired_amount = RewardCollectionAccount::claim_expired(
             reward_collection_account.to_account_info(),
-            ctx.accounts.expired_funds_account.to_account_info(),
+            ctx.accounts.initializer.to_account_info(),
         )?;
         reward_collection_account.validate()?;
 
         emit!(RewardCollectionAccountClosedEvent {
-            expired_funds_account: ctx.accounts.expired_funds_account.key(),
+            initializer: ctx.accounts.initializer.key(),
             reward_collection_account: reward_collection_account.key(),
             expired_amount,
         });
@@ -375,6 +383,9 @@ pub enum ErrorCode {
     #[msg("Unauthorized signer.")]
     Unauthorized,
 
+    #[msg("Total rewards must be greater than 0.")]
+    RewardsTooLow,
+
     #[msg("Rakurai's commission account must be equal to the RewardCollectionAccount account's rakurai_commission_account.")]
     InvalidRakuraiCommissionAccount,
 }
@@ -475,9 +486,8 @@ impl UpdateConfig<'_> {
 pub struct CloseRewardCollectionAccount<'info> {
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
-    /// CHECK: safe see auth fn
     #[account(mut)]
-    pub expired_funds_account: AccountInfo<'info>,
+    pub initializer: AccountInfo<'info>,
 
     #[account(
         mut,
@@ -495,16 +505,13 @@ pub struct CloseRewardCollectionAccount<'info> {
     #[account(mut)]
     pub validator_vote_account: AccountInfo<'info>,
 
-    /// Anyone can crank this instruction.
     #[account(mut)]
     pub signer: Signer<'info>,
 }
 
 impl CloseRewardCollectionAccount<'_> {
     fn auth(ctx: &Context<CloseRewardCollectionAccount>) -> Result<()> {
-        if ctx.accounts.reward_collection_account.expired_funds_account
-            != ctx.accounts.expired_funds_account.key()
-        {
+        if ctx.accounts.reward_collection_account.initializer != ctx.accounts.initializer.key() {
             Err(Unauthorized.into())
         } else {
             Ok(())
@@ -587,8 +594,7 @@ pub struct TransferStakerRewards<'info> {
 
 impl TransferStakerRewards<'_> {
     fn auth(ctx: &Context<TransferStakerRewards>) -> Result<()> {
-        if ctx.accounts.signer.key() != ctx.accounts.reward_collection_account.expired_funds_account
-        {
+        if ctx.accounts.signer.key() != ctx.accounts.reward_collection_account.initializer {
             Err(Unauthorized.into())
         } else if ctx.accounts.rakurai_commission_account.key()
             != ctx
@@ -661,7 +667,7 @@ pub struct StakerRewardsTransferredEvent {
 #[event]
 pub struct RewardCollectionAccountClosedEvent {
     /// Account where unclaimed funds were transferred to.
-    pub expired_funds_account: Pubkey,
+    pub initializer: Pubkey,
 
     /// [RewardCollectionAccount] closed.
     pub reward_collection_account: Pubkey,

@@ -22,7 +22,7 @@ pub struct RewardCollectionAccount {
     pub rakurai_commission_bps: u16,
     pub rakurai_commission_account: Pubkey,
     pub expires_at: u64,
-    pub expired_funds_account: Pubkey,
+    pub initializer: Pubkey,
     pub bump: u8,
 }
 
@@ -71,7 +71,7 @@ impl RewardCollectionAccount {
             return Err(AccountValidationFailure.into());
         }
 
-        if self.expired_funds_account == default_pubkey {
+        if self.initializer == default_pubkey {
             return Err(AccountValidationFailure.into());
         }
 

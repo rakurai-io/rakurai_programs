@@ -242,9 +242,9 @@ pub struct CloseRewardCollectionAccountArgs {
 }
 pub struct CloseRewardCollectionAccounts {
     pub config: Pubkey,
+    pub initializer: Pubkey,
     pub reward_collection_account: Pubkey,
     pub validator_vote_account: Pubkey,
-    pub expired_funds_account: Pubkey,
     pub signer: Pubkey,
 }
 pub fn close_reward_collection_account_ix(
@@ -256,9 +256,9 @@ pub fn close_reward_collection_account_ix(
 
     let CloseRewardCollectionAccounts {
         config,
+        initializer,
         reward_collection_account,
         validator_vote_account,
-        expired_funds_account,
         signer,
     } = accounts;
 
@@ -267,8 +267,8 @@ pub fn close_reward_collection_account_ix(
         data: crate::instruction::CloseRewardCollectionAccount { _epoch }.data(),
         accounts: crate::accounts::CloseRewardCollectionAccount {
             config,
+            initializer,
             validator_vote_account,
-            expired_funds_account,
             reward_collection_account,
             signer,
         }
