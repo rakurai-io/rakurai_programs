@@ -205,7 +205,7 @@ pub fn upload_merkle_root_ix(
 }
 
 pub struct TransferStakerRewardsArgs {
-    total_rewards: u64,
+    pub total_rewards: u64,
 }
 pub struct TransferStakerRewardsAccounts {
     pub rakurai_commission_account: Pubkey,
