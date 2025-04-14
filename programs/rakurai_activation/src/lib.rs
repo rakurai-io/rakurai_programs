@@ -86,6 +86,7 @@ pub mod rakurai_activation {
 
         let activation_account = &mut ctx.accounts.activation_account;
         activation_account.is_enabled = false;
+        activation_account.hash = String::default();
         activation_account.proposer = Some(ctx.accounts.signer.key());
         activation_account.validator_commission_bps = validator_commission_bps;
         activation_account.validator_identity_pubkey = validator_vote_state.node_pubkey.key();
@@ -108,6 +109,7 @@ pub mod rakurai_activation {
     pub fn update_rakurai_activation_approval(
         ctx: Context<UpdateRakuraiActivationApproval>,
         grant_approval: bool,
+        hash: Option<String>,
     ) -> Result<()> {
         UpdateRakuraiActivationApproval::auth(&ctx)?;
         let msg;
@@ -125,9 +127,13 @@ pub mod rakurai_activation {
                 activation_account.proposer = None;
                 activation_account.is_enabled = true;
             }
+            if ctx.accounts.signer.key() == activation_account.block_builder_authority {
+                activation_account.hash = hash.unwrap_or(String::default());
+            }
         } else {
             msg = "Permission Revoked".to_string();
             activation_account.is_enabled = false;
+            activation_account.hash = String::default();
         }
 
         activation_account.validate()?;
@@ -257,7 +263,7 @@ pub struct InitializeRakuraiActivationAccount<'info> {
         ],
         bump,
         payer = signer,
-        space = RakuraiActivationAccount::SIZE,
+        space = RakuraiActivationAccount::INIT_SPACE,
         rent_exempt = enforce
     )]
     pub activation_account: Account<'info, RakuraiActivationAccount>,

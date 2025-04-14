@@ -174,6 +174,7 @@ fn process_scheduler_control(
         rakurai_activation::id(),
         UpdateRakuraiActivationApprovalArgs {
             grant_approval: disable_scheduler,
+            hash: args.hash,
         },
         UpdateRakuraiActivationApprovalAccounts {
             config: config_pda,

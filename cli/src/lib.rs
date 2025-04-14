@@ -126,6 +126,15 @@ pub fn display_activation_account(activation_account: RakuraiActivationAccount) 
             proposer.to_string()
         );
     }
+    if !activation_account.hash.is_empty() {
+        println!("{}", "📝 Hash".bold().underline().blue());
+        println!(
+            "   {} {:<10} {}",
+            "📝".cyan(),
+            "Proposer:",
+            activation_account.hash
+        );
+    }
 }
 
 pub fn get_vote_account(

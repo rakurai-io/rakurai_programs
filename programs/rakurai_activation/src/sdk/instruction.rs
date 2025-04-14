@@ -129,6 +129,7 @@ pub fn initialize_rakurai_activation_account_ix(
 
 pub struct UpdateRakuraiActivationApprovalArgs {
     pub grant_approval: bool,
+    pub hash: Option<String>,
 }
 pub struct UpdateRakuraiActivationApprovalAccounts {
     pub config: Pubkey,
@@ -141,7 +142,10 @@ pub fn update_rakurai_activation_approval_ix(
     args: UpdateRakuraiActivationApprovalArgs,
     accounts: UpdateRakuraiActivationApprovalAccounts,
 ) -> Instruction {
-    let UpdateRakuraiActivationApprovalArgs { grant_approval } = args;
+    let UpdateRakuraiActivationApprovalArgs {
+        grant_approval,
+        hash,
+    } = args;
 
     let UpdateRakuraiActivationApprovalAccounts {
         config,
@@ -152,7 +156,11 @@ pub fn update_rakurai_activation_approval_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::UpdateRakuraiActivationApproval { grant_approval }.data(),
+        data: crate::instruction::UpdateRakuraiActivationApproval {
+            grant_approval,
+            hash,
+        }
+        .data(),
         accounts: crate::accounts::UpdateRakuraiActivationApproval {
             config,
             validator_identity_account,

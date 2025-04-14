@@ -94,6 +94,15 @@ pub struct SchedulerControlArgs {
     )]
     pub disable_scheduler: bool,
 
+    /// Optionally provide a hash value (default: None)
+    #[arg(
+        short = 's',
+        long = "hash",
+        required = false,
+        help = "Optionally provide a hash value (default: None)"
+    )]
+    pub hash: Option<String>,
+
     /// Validator identity account pubkey
     #[arg(short = 'i', long = "identity_pubkey", required = true, value_parser = parse_pubkey, help = "Validator identity account pubkey")]
     pub identity_pubkey: Pubkey,
