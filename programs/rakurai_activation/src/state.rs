@@ -5,7 +5,7 @@ use {
 };
 
 #[account]
-#[derive(Default, InitSpace)]
+#[derive(Default)]
 pub struct RakuraiActivationConfigAccount {
     pub authority: Pubkey,
     pub block_builder_authority: Pubkey,
@@ -15,7 +15,7 @@ pub struct RakuraiActivationConfigAccount {
 }
 
 #[account]
-#[derive(Default, InitSpace)]
+#[derive(Default)]
 pub struct RakuraiActivationAccount {
     pub is_enabled: bool,
     pub proposer: Option<Pubkey>,
