@@ -170,11 +170,24 @@ fn process_scheduler_control(
         "🔗 Signer:".cyan(),
         signer_pubkey
     );
+
+    let hash: Option<[u8; 64]> = if let Some(hash_str) = args.hash {
+        let bytes: [u8; 64] = bs58::decode(&hash_str)
+            .into_vec()
+            .expect("Invalid base58")
+            .try_into()
+            .expect("Expected 64 bytes");
+
+        Some(bytes)
+    } else {
+        None
+    };
+
     let update_approval_instruction = update_rakurai_activation_approval_ix(
         rakurai_activation::id(),
         UpdateRakuraiActivationApprovalArgs {
             grant_approval: disable_scheduler,
-            hash: args.hash,
+            hash,
         },
         UpdateRakuraiActivationApprovalAccounts {
             config: config_pda,

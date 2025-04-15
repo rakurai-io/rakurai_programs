@@ -126,13 +126,13 @@ pub fn display_activation_account(activation_account: RakuraiActivationAccount) 
             proposer.to_string()
         );
     }
-    if !activation_account.hash.is_empty() {
+    if let Some(array) = activation_account.hash {
         println!("{}", "📝 Hash".bold().underline().blue());
         println!(
             "   {} {:<10} {}",
             "📝".cyan(),
             "Proposer:",
-            activation_account.hash
+            bs58::encode(array).into_string()
         );
     }
 }

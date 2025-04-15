@@ -5,7 +5,7 @@ use {
 };
 
 #[account]
-#[derive(Default)]
+#[derive(Default, InitSpace)]
 pub struct RakuraiActivationConfigAccount {
     pub authority: Pubkey,
     pub block_builder_authority: Pubkey,
@@ -26,8 +26,7 @@ pub struct RakuraiActivationAccount {
     pub block_builder_commission_bps: u16,
     pub block_builder_commission_account: Pubkey,
     pub bump: u8,
-    #[max_len(200)]
-    pub hash: String,
+    pub hash: Option<[u8; 64]>,
 }
 
 const HEADER_SIZE: usize = 8;
@@ -56,6 +55,8 @@ impl RakuraiActivationConfigAccount {
 
 impl RakuraiActivationAccount {
     pub const SEED: &'static [u8] = b"RAKURAI_ACTIVATION_ACCOUNT";
+
+    pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
 
     pub fn validate(&self) -> Result<()> {
         let default_pubkey = Pubkey::default();

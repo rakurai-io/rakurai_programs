@@ -129,7 +129,7 @@ pub fn initialize_rakurai_activation_account_ix(
 
 pub struct UpdateRakuraiActivationApprovalArgs {
     pub grant_approval: bool,
-    pub hash: Option<String>,
+    pub hash: Option<[u8; 64]>,
 }
 pub struct UpdateRakuraiActivationApprovalAccounts {
     pub config: Pubkey,
