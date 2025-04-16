@@ -131,7 +131,7 @@ pub fn display_activation_account(activation_account: RakuraiActivationAccount) 
         println!(
             "   {} {:<10} {}",
             "📝".cyan(),
-            "Proposer:",
+            "Hash:",
             bs58::encode(array).into_string()
         );
     }
