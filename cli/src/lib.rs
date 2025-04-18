@@ -1,4 +1,3 @@
-pub mod clap_args;
 use {
     anchor_lang::AccountDeserialize,
     colored::*,
