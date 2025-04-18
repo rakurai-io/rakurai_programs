@@ -47,6 +47,17 @@ pub struct Cli {
     /// RPC URL for sending transactions
     #[arg(short, long, global = true, default_value = "t", value_parser = normalize_to_url_if_moniker, help = "Solana RPC endpoint to send transactions through")]
     pub rpc: String,
+
+    /// Rakurai Activation Program ID (Pubkey)
+    #[arg(
+            short,
+            long,
+            global = true,
+            required = true,
+            value_parser = parse_pubkey,
+            help = "Rakurai activation Program ID (Pubkey)"
+        )]
+    pub program_id: Pubkey,
 }
 
 #[derive(Subcommand)]
@@ -162,6 +173,7 @@ pub struct ShowPdaArgs {
 fn process_init_config(
     rpc_client: Arc<RpcClient>,
     kp: Arc<Keypair>,
+    program_id: Pubkey,
     args: InitConfigArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let signer_pubkey = kp.pubkey();
@@ -173,7 +185,7 @@ fn process_init_config(
         .block_builder_commission_account
         .unwrap_or(signer_pubkey);
 
-    let (config_pda, bump) = derive_config_account_address(&rakurai_activation::id());
+    let (config_pda, bump) = derive_config_account_address(&program_id);
     println!("📌 Derived Config PDA: {} (Bump: {})", config_pda, bump);
 
     println!(
@@ -189,7 +201,7 @@ fn process_init_config(
     );
 
     let initialize_instruction = initialize_ix(
-        rakurai_activation::id(),
+        program_id,
         InitializeArgs {
             authority: config_authority,
             block_builder_commission_bps,
@@ -210,6 +222,7 @@ fn process_init_config(
 fn process_init_pda(
     rpc_client: Arc<RpcClient>,
     kp: Arc<Keypair>,
+    program_id: Pubkey,
     args: InitPdaArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let signer_pubkey = kp.pubkey();
@@ -218,16 +231,16 @@ fn process_init_pda(
 
     let vote_state = get_vote_account(rpc_client.clone(), vote_pubkey)?;
     if vote_state.node_pubkey != signer_pubkey {
-        eprintln!(
+        println!(
             "❌ Unauthorized signer! Expected: {:?}, Found: {:?}",
             vote_state.node_pubkey, signer_pubkey
         );
         return Err("Unauthorized signer".into());
     }
 
-    let (config_pda, _) = derive_config_account_address(&rakurai_activation::id());
+    let (config_pda, _) = derive_config_account_address(&program_id);
     let (activation_pda, bump) =
-        derive_activation_account_address(&rakurai_activation::id(), &vote_state.node_pubkey);
+        derive_activation_account_address(&program_id, &vote_state.node_pubkey);
 
     println!(
         "📌 Derived Activation PDA: {} (Bump: {})",
@@ -244,7 +257,7 @@ fn process_init_pda(
     );
 
     let initialize_instruction = initialize_rakurai_activation_account_ix(
-        rakurai_activation::id(),
+        program_id,
         InitializeRakuraiActivationAccountArgs {
             validator_commission_bps,
             bump,
@@ -262,9 +275,10 @@ fn process_init_pda(
     sign_and_send_transaction(rpc_client.clone(), initialize_instruction, &kp)
 }
 
-fn process_scheduler_control(
+pub fn process_scheduler_control(
     rpc_client: Arc<RpcClient>,
     kp: Arc<Keypair>,
+    program_id: Pubkey,
     args: SchedulerControlArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let signer_pubkey = kp.pubkey();
@@ -272,18 +286,21 @@ fn process_scheduler_control(
     let disable_scheduler = args.disable_scheduler;
     let identity_pubkey = args.identity_pubkey;
 
-    let (config_pda, _) = derive_config_account_address(&rakurai_activation::id());
-    let (activation_pda, bump) =
-        derive_activation_account_address(&rakurai_activation::id(), &identity_pubkey);
+    let (config_pda, _) = derive_config_account_address(&program_id);
+    let (activation_pda, bump) = derive_activation_account_address(&program_id, &identity_pubkey);
     let activation_account = get_activation_account(rpc_client.clone(), activation_pda)?;
     if !(identity_pubkey == signer_pubkey
         || activation_account.block_builder_authority == signer_pubkey)
     {
-        eprintln!(
+        println!(
             "❌ Unauthorized Signer! Expected: Validator({}) or BlockBuilder({}), Found: {}",
             identity_pubkey, activation_account.block_builder_authority, signer_pubkey
         );
         return Err("Unauthorized signer".into());
+    }
+
+    if activation_account.is_enabled == false && disable_scheduler == false {
+        return Err("Scheduler already disabled | No nedd to diable/update hash".into());
     }
 
     println!(
@@ -313,7 +330,7 @@ fn process_scheduler_control(
     };
 
     let update_approval_instruction = update_rakurai_activation_approval_ix(
-        rakurai_activation::id(),
+        program_id,
         UpdateRakuraiActivationApprovalArgs {
             grant_approval: disable_scheduler,
             hash,
@@ -331,15 +348,15 @@ fn process_scheduler_control(
 fn process_update_commission(
     rpc_client: Arc<RpcClient>,
     kp: Arc<Keypair>,
+    program_id: Pubkey,
     args: UpdateCommissionArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let signer_pubkey = kp.pubkey();
     let commission_bps = args.commission_bps;
     let identity_pubkey = args.identity_pubkey;
 
-    let (config_pda, _) = derive_config_account_address(&rakurai_activation::id());
-    let (activation_pda, bump) =
-        derive_activation_account_address(&rakurai_activation::id(), &identity_pubkey);
+    let (config_pda, _) = derive_config_account_address(&program_id);
+    let (activation_pda, bump) = derive_activation_account_address(&program_id, &identity_pubkey);
 
     println!(
         "📌 Derived Activation PDA: {} (Bump: {})",
@@ -358,7 +375,7 @@ fn process_update_commission(
     if !(signer_pubkey == identity_pubkey
         || signer_pubkey == activation_account.block_builder_authority)
     {
-        eprintln!(
+        println!(
             "❌ Unauthorized Signer! Expected: Validator({}) or BlockBuilder({}), Found: {}",
             identity_pubkey, activation_account.block_builder_authority, signer_pubkey
         );
@@ -382,7 +399,7 @@ fn process_update_commission(
     }
 
     let update_commission_instruction = update_rakurai_activation_commission_ix(
-        rakurai_activation::id(),
+        program_id,
         UpdateRakuraiActivationCommissionArgs {
             validator_commission_bps: commission_bps,
         },
@@ -399,14 +416,14 @@ fn process_update_commission(
 fn process_close(
     rpc_client: Arc<RpcClient>,
     kp: Arc<Keypair>,
+    program_id: Pubkey,
     args: ClosePdaArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let signer_pubkey = kp.pubkey();
     let identity_pubkey = args.identity_pubkey;
 
-    let (config_pda, _) = derive_config_account_address(&rakurai_activation::id());
-    let (activation_pda, bump) =
-        derive_activation_account_address(&rakurai_activation::id(), &identity_pubkey);
+    let (config_pda, _) = derive_config_account_address(&program_id);
+    let (activation_pda, bump) = derive_activation_account_address(&program_id, &identity_pubkey);
 
     let activation_account = get_activation_account(rpc_client.clone(), activation_pda)?;
     if activation_account.block_builder_authority != signer_pubkey {
@@ -429,7 +446,7 @@ fn process_close(
         signer_pubkey
     );
     let update_approval_instruction = close_rakurai_activation_account_ix(
-        rakurai_activation::id(),
+        program_id,
         CloseRakuraiActivationAccountArgs {},
         CloseRakuraiActivationAccounts {
             config: config_pda,
@@ -443,12 +460,12 @@ fn process_close(
 
 fn process_show(
     rpc_client: Arc<RpcClient>,
+    program_id: Pubkey,
     args: ShowPdaArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let identity_pubkey = args.identity_pubkey;
 
-    let (activation_pda, _) =
-        derive_activation_account_address(&rakurai_activation::id(), &identity_pubkey);
+    let (activation_pda, _) = derive_activation_account_address(&program_id, &identity_pubkey);
 
     let activation_account = get_activation_account(rpc_client.clone(), activation_pda)?;
     println!("📌 PDA: {}", activation_pda);
@@ -465,18 +482,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     match &cli.command {
-        Commands::InitPda(args) => process_init_pda(rpc_client.clone(), cli.keypair, args.clone())?,
-        Commands::InitConfig(args) => {
-            process_init_config(rpc_client.clone(), cli.keypair, args.clone())?
-        }
-        Commands::SchedulerControl(args) => {
-            process_scheduler_control(rpc_client.clone(), cli.keypair, args.clone())?
-        }
-        Commands::UpdateCommission(args) => {
-            process_update_commission(rpc_client.clone(), cli.keypair, args.clone())?
-        }
-        Commands::Close(args) => process_close(rpc_client.clone(), cli.keypair, args.clone())?,
-        Commands::Show(args) => process_show(rpc_client.clone(), args.clone())?,
+        Commands::InitPda(args) => process_init_pda(
+            rpc_client.clone(),
+            cli.keypair,
+            cli.program_id,
+            args.clone(),
+        )?,
+        Commands::InitConfig(args) => process_init_config(
+            rpc_client.clone(),
+            cli.keypair,
+            cli.program_id,
+            args.clone(),
+        )?,
+        Commands::SchedulerControl(args) => process_scheduler_control(
+            rpc_client.clone(),
+            cli.keypair,
+            cli.program_id,
+            args.clone(),
+        )?,
+        Commands::UpdateCommission(args) => process_update_commission(
+            rpc_client.clone(),
+            cli.keypair,
+            cli.program_id,
+            args.clone(),
+        )?,
+        Commands::Close(args) => process_close(
+            rpc_client.clone(),
+            cli.keypair,
+            cli.program_id,
+            args.clone(),
+        )?,
+        Commands::Show(args) => process_show(rpc_client.clone(), cli.program_id, args.clone())?,
     }
 
     Ok(())
