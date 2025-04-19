@@ -21,8 +21,6 @@ pub struct RakuraiActivationAccount {
     pub proposer: Option<Pubkey>,
     pub validator_authority: Pubkey,
     pub validator_commission_bps: u16,
-    pub validator_identity_pubkey: Pubkey,
-    pub block_builder_authority: Pubkey,
     pub block_builder_commission_bps: u16,
     pub block_builder_commission_account: Pubkey,
     pub bump: u8,
@@ -39,9 +37,7 @@ impl RakuraiActivationConfigAccount {
         const MAX_COMMISSION_BPS: u16 = 10000;
         let default_pubkey = Pubkey::default();
 
-        if self.block_builder_commission_account == default_pubkey
-            || self.block_builder_authority == default_pubkey
-        {
+        if self.block_builder_commission_account == default_pubkey {
             return Err(AccountValidationFailure.into());
         }
 
@@ -60,8 +56,7 @@ impl RakuraiActivationAccount {
 
     pub fn validate(&self) -> Result<()> {
         let default_pubkey = Pubkey::default();
-        if self.validator_identity_pubkey == default_pubkey
-            || self.validator_authority == default_pubkey
+        if self.validator_authority == default_pubkey
             || self.block_builder_commission_account == default_pubkey
         {
             return Err(AccountValidationFailure.into());

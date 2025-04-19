@@ -172,7 +172,7 @@ pub fn update_rakurai_activation_approval_ix(
 }
 
 pub struct UpdateRakuraiActivationCommissionArgs {
-    pub validator_commission_bps: Option<u16>,
+    pub commission_bps: u16,
 }
 pub struct UpdateRakuraiActivationCommissionAccounts {
     pub config: Pubkey,
@@ -185,9 +185,7 @@ pub fn update_rakurai_activation_commission_ix(
     args: UpdateRakuraiActivationCommissionArgs,
     accounts: UpdateRakuraiActivationCommissionAccounts,
 ) -> Instruction {
-    let UpdateRakuraiActivationCommissionArgs {
-        validator_commission_bps,
-    } = args;
+    let UpdateRakuraiActivationCommissionArgs { commission_bps } = args;
 
     let UpdateRakuraiActivationCommissionAccounts {
         config,
@@ -198,10 +196,7 @@ pub fn update_rakurai_activation_commission_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::UpdateRakuraiActivationCommission {
-            validator_commission_bps,
-        }
-        .data(),
+        data: crate::instruction::UpdateRakuraiActivationCommission { commission_bps }.data(),
         accounts: crate::accounts::UpdateRakuraiActivationCommission {
             config,
             validator_identity_account,

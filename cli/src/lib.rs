@@ -1,7 +1,7 @@
 use {
     anchor_lang::AccountDeserialize,
     colored::*,
-    rakurai_activation::state::RakuraiActivationAccount,
+    rakurai_activation::state::{RakuraiActivationAccount, RakuraiActivationConfigAccount},
     solana_rpc_client::rpc_client::RpcClient,
     solana_sdk::{
         instruction::Instruction,
@@ -62,6 +62,15 @@ pub fn get_activation_account(
     RakuraiActivationAccount::try_deserialize(&mut account_slice).map_err(Into::into)
 }
 
+pub fn get_activation_config_account(
+    rpc_client: Arc<RpcClient>,
+    activation_config_account: Pubkey,
+) -> Result<RakuraiActivationConfigAccount, Box<dyn std::error::Error>> {
+    let account_data = rpc_client.get_account_data(&activation_config_account)?;
+    let mut account_slice = account_data.as_slice();
+    RakuraiActivationConfigAccount::try_deserialize(&mut account_slice).map_err(Into::into)
+}
+
 pub fn display_activation_account(activation_account: RakuraiActivationAccount) {
     println!("{}", "🗳️ Validator".bold().underline().blue());
     println!(
@@ -85,12 +94,6 @@ pub fn display_activation_account(activation_account: RakuraiActivationAccount) 
         "Authority:",
         activation_account.validator_authority.to_string()
     );
-    println!(
-        "   {} {:<10} {}",
-        "🗳️".cyan(),
-        " Identity Pubkey:",
-        activation_account.validator_identity_pubkey.to_string()
-    );
 
     println!("{}", "📜 Block Builder".bold().underline().blue());
     println!(
@@ -101,12 +104,6 @@ pub fn display_activation_account(activation_account: RakuraiActivationAccount) 
             .block_builder_commission_bps
             .to_string()
             .magenta()
-    );
-    println!(
-        "   {} {:<10} {}",
-        "🔑".red(),
-        "Authority:",
-        activation_account.block_builder_authority.to_string()
     );
     println!(
         "   {} {:<10} {}",

@@ -89,13 +89,11 @@ pub mod rakurai_activation {
         activation_account.hash = None;
         activation_account.proposer = Some(ctx.accounts.signer.key());
         activation_account.validator_commission_bps = validator_commission_bps;
-        activation_account.validator_identity_pubkey = validator_vote_state.node_pubkey.key();
         activation_account.block_builder_commission_bps =
             ctx.accounts.config.block_builder_commission_bps;
         activation_account.block_builder_commission_account =
             ctx.accounts.config.block_builder_commission_account;
         activation_account.validator_authority = ctx.accounts.signer.key();
-        activation_account.block_builder_authority = ctx.accounts.config.block_builder_authority;
         activation_account.bump = bump;
         activation_account.validate()?;
 
@@ -127,7 +125,7 @@ pub mod rakurai_activation {
                 activation_account.proposer = None;
                 activation_account.is_enabled = true;
             }
-            if ctx.accounts.signer.key() == activation_account.block_builder_authority {
+            if ctx.accounts.signer.key() == ctx.accounts.config.block_builder_authority {
                 activation_account.hash = hash;
             }
         } else {
@@ -149,22 +147,20 @@ pub mod rakurai_activation {
 
     pub fn update_rakurai_activation_commission(
         ctx: Context<UpdateRakuraiActivationCommission>,
-        validator_commission_bps: Option<u16>,
+        commission_bps: u16,
     ) -> Result<()> {
         UpdateRakuraiActivationCommission::auth(&ctx)?;
 
         let activation_account = &mut ctx.accounts.activation_account;
 
+        if commission_bps > 10000 {
+            return Err(ErrorCode::MaxCommissionBpsExceeded.into());
+        }
+
         if ctx.accounts.signer.key() == activation_account.validator_authority.key() {
-            if let Some(bps) = validator_commission_bps {
-                if bps > 10000 {
-                    return Err(ErrorCode::MaxCommissionBpsExceeded.into());
-                }
-                activation_account.validator_commission_bps = bps;
-            }
+            activation_account.validator_commission_bps = commission_bps;
         } else {
-            activation_account.block_builder_commission_bps =
-                ctx.accounts.config.block_builder_commission_bps;
+            activation_account.block_builder_commission_bps = commission_bps;
             activation_account.block_builder_commission_account =
                 ctx.accounts.config.block_builder_commission_account;
         }
@@ -296,12 +292,7 @@ pub struct UpdateRakuraiActivationApproval<'info> {
 impl UpdateRakuraiActivationApproval<'_> {
     fn auth(ctx: &Context<UpdateRakuraiActivationApproval>) -> Result<()> {
         if ctx.accounts.signer.key() == ctx.accounts.activation_account.validator_authority.key()
-            || ctx.accounts.signer.key()
-                == ctx
-                    .accounts
-                    .activation_account
-                    .block_builder_authority
-                    .key()
+            || ctx.accounts.signer.key() == ctx.accounts.config.block_builder_authority.key()
         {
             Ok(())
         } else {
@@ -332,12 +323,7 @@ pub struct UpdateRakuraiActivationCommission<'info> {
 impl UpdateRakuraiActivationCommission<'_> {
     fn auth(ctx: &Context<UpdateRakuraiActivationCommission>) -> Result<()> {
         if ctx.accounts.signer.key() == ctx.accounts.activation_account.validator_authority.key()
-            || ctx.accounts.signer.key()
-                == ctx
-                    .accounts
-                    .activation_account
-                    .block_builder_authority
-                    .key()
+            || ctx.accounts.signer.key() == ctx.accounts.config.block_builder_authority.key()
         {
             Ok(())
         } else {
@@ -368,13 +354,7 @@ pub struct CloseRakuraiActivationAccount<'info> {
 
 impl CloseRakuraiActivationAccount<'_> {
     fn auth(ctx: &Context<CloseRakuraiActivationAccount>) -> Result<()> {
-        if ctx.accounts.signer.key()
-            == ctx
-                .accounts
-                .activation_account
-                .block_builder_authority
-                .key()
-        {
+        if ctx.accounts.signer.key() == ctx.accounts.config.block_builder_authority.key() {
             Ok(())
         } else {
             Err(Unauthorized.into())
