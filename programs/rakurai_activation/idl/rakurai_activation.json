@@ -1,0 +1,459 @@
+{
+    "version": "0.1.0",
+    "name": "rakurai_activation",
+    "instructions": [
+        {
+            "name": "initialize",
+            "docs": [
+                "Initialize a instance of the [Config] account."
+            ],
+            "accounts": [
+                {
+                    "name": "config",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "systemProgram",
+                    "isMut": false,
+                    "isSigner": false
+                },
+                {
+                    "name": "initializer",
+                    "isMut": true,
+                    "isSigner": true
+                }
+            ],
+            "args": [
+                {
+                    "name": "authority",
+                    "type": "publicKey"
+                },
+                {
+                    "name": "blockBuilderAuthority",
+                    "type": "publicKey"
+                },
+                {
+                    "name": "blockBuilderCommissionAccount",
+                    "type": "publicKey"
+                },
+                {
+                    "name": "blockBuilderCommissionBps",
+                    "type": "u16"
+                },
+                {
+                    "name": "bump",
+                    "type": "u8"
+                }
+            ]
+        },
+        {
+            "name": "updateConfig",
+            "docs": [
+                "Update config fields. Only the [Config] authority can invoke this."
+            ],
+            "accounts": [
+                {
+                    "name": "config",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "authority",
+                    "isMut": true,
+                    "isSigner": true
+                }
+            ],
+            "args": [
+                {
+                    "name": "new_config",
+                    "type": {
+                        "defined": "RakuraiActivationConfigAccount"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "initializeRakuraiActivationAccount",
+            "docs": [
+                "Initialize a new [RakuraiActivationAccount] associated with the given validator vote key",
+                "and current epoch."
+            ],
+            "accounts": [
+                {
+                    "name": "config",
+                    "isMut": false,
+                    "isSigner": false
+                },
+                {
+                    "name": "signer",
+                    "isMut": true,
+                    "isSigner": true,
+                    "docs": [
+                        "Must be equal to the supplied validator vote account's authorized withdrawer."
+                    ]
+                },
+                {
+                    "name": "systemProgram",
+                    "isMut": false,
+                    "isSigner": false
+                },
+                {
+                    "name": "activationAccount",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "validatorVoteAccount",
+                    "isMut": false,
+                    "isSigner": false,
+                    "docs": [
+                        "The validator's vote account is used to check this transaction's signer is also the authorized withdrawer."
+                    ]
+                },
+                {
+                    "name": "validatorIdentityAccount",
+                    "isMut": false,
+                    "isSigner": false
+                }
+            ],
+            "args": [
+                {
+                    "name": "validatorCommissionBps",
+                    "type": "u16"
+                },
+                {
+                    "name": "bump",
+                    "type": "u8"
+                }
+            ]
+        },
+        {
+            "name": "updateRakuraiActivationApproval",
+            "docs": [
+                "Update the approval of rakurai scheduler, only the validatorAuthority and blockBuilderAuthority can perform this action"
+            ],
+            "accounts": [
+                {
+                    "name": "config",
+                    "isMut": false,
+                    "isSigner": false
+                },
+                {
+                    "name": "activationAccount",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "validatorIdentityAccount",
+                    "isMut": false,
+                    "isSigner": false
+                },
+                {
+                    "name": "signer",
+                    "isMut": true,
+                    "isSigner": true,
+                    "docs": [
+                        "Must be equal to the supplied validator vote account's authorized withdrawer."
+                    ]
+                }
+            ],
+            "args": [
+                {
+                    "name": "grantApproval",
+                    "type": "bool"
+                },
+                {
+                    "name": "hash",
+                    "type": {
+                        "array": [
+                            "u8",
+                            64
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "name": "updateRakuraiActivationCommission",
+            "docs": [
+                "Validator can update commission at any time and it will be effective from next epoch"
+            ],
+            "accounts": [
+                {
+                    "name": "config",
+                    "isMut": false,
+                    "isSigner": false
+                },
+                {
+                    "name": "activationAccount",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "validatorIdentityAccount",
+                    "isMut": false,
+                    "isSigner": false
+                },
+                {
+                    "name": "signer",
+                    "isMut": true,
+                    "isSigner": true,
+                    "docs": [
+                        "Must be equal to the supplied validator vote account's authorized withdrawer."
+                    ]
+                }
+            ],
+            "args": [
+                {
+                    "name": "commission_bps",
+                    "type": "u16"
+                }
+            ]
+        },
+        {
+            "name": "closeRakuraiActivationAccounts",
+            "docs": [
+                "Anyone can invoke this only after the [TipDistributionAccount] has expired.",
+                "This instruction will send any unclaimed funds to the designated `validatorIdentity`",
+                "before closing and returning the rent exempt funds to the validator."
+            ],
+            "accounts": [
+                {
+                    "name": "config",
+                    "isMut": false,
+                    "isSigner": false
+                },
+                {
+                    "name": "activationAccount",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "validatorIdentityAccount",
+                    "isMut": false,
+                    "isSigner": false
+                },
+                {
+                    "name": "signer",
+                    "isMut": true,
+                    "isSigner": true,
+                    "docs": [
+                        "Must be equal to the supplied validator vote account's authorized withdrawer."
+                    ]
+                }
+            ],
+            "args": []
+        }
+    ],
+    "accounts": [
+        {
+            "name": "RakuraiActivationConfigAccount",
+            "type": {
+                "kind": "struct",
+                "fields": [
+                    {
+                        "name": "authority",
+                        "docs": [
+                            "Account with authority over this config PDA."
+                        ],
+                        "type": "publicKey"
+                    },
+                    {
+                        "name": "blockBuilderAuthority",
+                        "docs": [
+                            "Block builder authority that can perform transaction on the [RakuraiActivationAccount]"
+                        ],
+                        "type": "publicKey"
+                    },
+                    {
+                        "name": "blockBuilderCommissionAccount",
+                        "docs": [
+                            "Block builder commission will get transferred to this account based on the commission percentage [blockBuilderCommissionBps]"
+                        ],
+                        "type": "publicKey"
+                    },
+                    {
+                        "name": "blockBuilderCommissionBps",
+                        "docs": [
+                            "The commission block builder can charge on block rewards."
+                        ],
+                        "type": "u16"
+                    },
+                    {
+                        "name": "bump",
+                        "docs": [
+                            "The bump used to generate this account"
+                        ],
+                        "type": "u8"
+                    }
+                ]
+            }
+        },
+        {
+            "name": "RakuraiActivationAccount",
+            "docs": [
+                "A multisig-controlled wallet where both the validator and the block builder have the authority to perform specific types of transactions.",
+                "They also jointly control the enable/disable state of the Rakurai Scheduler."
+            ],
+            "type": {
+                "kind": "struct",
+                "fields": [
+                    {
+                        "name": "isEnabled",
+                        "docs": [
+                            "A flag that represent rakurai scheduler is enabled or not"
+                        ],
+                        "type": "bool"
+                    },
+                    {
+                        "name": "proposer",
+                        "docs": [
+                            "Certain transactions that modify the [RakuraiActivationAccount] require dual approval.",
+                            "The change is first proposed by one party (either the validator or the block builder), and it only takes effect once the other party also approves."
+                        ],
+                        "type": {
+                            "option": {
+                                "defined": "MerkleRoot"
+                            }
+                        }
+                    },
+                    {
+                        "name": "validatorAuthority",
+                        "docs": [
+                            "The validator authority authorized to perform transaction on [RakuraiActivationAccount]."
+                        ],
+                        "type": "publicKey"
+                    },
+                    {
+                        "name": "validatorCommissionBps",
+                        "docs": [
+                            "The commission basis points this validator charges."
+                        ],
+                        "type": "u16"
+                    },
+                    {
+                        "name": "blockBuilderCommissionBps",
+                        "docs": [
+                            "The commission basis points this block builder charges."
+                        ],
+                        "type": "u16"
+                    },
+                    {
+                        "name": "blockBuilderCommissionAccount",
+                        "docs": [
+                            "Block builder commission will get transferred to this account based on the commission percentage [blockBuilderCommissionBps]"
+                        ],
+                        "type": "publicKey"
+                    },
+                    {
+                        "name": "bump",
+                        "docs": [
+                            "The bump used to generate this account"
+                        ],
+                        "type": "u8"
+                    }
+                ]
+            }
+        }
+    ],
+    "events": [
+        {
+            "name": "ConfigUpdatedEvent",
+            "fields": [
+                {
+                    "name": "authority",
+                    "type": "publicKey",
+                    "index": false
+                }
+            ]
+        },
+        {
+            "name": "RakuraiActivationAccountInitializedEvent",
+            "fields": [
+                {
+                    "name": "activationAccount",
+                    "type": "publicKey",
+                    "index": false
+                }
+            ]
+        },
+        {
+            "name": "UpdateRakuraiActivationApprovalEvent",
+            "fields": [
+                {
+                    "name": "activationAccount",
+                    "type": "publicKey",
+                    "index": false
+                },
+                {
+                    "name": "signer",
+                    "type": "publicKey",
+                    "index": false
+                },
+                {
+                    "name": "msg",
+                    "type": "string",
+                    "index": false
+                }
+            ]
+        },
+        {
+            "name": "UpdateRakuraiActivationCommissionEvent",
+            "fields": [
+                {
+                    "name": "activationAccount",
+                    "type": "publicKey",
+                    "index": false
+                },
+                {
+                    "name": "operatorCommission",
+                    "type": "u16",
+                    "index": false
+                },
+                {
+                    "name": "blockBuilderCommission",
+                    "type": "u16",
+                    "index": false
+                }
+            ]
+        },
+        {
+            "name": "RakuraiActivationAccountClosedEvent",
+            "fields": [
+                {
+                    "name": "activationAccount",
+                    "type": "publicKey",
+                    "index": false
+                },
+                {
+                    "name": "amountClaimed",
+                    "type": "u64",
+                    "index": false
+                }
+            ]
+        }
+    ],
+    "errors": [
+        {
+            "code": 6000,
+            "name": "AccountValidationFailure",
+            "msg": "Account failed validation."
+        },
+        {
+            "code": 6001,
+            "name": "ArithmeticError",
+            "msg": "Encountered an arithmetic under/overflow error."
+        },
+        {
+            "code": 6002,
+            "name": "MaxCommissionBpsExceeded",
+            "msg": "Commission basis points must be less than or equal to 10_000"
+        },
+        {
+            "code": 6003,
+            "name": "Unauthorized",
+            "msg": "Unauthorized signer."
+        }
+    ]
+}

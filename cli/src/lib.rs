@@ -95,24 +95,6 @@ pub fn display_activation_account(activation_account: RakuraiActivationAccount) 
         activation_account.validator_authority.to_string()
     );
 
-    println!("{}", "📜 Block Builder".bold().underline().blue());
-    println!(
-        "   {} {:<10} {}",
-        "💰".green(),
-        "Commission:",
-        activation_account
-            .block_builder_commission_bps
-            .to_string()
-            .magenta()
-    );
-    println!(
-        "   {} {:<10} {}",
-        "🏦".cyan(),
-        "Commission Account:",
-        activation_account
-            .block_builder_commission_account
-            .to_string()
-    );
     if let Some(proposer) = activation_account.proposer {
         println!("{}", "📝 Proposer".bold().underline().blue());
         println!(
@@ -131,6 +113,41 @@ pub fn display_activation_account(activation_account: RakuraiActivationAccount) 
             bs58::encode(array).into_string()
         );
     }
+}
+
+pub fn display_activation_config_account(
+    activation_config_account: RakuraiActivationConfigAccount,
+) {
+    println!(
+        "{}",
+        "📜 Activation Config Account".bold().underline().blue()
+    );
+    println!(
+        "   {} {:<10} {}",
+        "💰".green(),
+        "Commission:",
+        activation_config_account
+            .block_builder_commission_bps
+            .to_string()
+            .magenta()
+    );
+    println!(
+        "   {} {:<10} {}",
+        "🏦".cyan(),
+        "Commission Account:",
+        activation_config_account
+            .block_builder_commission_account
+            .to_string()
+    );
+    println!(
+        "   {} {:<10} {}",
+        "🔑".red(),
+        "Authority:",
+        activation_config_account
+            .block_builder_authority
+            .to_string()
+            .magenta()
+    );
 }
 
 pub fn get_vote_account(
