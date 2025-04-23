@@ -80,7 +80,7 @@ pub mod rakurai_activation {
 
         let validator_vote_state =
             VoteState::deserialize(&ctx.accounts.validator_vote_account).unwrap();
-        if &validator_vote_state.node_pubkey != ctx.accounts.signer.key {
+        if validator_vote_state.node_pubkey != ctx.accounts.signer.key() {
             return Err(Unauthorized.into());
         }
 
@@ -91,8 +91,6 @@ pub mod rakurai_activation {
         activation_account.validator_commission_bps = validator_commission_bps;
         activation_account.block_builder_commission_bps =
             ctx.accounts.config.block_builder_commission_bps;
-        activation_account.block_builder_commission_account =
-            ctx.accounts.config.block_builder_commission_account;
         activation_account.validator_authority = ctx.accounts.signer.key();
         activation_account.bump = bump;
         activation_account.validate()?;
@@ -110,36 +108,56 @@ pub mod rakurai_activation {
         hash: Option<[u8; 64]>,
     ) -> Result<()> {
         UpdateRakuraiActivationApproval::auth(&ctx)?;
-        let msg;
 
         let activation_account = &mut ctx.accounts.activation_account;
+        let signer_key = ctx.accounts.signer.key();
+        let is_block_builder = signer_key == ctx.accounts.config.block_builder_authority;
 
-        if grant_approval {
-            if activation_account.proposer.is_none()
-                || activation_account.proposer == Some(ctx.accounts.signer.key())
-            {
-                msg = "Proposal Pending".to_string();
-                activation_account.proposer = Some(ctx.accounts.signer.key());
-            } else {
-                msg = "Proposal Accepted | Approval granted".to_string();
-                activation_account.proposer = None;
-                activation_account.is_enabled = true;
-            }
-            if ctx.accounts.signer.key() == ctx.accounts.config.block_builder_authority {
-                activation_account.hash = hash;
-            }
-        } else {
-            msg = "Permission Revoked".to_string();
+        if !grant_approval {
             activation_account.is_enabled = false;
             activation_account.hash = None;
+            activation_account.proposer = None;
+            msg!("Permission Revoked");
+        } else if activation_account.is_enabled && is_block_builder {
+            activation_account.hash = hash;
+            msg!("Hash updated by block builder.");
+        } else if !activation_account.is_enabled {
+            match activation_account.proposer {
+                None => {
+                    if is_block_builder {
+                        if hash.is_none() {
+                            return Err(error!(ErrorCode::MissingHashForEnable));
+                        }
+                        activation_account.hash = hash;
+                        msg!("Proposal initiated by block builder.");
+                    } else {
+                        msg!("Proposal Pending");
+                    }
+                    activation_account.proposer = Some(signer_key);
+                }
+                Some(p) if p == signer_key => {
+                    msg!("Proposal Pending");
+                }
+                Some(_) => {
+                    if is_block_builder && hash.is_none() {
+                        return Err(error!(ErrorCode::MissingHashForEnable));
+                    }
+                    if is_block_builder {
+                        activation_account.hash = hash;
+                    }
+
+                    activation_account.proposer = None;
+                    activation_account.is_enabled = true;
+                    msg!("Proposal Accepted | Activation enabled");
+                }
+            }
         }
 
         activation_account.validate()?;
 
         emit!(UpdateRakuraiActivationApprovalEvent {
             activation_account: activation_account.key(),
-            signer: ctx.accounts.signer.key(),
-            msg
+            signer: signer_key,
         });
 
         Ok(())
@@ -153,21 +171,20 @@ pub mod rakurai_activation {
 
         let activation_account = &mut ctx.accounts.activation_account;
 
-        if commission_bps > 10000 {
+        if commission_bps > 10_000 {
             return Err(ErrorCode::MaxCommissionBpsExceeded.into());
         }
 
         if ctx.accounts.signer.key() == activation_account.validator_authority.key() {
             activation_account.validator_commission_bps = commission_bps;
-        } else {
+        } else if ctx.accounts.signer.key() == ctx.accounts.config.block_builder_authority.key() {
             activation_account.block_builder_commission_bps = commission_bps;
-            activation_account.block_builder_commission_account =
-                ctx.accounts.config.block_builder_commission_account;
+        } else {
+            return Err(Unauthorized.into());
         }
         emit!(UpdateRakuraiActivationCommissionEvent {
             activation_account: activation_account.key(),
             operator_commission: activation_account.validator_commission_bps,
-            block_builder_commission: activation_account.block_builder_commission_bps,
         });
 
         Ok(())
@@ -203,6 +220,9 @@ pub enum ErrorCode {
 
     #[msg("Validator's commission basis points must be less than or equal to 10_000")]
     MaxCommissionBpsExceeded,
+
+    #[msg("Hash must be provided when enabling the account as block builder.")]
+    MissingHashForEnable,
 
     #[msg("Unauthorized signer.")]
     Unauthorized,
@@ -283,7 +303,6 @@ pub struct UpdateRakuraiActivationApproval<'info> {
         rent_exempt = enforce,
     )]
     pub activation_account: Account<'info, RakuraiActivationAccount>,
-    #[account(mut)]
     pub validator_identity_account: AccountInfo<'info>,
     #[account(mut)]
     pub signer: Signer<'info>,
@@ -379,14 +398,12 @@ pub struct RakuraiActivationAccountInitializedEvent {
 pub struct UpdateRakuraiActivationApprovalEvent {
     pub activation_account: Pubkey,
     pub signer: Pubkey,
-    pub msg: String,
 }
 
 #[event]
 pub struct UpdateRakuraiActivationCommissionEvent {
     pub activation_account: Pubkey,
     pub operator_commission: u16,
-    pub block_builder_commission: u16,
 }
 
 #[event]

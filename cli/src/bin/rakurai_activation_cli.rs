@@ -14,9 +14,9 @@ use {
         },
     },
     rakurai_cli::{
-        display_activation_account, get_activation_account, get_activation_config_account,
-        get_vote_account, normalize_to_url_if_moniker, parse_keypair, parse_pubkey,
-        sign_and_send_transaction, validate_commission,
+        display_activation_account, display_activation_config_account, get_activation_account,
+        get_activation_config_account, get_vote_account, normalize_to_url_if_moniker,
+        parse_keypair, parse_pubkey, sign_and_send_transaction, validate_commission,
     },
     solana_rpc_client::rpc_client::RpcClient,
     solana_sdk::{
@@ -64,6 +64,9 @@ pub enum Commands {
     /// Initialize block builder config account
     #[command(hide = true)]
     InitConfig(InitConfigArgs),
+
+    /// Display Activation config account info
+    ShowConfig,
 
     /// Initialize a new Activation account
     Init(InitArgs),
@@ -123,7 +126,8 @@ pub struct SchedulerControlArgs {
         default_value_t = true,
         default_missing_value = "false",
         num_args = 0,
-        help = "Disable the scheduler if the flag is present (default: Enable)"
+        help = "Disable the scheduler if the flag is present (default: Enable)",
+        conflicts_with = "hash"
     )]
     pub disable_scheduler: bool,
 
@@ -132,7 +136,8 @@ pub struct SchedulerControlArgs {
         short = 's',
         long = "hash",
         required = false,
-        help = "Optionally provide a hash value (default: None)"
+        help = "Optionally provide a hash value (default: None)",
+        conflicts_with = "disable_scheduler"
     )]
     pub hash: Option<String>,
 
@@ -219,6 +224,19 @@ fn process_init_config(
     );
 
     sign_and_send_transaction(rpc_client, initialize_instruction, &kp)
+}
+
+fn process_show_config(
+    rpc_client: Arc<RpcClient>,
+    program_id: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (activation_config_pubkey, _) = derive_config_account_address(&program_id);
+
+    let activation_account =
+        get_activation_config_account(rpc_client.clone(), activation_config_pubkey)?;
+    println!("📌 Config Account: {}", activation_config_pubkey);
+    display_activation_config_account(activation_account);
+    Ok(())
 }
 
 fn process_init_pda(
@@ -484,6 +502,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             cli.program_id,
             args.clone(),
         )?,
+        Commands::ShowConfig => process_show_config(rpc_client.clone(), cli.program_id)?,
         Commands::InitConfig(args) => process_init_config(
             rpc_client.clone(),
             cli.keypair,

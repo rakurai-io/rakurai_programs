@@ -199,7 +199,11 @@ pub mod reward_distribution {
         invoke(
             &system_instruction::transfer(
                 &ctx.accounts.signer.key(),
-                &&ctx.accounts.reward_collection_account.rakurai_commission_account.key(),
+                &&ctx
+                    .accounts
+                    .reward_collection_account
+                    .rakurai_commission_account
+                    .key(),
                 block_builder_fee,
             ),
             &[
