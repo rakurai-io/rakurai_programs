@@ -1,8 +1,7 @@
-pub mod clap_args;
 use {
     anchor_lang::AccountDeserialize,
     colored::*,
-    multisig::state::MultiSigAccount,
+    rakurai_activation::state::{RakuraiActivationAccount, RakuraiActivationConfigAccount},
     solana_rpc_client::rpc_client::RpcClient,
     solana_sdk::{
         instruction::Instruction,
@@ -54,28 +53,37 @@ pub fn parse_keypair(path: &str) -> Result<Arc<Keypair>, String> {
         .map_err(|_| format!("Invalid keypair format in file: {}", expanded_path))
 }
 
-pub fn get_multisig_account(
+pub fn get_activation_account(
     rpc_client: Arc<RpcClient>,
-    multisig_pda: Pubkey,
-) -> Result<MultiSigAccount, Box<dyn std::error::Error>> {
-    let account_data = rpc_client.get_account_data(&multisig_pda)?;
+    activation_pda: Pubkey,
+) -> Result<RakuraiActivationAccount, Box<dyn std::error::Error>> {
+    let account_data = rpc_client.get_account_data(&activation_pda)?;
     let mut account_slice = account_data.as_slice();
-    MultiSigAccount::try_deserialize(&mut account_slice).map_err(Into::into)
+    RakuraiActivationAccount::try_deserialize(&mut account_slice).map_err(Into::into)
 }
 
-pub fn display_multisig_account(multisig_account: MultiSigAccount) {
+pub fn get_activation_config_account(
+    rpc_client: Arc<RpcClient>,
+    activation_config_account: Pubkey,
+) -> Result<RakuraiActivationConfigAccount, Box<dyn std::error::Error>> {
+    let account_data = rpc_client.get_account_data(&activation_config_account)?;
+    let mut account_slice = account_data.as_slice();
+    RakuraiActivationConfigAccount::try_deserialize(&mut account_slice).map_err(Into::into)
+}
+
+pub fn display_activation_account(activation_account: RakuraiActivationAccount) {
     println!("{}", "🗳️ Validator".bold().underline().blue());
     println!(
         "   {} {:<10} {}",
         "✅".green(),
         "Enabled:",
-        multisig_account.is_enabled.to_string().blue()
+        activation_account.is_enabled.to_string().blue()
     );
     println!(
         "   {} {:<10} {}",
         "💰".green(),
         "Commission:",
-        multisig_account
+        activation_account
             .validator_commission_bps
             .to_string()
             .magenta()
@@ -84,40 +92,10 @@ pub fn display_multisig_account(multisig_account: MultiSigAccount) {
         "   {} {:<10} {}",
         "🔑".red(),
         "Authority:",
-        multisig_account.validator_authority.to_string()
-    );
-    println!(
-        "   {} {:<10} {}",
-        "🗳️".cyan(),
-        " Identity Pubkey:",
-        multisig_account.validator_identity_pubkey.to_string()
+        activation_account.validator_authority.to_string()
     );
 
-    println!("{}", "📜 Block Builder".bold().underline().blue());
-    println!(
-        "   {} {:<10} {}",
-        "💰".green(),
-        "Commission:",
-        multisig_account
-            .block_builder_commission_bps
-            .to_string()
-            .magenta()
-    );
-    println!(
-        "   {} {:<10} {}",
-        "🔑".red(),
-        "Authority:",
-        multisig_account.block_builder_authority.to_string()
-    );
-    println!(
-        "   {} {:<10} {}",
-        "🏦".cyan(),
-        "Commission Account:",
-        multisig_account
-            .block_builder_commission_account
-            .to_string()
-    );
-    if let Some(proposer) = multisig_account.proposer {
+    if let Some(proposer) = activation_account.proposer {
         println!("{}", "📝 Proposer".bold().underline().blue());
         println!(
             "   {} {:<10} {}",
@@ -126,6 +104,50 @@ pub fn display_multisig_account(multisig_account: MultiSigAccount) {
             proposer.to_string()
         );
     }
+    if let Some(array) = activation_account.hash {
+        println!("{}", "📝 Hash".bold().underline().blue());
+        println!(
+            "   {} {:<10} {}",
+            "📝".cyan(),
+            "Hash:",
+            bs58::encode(array).into_string()
+        );
+    }
+}
+
+pub fn display_activation_config_account(
+    activation_config_account: RakuraiActivationConfigAccount,
+) {
+    println!(
+        "{}",
+        "📜 Activation Config Account".bold().underline().blue()
+    );
+    println!(
+        "   {} {:<10} {}",
+        "💰".green(),
+        "Commission:",
+        activation_config_account
+            .block_builder_commission_bps
+            .to_string()
+            .magenta()
+    );
+    println!(
+        "   {} {:<10} {}",
+        "🏦".cyan(),
+        "Commission Account:",
+        activation_config_account
+            .block_builder_commission_account
+            .to_string()
+    );
+    println!(
+        "   {} {:<10} {}",
+        "🔑".red(),
+        "Authority:",
+        activation_config_account
+            .block_builder_authority
+            .to_string()
+            .magenta()
+    );
 }
 
 pub fn get_vote_account(

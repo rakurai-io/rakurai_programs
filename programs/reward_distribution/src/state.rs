@@ -1,0 +1,125 @@
+use crate::ErrorCode::{AccountValidationFailure, ArithmeticError};
+use anchor_lang::prelude::*;
+use std::mem::size_of;
+
+#[account]
+#[derive(Default)]
+pub struct RewardDistributionConfigAccount {
+    pub authority: Pubkey,
+    pub num_epochs_valid: u64,
+    pub max_commission_bps: u16,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(Default)]
+pub struct RewardCollectionAccount {
+    pub validator_vote_account: Pubkey,
+    pub merkle_root_upload_authority: Pubkey,
+    pub merkle_root: Option<MerkleRoot>,
+    pub creation_epoch: u64,
+    pub validator_commission_bps: u16,
+    pub rakurai_commission_bps: u16,
+    pub rakurai_commission_account: Pubkey,
+    pub expires_at: u64,
+    pub initializer: Pubkey,
+    pub bump: u8,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
+pub struct MerkleRoot {
+    pub root: [u8; 32],
+    pub max_total_claim: u64,
+    pub max_num_nodes: u64,
+    pub total_funds_claimed: u64,
+    pub num_nodes_claimed: u64,
+}
+
+const HEADER_SIZE: usize = 8;
+
+impl RewardDistributionConfigAccount {
+    pub const SEED: &'static [u8] = b"RD_CONFIG_ACCOUNT";
+    pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
+
+    pub fn validate(&self) -> Result<()> {
+        const MAX_NUM_EPOCHS_VALID: u64 = 10;
+        const MAX_COMMISSION_BPS: u16 = 10000;
+
+        if self.num_epochs_valid == 0 || self.num_epochs_valid > MAX_NUM_EPOCHS_VALID {
+            return Err(AccountValidationFailure.into());
+        }
+
+        if self.max_commission_bps > MAX_COMMISSION_BPS {
+            return Err(AccountValidationFailure.into());
+        }
+
+        Ok(())
+    }
+}
+
+impl RewardCollectionAccount {
+    pub const SEED: &'static [u8] = b"REWARD_COLLECTION_ACCOUNT";
+
+    pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
+
+    pub fn validate(&self) -> Result<()> {
+        let default_pubkey = Pubkey::default();
+        if self.validator_vote_account == default_pubkey
+            || self.merkle_root_upload_authority == default_pubkey
+            || self.rakurai_commission_account == default_pubkey
+        {
+            return Err(AccountValidationFailure.into());
+        }
+
+        if self.initializer == default_pubkey {
+            return Err(AccountValidationFailure.into());
+        }
+
+        Ok(())
+    }
+
+    pub fn claim_expired(from: AccountInfo, to: AccountInfo) -> Result<u64> {
+        let rent = Rent::get()?;
+        let min_rent_lamports = rent.minimum_balance(from.data_len());
+
+        let amount = from
+            .lamports()
+            .checked_sub(min_rent_lamports)
+            .ok_or(ArithmeticError)?;
+        Self::transfer_lamports(from, to, amount)?;
+
+        Ok(amount)
+    }
+
+    pub fn claim(from: AccountInfo, to: AccountInfo, amount: u64) -> Result<()> {
+        Self::transfer_lamports(from, to, amount)
+    }
+
+    fn transfer_lamports(from: AccountInfo, to: AccountInfo, amount: u64) -> Result<()> {
+        // debit lamports
+        **from.try_borrow_mut_lamports()? =
+            from.lamports().checked_sub(amount).ok_or(ArithmeticError)?;
+        // credit lamports
+        **to.try_borrow_mut_lamports()? =
+            to.lamports().checked_add(amount).ok_or(ArithmeticError)?;
+
+        Ok(())
+    }
+}
+
+#[account]
+#[derive(Default)]
+pub struct ClaimStatus {
+    pub is_claimed: bool,
+    pub claimant: Pubkey,
+    pub claim_status_payer: Pubkey,
+    pub slot_claimed_at: u64,
+    pub amount: u64,
+    pub expires_at: u64,
+    pub bump: u8,
+}
+
+impl ClaimStatus {
+    pub const SEED: &'static [u8] = b"CLAIM_STATUS";
+    pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
+}
