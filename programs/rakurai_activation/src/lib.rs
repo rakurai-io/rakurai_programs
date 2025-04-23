@@ -112,33 +112,41 @@ pub mod rakurai_activation {
         let is_block_builder = signer_key == ctx.accounts.config.block_builder_authority;
 
         if !grant_approval {
-            msg!("Permission Revoked");
             activation_account.is_enabled = false;
             activation_account.hash = None;
             activation_account.proposer = None;
-        } else if activation_account.is_enabled {
-            if is_block_builder {
-                activation_account.hash = hash;
-                activation_account.proposer = None;
-            } else {
-                return Err(Unauthorized.into());
-            }
-        } else {
-            if is_block_builder && activation_account.proposer.is_none() {
-                activation_account.proposer = Some(signer_key);
-                activation_account.hash = hash;
-            } else if activation_account.proposer.is_none()
-                || activation_account.proposer == Some(signer_key)
-            {
-                msg!("Proposal Pending");
-                activation_account.proposer = Some(signer_key);
-            } else {
-                msg!("Proposal Accepted");
-                activation_account.proposer = None;
-                activation_account.is_enabled = true;
+            msg!("Permission Revoked");
+        } else if activation_account.is_enabled && is_block_builder {
+            activation_account.hash = hash;
+            msg!("Hash updated by block builder.");
+        } else if !activation_account.is_enabled {
+            match activation_account.proposer {
+                None => {
+                    if is_block_builder {
+                        if hash.is_none() {
+                            return Err(error!(ErrorCode::MissingHashForEnable));
+                        }
+                        activation_account.hash = hash;
+                        msg!("Proposal initiated by block builder.");
+                    } else {
+                        msg!("Proposal Pending");
+                    }
+                    activation_account.proposer = Some(signer_key);
+                }
+                Some(p) if p == signer_key => {
+                    msg!("Proposal Pending");
+                }
+                Some(_) => {
+                    if is_block_builder && hash.is_none() {
+                        return Err(error!(ErrorCode::MissingHashForEnable));
+                    }
+                    if is_block_builder {
+                        activation_account.hash = hash;
+                    }
 
-                if is_block_builder {
-                    activation_account.hash = hash;
+                    activation_account.proposer = None;
+                    activation_account.is_enabled = true;
+                    msg!("Proposal Accepted | Activation enabled");
                 }
             }
         }
@@ -161,7 +169,7 @@ pub mod rakurai_activation {
 
         let activation_account = &mut ctx.accounts.activation_account;
 
-        if commission_bps > 10000 {
+        if commission_bps > 10_000 {
             return Err(ErrorCode::MaxCommissionBpsExceeded.into());
         }
 
@@ -208,6 +216,9 @@ pub enum ErrorCode {
 
     #[msg("Validator's commission basis points must be less than or equal to 10_000")]
     MaxCommissionBpsExceeded,
+
+    #[msg("Hash must be provided when enabling the account as block builder.")]
+    MissingHashForEnable,
 
     #[msg("Unauthorized signer.")]
     Unauthorized,
