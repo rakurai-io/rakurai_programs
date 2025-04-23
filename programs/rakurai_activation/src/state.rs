@@ -21,18 +21,19 @@ pub struct RakuraiActivationAccount {
     pub proposer: Option<Pubkey>,
     pub validator_authority: Pubkey,
     pub validator_commission_bps: u16,
+    pub block_builder_commission_bps: u16,
     pub bump: u8,
     pub hash: Option<[u8; 64]>,
 }
 
 const HEADER_SIZE: usize = 8;
+const MAX_COMMISSION_BPS: u16 = 10_000;
 
 impl RakuraiActivationConfigAccount {
     pub const SEED: &'static [u8] = b"ACTIVATION_CONFIG_ACCOUNT";
     pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
 
     pub fn validate(&self) -> Result<()> {
-        const MAX_COMMISSION_BPS: u16 = 10000;
         let default_pubkey = Pubkey::default();
 
         if self.block_builder_commission_account == default_pubkey {
@@ -56,6 +57,13 @@ impl RakuraiActivationAccount {
         let default_pubkey = Pubkey::default();
         if self.validator_authority == default_pubkey {
             return Err(AccountValidationFailure.into());
+        }
+        if self.block_builder_commission_bps > MAX_COMMISSION_BPS
+            && self.validator_commission_bps > MAX_COMMISSION_BPS
+            && (self.validator_commission_bps + self.block_builder_commission_bps)
+                > MAX_COMMISSION_BPS
+        {
+            return Err(MaxCommissionBpsExceeded.into());
         }
 
         Ok(())
