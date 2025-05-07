@@ -12,7 +12,7 @@ use {
         transaction::Transaction,
         vote::state::{VoteState, VoteStateVersions},
     },
-    std::{str::FromStr, sync::Arc},
+    std::{path::Path, str::FromStr, sync::Arc},
 };
 
 /// Parses and validates a Solana `Pubkey` from a string
@@ -48,9 +48,16 @@ pub fn validate_commission(val: &str) -> Result<u16, String> {
 /// Parses a Solana keypair from a file
 pub fn parse_keypair(path: &str) -> Result<Arc<Keypair>, String> {
     let expanded_path = shellexpand::tilde(path).into_owned();
-    Keypair::read_from_file(&expanded_path)
+    let path = Path::new(&expanded_path);
+    if !path.exists() {
+        return Err(format!(
+            "Keypair file not found: {}. Please provide a valid keypair path.",
+            expanded_path
+        ));
+    }
+    Keypair::read_from_file(path)
         .map(Arc::new)
-        .map_err(|_| format!("Invalid keypair format in file: {}", expanded_path))
+        .map_err(|e| format!("Failed to read keypair from file {}: {}", expanded_path, e))
 }
 
 pub fn get_activation_account(
