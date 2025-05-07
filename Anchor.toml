@@ -2,7 +2,7 @@
 resolution = true
 skip-lint = false
 
-[programs.mainnet-beta]
+[programs.mainnet]
 rakurai_activation = "rAKACC6Qw8HYa87ntGPRbfYEMnK2D9JVLsmZaKPpMmi"
 reward_distribution = "RAkd1EJg45QQHeuXy7JEWBhdNvsd64Z5PbZJWQT96iB"
 
