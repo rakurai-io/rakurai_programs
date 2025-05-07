@@ -54,7 +54,7 @@ pub struct Cli {
             long,
             required = true,
             value_parser = parse_pubkey,
-            help = "Rakurai activation Program ID (Pubkey)"
+            help = "Rakurai activation Program ID (testnet: pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt, mainnet-beta: rAKACC6Qw8HYa87ntGPRbfYEMnK2D9JVLsmZaKPpMmi)"
         )]
     pub program_id: Pubkey,
 }
@@ -66,21 +66,23 @@ pub enum Commands {
     InitConfig(InitConfigArgs),
 
     /// Display Activation config account info
+    #[command(hide = true)]
     ShowConfig,
 
-    /// Initialize a new Activation account
+    /// Initialize a Rakurai Activation Account
     Init(InitArgs),
 
-    /// Enable or disable the scheduler
+    /// Enable or disable the Scheduler
     SchedulerControl(SchedulerControlArgs),
 
-    /// Update the validator commission
+    /// Update the Validator Commission
     UpdateCommission(UpdateCommissionArgs),
 
     /// Close the Activation account
+    #[command(hide = true)]
     Close(ClosePdaArgs),
 
-    /// Display Activation account info
+    /// Display Rakurai Activation Account Info
     Show(ShowPdaArgs),
 }
 
@@ -263,8 +265,9 @@ fn process_init_pda(
         derive_activation_account_address(&program_id, &vote_state.node_pubkey);
 
     println!(
-        "📌 Derived Activation Account: {} (Bump: {})",
-        activation_pubkey, bump
+        "📌 {}: {}",
+        "Rakurai Activation Account Pubkey".bright_green(),
+        activation_pubkey,
     );
     println!(
         "{} {}\n{} {}\n{} {}",
@@ -309,7 +312,7 @@ pub fn process_scheduler_control(
     let (activation_config_pubkey, _) = derive_config_account_address(&program_id);
     let activation_config_account =
         get_activation_config_account(rpc_client.clone(), activation_config_pubkey)?;
-    let (activation_pubkey, bump) =
+    let (activation_pubkey, _bump) =
         derive_activation_account_address(&program_id, &identity_pubkey);
     let activation_account = get_activation_account(rpc_client.clone(), activation_pubkey)?;
     if !(identity_pubkey == signer_pubkey
@@ -327,8 +330,9 @@ pub fn process_scheduler_control(
     }
 
     println!(
-        "📌 Derived Activation Account: {} (Bump: {})",
-        activation_pubkey, bump
+        "📌 {}: {}",
+        "Rakurai Activation Account Pubkey".bright_green(),
+        activation_pubkey,
     );
     println!(
         "{} {}\n{} {}\n{} {}",
@@ -381,13 +385,14 @@ fn process_update_commission(
     let (activation_config_pubkey, _) = derive_config_account_address(&program_id);
     let activation_config_account =
         get_activation_config_account(rpc_client.clone(), activation_config_pubkey)?;
-    let (activation_pubkey, bump) =
+    let (activation_pubkey, _bump) =
         derive_activation_account_address(&program_id, &identity_pubkey);
     let activation_account = get_activation_account(rpc_client.clone(), activation_pubkey)?;
 
     println!(
-        "📌 Derived Activation Account: {} (Bump: {})",
-        activation_pubkey, bump
+        "📌 {}: {}",
+        "Rakurai Activation Account Pubkey".bright_green(),
+        activation_pubkey,
     );
     println!(
         "{} {}\n{} {}\n{} {}",
@@ -437,7 +442,7 @@ fn process_close(
     let (activation_config_pubkey, _) = derive_config_account_address(&program_id);
     let activation_config_account =
         get_activation_config_account(rpc_client.clone(), activation_config_pubkey)?;
-    let (activation_pubkey, bump) =
+    let (activation_pubkey, _bump) =
         derive_activation_account_address(&program_id, &identity_pubkey);
 
     if activation_config_account.block_builder_authority != signer_pubkey {
@@ -449,8 +454,9 @@ fn process_close(
     }
 
     println!(
-        "📌 Derived Activation Account: {} (Bump: {})",
-        activation_pubkey, bump
+        "📌 {}: {}",
+        "Rakurai Activation Account Pubkey".bright_green(),
+        activation_pubkey,
     );
     println!(
         "{} {}\n{} {}",
@@ -482,7 +488,11 @@ fn process_show(
     let (activation_pubkey, _) = derive_activation_account_address(&program_id, &identity_pubkey);
 
     let activation_account = get_activation_account(rpc_client.clone(), activation_pubkey)?;
-    println!("📌 Account: {}", activation_pubkey);
+    println!(
+        "📌 {}: {}",
+        "Rakurai Activation Account Pubkey".bright_green(),
+        activation_pubkey,
+    );
     display_activation_account(activation_account);
     Ok(())
 }
