@@ -43,6 +43,14 @@ rakurai-activation [OPTIONS] <COMMAND>
 
 ---
 
+### Deployed Program ID
+- **Testnet**: Recommended for staging and integration testing.
+   - *rakurai_activation*: `pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt`
+- **Mainnet**: Production environment
+   - *rakurai_activation*: `rAKACC6Qw8HYa87ntGPRbfYEMnK2D9JVLsmZaKPpMmi`
+
+---
+
 ### 1. `init`
 
 #### Description
@@ -51,7 +59,7 @@ Initializes a new activation PDA (Program Derived Address) account.
 #### Usage
 
 ```sh
-rakurai-activation -p <PROGRAM_ID> init-pda --commission_bps <VALUE> --identity_pubkey <PUBKEY>
+rakurai-activation -p <PROGRAM_ID> init --commission_bps <VALUE> --vote_pubkey <VOTE_PUBKEY> --keypair <IDENTITY_KEYPAIR> --rpc <RPC_URL>
 ```
 
 #### Options
@@ -69,7 +77,7 @@ Enables or disables the scheduler.
 #### Usage
 
 ```sh
-rakurai-activation scheduler-control [OPTIONS]
+rakurai-activation -p <PROGRAM_ID> scheduler-control [OPTIONS]
 ```
 
 #### Options
@@ -87,12 +95,12 @@ Updates the validator commission.
 #### Usage
 
 ```sh
-rakurai-activation update-commission [OPTIONS]
+rakurai-activation -p <PROGRAM_ID> update-commission [OPTIONS]
 ```
 
 #### Options
 
-- `-c, --commission_bps <VALUE>`: New commission value in base points (optional, if omitted no change is made).
+- `-c, --commission_bps <VALUE>`: New commission value in base points.
 - `-i, --identity_pubkey <PUBKEY>`: Validator identity account pubkey.
 
 ---
