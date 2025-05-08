@@ -78,7 +78,7 @@ Enables or disables the scheduler.
 #### Usage
 
 ```sh
-rakurai-activation -p <PROGRAM_ID> scheduler-control [OPTIONS]
+rakurai-activation -p <PROGRAM_ID> scheduler-control --identity_pubkey <IDENTITY_PUBKEY> --keypair <IDENTITY_KEYPAIR> --rpc <RPC_URL> 
 ```
 
 #### Options
@@ -96,7 +96,7 @@ Updates the validator commission.
 #### Usage
 
 ```sh
-rakurai-activation -p <PROGRAM_ID> update-commission [OPTIONS]
+rakurai-activation -p <PROGRAM_ID> update-commission --commission_bps <VALUE> --identity_pubkey <IDENTITY_PUBKEY> --keypair <IDENTITY_KEYPAIR> --rpc <RPC_URL>
 ```
 
 #### Options
@@ -114,7 +114,7 @@ Display the rakurai activation account state.
 #### Usage
 
 ```sh
-rakurai-activation -p <PROGRAM_ID> show --identity_pubkey <PUBKEY>
+rakurai-activation -p <PROGRAM_ID> show --identity_pubkey <IDENTITY_PUBKEY> --rpc <RPC_URL>
 ```
 
 #### Options
