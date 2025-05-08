@@ -3,9 +3,10 @@
 ## Overview
 
 The **Rakurai Activation CLI** provides a command-line interface to manage a activation setup for validator operators. It allows users to:
-- **Initialize**
-- **Update validator commissions**
-- **Enable/disable the scheduler**
+- **[Initialize](#1-init)**
+- **[Update validator commissions](#3-update-commission)**
+- **[Enable/disable the scheduler](#2-scheduler-control)**
+- **[Show](#4-show)**
 
 ---
 
@@ -54,7 +55,7 @@ rakurai-activation [OPTIONS] <COMMAND>
 ### 1. `init`
 
 #### Description
-Initializes a new activation PDA (Program Derived Address) account.
+Initializes a new activation Rakurai Activation Account Address (RAA) account.
 
 #### Usage
 
@@ -101,6 +102,23 @@ rakurai-activation -p <PROGRAM_ID> update-commission [OPTIONS]
 #### Options
 
 - `-c, --commission_bps <VALUE>`: New commission value in base points.
+- `-i, --identity_pubkey <PUBKEY>`: Validator identity account pubkey.
+
+---
+
+### 4. `show`
+
+#### Description
+Display the rakurai activation account state.
+
+#### Usage
+
+```sh
+rakurai-activation -p <PROGRAM_ID> show --identity_pubkey <PUBKEY>
+```
+
+#### Options
+
 - `-i, --identity_pubkey <PUBKEY>`: Validator identity account pubkey.
 
 ---
