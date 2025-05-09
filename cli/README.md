@@ -2,11 +2,13 @@
 
 ## Overview
 
-The **Rakurai Activation CLI** provides a command-line interface to manage a activation setup for validator operators. It allows users to:
-- **[Initialize](#1-init)**
-- **[Update validator commissions](#3-update-commission)**
+The **Rakurai Activation CLI** is a CLI tool to manage the Rakurai activation setup for validator operators. It interacts with a **multisig-based Solana smart contract** responsible for enabling or disabling the Rakurai scheduler.  
+Each validator must create a **Rakurai Activation Account (RAA)** — a PDA jointly controlled by both the validator and Rakurai. Enabling the Rakurai scheduler requires **2/2 multisig approval** (both validator and Rakurai). Disabling the scheduler can be done **unilaterally by either party (1/2 multisig)**. Validators can also configure the percentage of block rewards they want to retain (0–100%). The remaining portion is distributed to stakers.
+
+- **[Initialize RAA](#1-init)**
+- **[Update commissions](#3-update-commission)**
 - **[Enable/disable the scheduler](#2-scheduler-control)**
-- **[Show](#4-show)**
+- **[Display RAA State](#4-show)**
 
 ---
 
@@ -14,48 +16,56 @@ The **Rakurai Activation CLI** provides a command-line interface to manage a act
 
 Ensure you have **[Rust and Cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html#install-rust-and-cargo)** installed before proceeding.
 
-##### 1. Export the CLI Path
+You can either **build from source** or use the **prebuilt binary from the `release/downloads` directory**.
+
+### Option 1: Use Prebuilt CLI
 ```bash
+# Export the prebuilt CLI binary to your PATH
 echo "export PATH=\"$(pwd)/release/downloads:\$PATH\"" >> ~/.bashrc && source ~/.bashrc
 ```
 
-##### 2. Build from Source
+### Option 2: Build from Source
 ```sh
-# Install the CLI tool globally
+# Build and install the CLI tool globally
 cargo install --path .
 export PATH="$HOME/.cargo/bin:$PATH"
+```
 
-# To check if the CLI is installed correctly:
+### Verify Installation
+```sh
 which rakurai-activation
 ```
 
+---
+
 ## Usage
 
-Run the CLI tool with the following command:
+Run the CLI tool using:
 
 ```sh
 rakurai-activation [OPTIONS] <COMMAND>
 ```
 
-### Global Options
-
-- `-k, --keypair <PATH>`: Path to the Solana keypair file (must be validator identity keypair).
-- `-r, --rpc <URL>`: RPC URL for sending transactions (default: Testnet).
-
 ---
 
-### Deployed Program ID
-- **Testnet**: Recommended for staging and integration testing.
-   - *rakurai_activation*: `pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt`
-- **Mainnet**: Production environment
-   - *rakurai_activation*: `rAKACC6Qw8HYa87ntGPRbfYEMnK2D9JVLsmZaKPpMmi`
+### Global Options
+
+These options are **critical** and must be used with care:
+
+- `-k, --keypair <PATH>`: Path to the Solana keypair file. This keypair must have authority to send transactions—typically the **validator identity keypair**.
+- `-r, --rpc <URL>`: RPC URL of the target Solana cluster or moniker (for testnet cluster use `-rt` or `-r https://api.testnet.solana.com`).  
+- `-p, --program-id <PROGRAM_ID>`: Deployed Rakurai Activation program ID.  
+  - **Mainnet:** `rAKACC6Qw8HYa87ntGPRbfYEMnK2D9JVLsmZaKPpMmi`  
+  - **Testnet:** `pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt`
+
+> ❗ Incorrect keypair, rpc, or program ID will result in failed transactions.
 
 ---
 
 ### 1. `init`
 
 #### Description
-Initializes a new activation Rakurai Activation Account Address (RAA) account.
+Initializes a new Rakurai Activation Account (RAA).
 
 #### Usage
 
@@ -65,7 +75,7 @@ rakurai-activation -p <PROGRAM_ID> init --commission_bps <VALUE> --vote_pubkey <
 
 #### Options
 
-- `-c, --commission_bps <VALUE>`: Validator commission percentage in base points.
+- `-c, --commission_bps <VALUE>`: Validator block rewards commission percentage in BPS (e.g., `500` means `5%`).
 - `-v, --vote_pubkey <PUBKEY>`: Validator vote account pubkey.
 
 ---
@@ -73,7 +83,7 @@ rakurai-activation -p <PROGRAM_ID> init --commission_bps <VALUE> --vote_pubkey <
 ### 2. `scheduler-control`
 
 #### Description
-Enables or disables the scheduler.
+Enables or Disables the scheduler.
 
 #### Usage
 
@@ -91,7 +101,7 @@ rakurai-activation -p <PROGRAM_ID> scheduler-control --identity_pubkey <IDENTITY
 ### 3. `update-commission`
 
 #### Description
-Updates the validator commission.
+Updates the validator block reward commission.
 
 #### Usage
 
@@ -101,7 +111,7 @@ rakurai-activation -p <PROGRAM_ID> update-commission --commission_bps <VALUE> --
 
 #### Options
 
-- `-c, --commission_bps <VALUE>`: New commission value in base points.
+- `-c, --commission_bps <VALUE>`: New commission value in base points (e.g., `500` means `5%`).
 - `-i, --identity_pubkey <PUBKEY>`: Validator identity account pubkey.
 
 ---
@@ -122,11 +132,3 @@ rakurai-activation -p <PROGRAM_ID> show --identity_pubkey <IDENTITY_PUBKEY> --rp
 - `-i, --identity_pubkey <PUBKEY>`: Validator identity account pubkey.
 
 ---
-
-## Notes
-
-- Ensure your keypair has the necessary permissions to execute transactions.
-- Use a valid RPC URL to interact with the Solana blockchain.
-- Commission values are in base points (e.g., `500` means `5%`).
-
-

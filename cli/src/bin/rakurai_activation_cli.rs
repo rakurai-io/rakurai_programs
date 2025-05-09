@@ -61,7 +61,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Initialize block builder config account
+    /// Initialize Rakurai Activation config account
     #[command(hide = true)]
     InitConfig(InitConfigArgs),
 
@@ -72,13 +72,13 @@ pub enum Commands {
     /// Initialize a Rakurai Activation Account
     Init(InitArgs),
 
-    /// Enable or disable the Scheduler
+    /// Enable/Disable the Scheduler
     SchedulerControl(SchedulerControlArgs),
 
     /// Update the Validator Commission
     UpdateCommission(UpdateCommissionArgs),
 
-    /// Close the Activation account
+    /// Close the Rakurai Activation Account
     #[command(hide = true)]
     Close(ClosePdaArgs),
 
