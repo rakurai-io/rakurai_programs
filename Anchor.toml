@@ -2,6 +2,10 @@
 resolution = true
 skip-lint = false
 
+[programs.mainnet]
+rakurai_activation = "rAKACC6Qw8HYa87ntGPRbfYEMnK2D9JVLsmZaKPpMmi"
+reward_distribution = "RAkd1EJg45QQHeuXy7JEWBhdNvsd64Z5PbZJWQT96iB"
+
 [programs.testnet]
 rakurai_activation = "pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt"
 reward_distribution = "A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB"
