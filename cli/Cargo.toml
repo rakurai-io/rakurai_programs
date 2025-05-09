@@ -5,18 +5,18 @@ description = "Created with Anchor"
 edition = "2021"
 
 [dependencies]
-anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "8b391aa278387b6f6ce3133453619a175544631e" }
+anchor-lang = { path = "../../anchor/lang" }
 bincode = "1.3.3"
 bs58 = "0.5.1"
 clap = { version = "4.4", features = ["derive"] }
 colored = "2.0"
 rakurai_activation = { path = "../programs/rakurai_activation" }
-serde = "1.0.213"
-serde_derive = "1.0.213"
-serde_json = "1.0.132"
+serde = "1.0.138"
+serde_derive = "1.0.103"
+serde_json = "1.0.140"
 shellexpand = "3.1.0"
-solana-rpc-client = "=2.1.21"
-solana-sdk = "=2.1.21"
+solana-rpc-client = { path = "../../rpc-client" }
+solana-sdk = { path = "../../solana-sdk/sdk" }
 
 [[bin]]
 name = "rakurai-activation"
