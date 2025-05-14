@@ -53,7 +53,7 @@ rakurai-activation [OPTIONS] <COMMAND>
 These options are **critical** and must be used with care:
 
 - `-k, --keypair <PATH>`: Path to the Solana keypair file. This keypair must have authority to send transactions—typically the **validator identity keypair**.
-- `-r, --rpc <URL>`: RPC URL of the target Solana cluster or moniker (for testnet cluster use `-rt` or `-r https://api.testnet.solana.com`).  
+- `-u, --url <URL>`: RPC URL of the target Solana cluster or moniker (for testnet cluster use `-ut` or `-u https://api.testnet.solana.com`).  
 - `-p, --program-id <PROGRAM_ID>`: Deployed Rakurai Activation program ID.  
   - **Mainnet:** `rAKACC6Qw8HYa87ntGPRbfYEMnK2D9JVLsmZaKPpMmi`  
   - **Testnet:** `pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt`
@@ -65,30 +65,38 @@ These options are **critical** and must be used with care:
 ### 1. `init`
 
 #### Description
-Initializes a new Rakurai Activation Account (RAA).
+
+To create a Rakurai Activation Account (RAA), you must provide your validator's `vote_pubkey` along with its corresponding *node identity* `keypair` as the signer. This node identity will be used later to authorize or modify RAA parameters.
+You must also specify a `commission_bps` in basis points (BPS), which defines the validator’s share of the block rewards. This commission is **independent** of Solana’s voting commission and applies only to block rewards.
+Creating an RAA is a **mandatory step** for running a Rakurai-Solana validator
+
 
 #### Usage
 
 ```sh
-rakurai-activation -p <PROGRAM_ID> init --commission_bps <VALUE> --vote_pubkey <VOTE_PUBKEY> --keypair <IDENTITY_KEYPAIR> --rpc <RPC_URL>
+rakurai-activation -p <PROGRAM_ID> init --commission_bps <VALUE> --vote_pubkey <VOTE_PUBKEY> --keypair <IDENTITY_KEYPAIR> --url <RPC_URL>
 ```
 
 #### Options
 
-- `-c, --commission_bps <VALUE>`: Validator block rewards commission percentage in BPS (e.g., `500` means `5%`).
-- `-v, --vote_pubkey <PUBKEY>`: Validator vote account pubkey.
+- `-c, --commission_bps <VALUE>`: Validator's commission on block rewards in basis points (e.g., `500` for `5%`).
+- `-v, --vote_pubkey <PUBKEY>`: Validator's vote account public key.
 
 ---
 
 ### 2. `scheduler-control`
 
 #### Description
-Enables or Disables the scheduler.
+Controls the Rakurai scheduler by enabling or disabling it.
 
+- To **enable** the scheduler, both the validator and Rakurai must independently submit a transaction. The scheduler becomes active **only after both sides** have performed the enable transaction.
+- To **disable** the scheduler, **either party** (the validator or Rakurai) can submit a disable transaction. Only one side is required to disable it.
+- By default, this command **enables** the scheduler. To explicitly disable it, use the `-d` or `--disable_scheduler` flag.
+  
 #### Usage
 
 ```sh
-rakurai-activation -p <PROGRAM_ID> scheduler-control --identity_pubkey <IDENTITY_PUBKEY> --keypair <IDENTITY_KEYPAIR> --rpc <RPC_URL> 
+rakurai-activation -p <PROGRAM_ID> scheduler-control --identity_pubkey <IDENTITY_PUBKEY> --keypair <IDENTITY_KEYPAIR> --url <RPC_URL> 
 ```
 
 #### Options
@@ -101,12 +109,14 @@ rakurai-activation -p <PROGRAM_ID> scheduler-control --identity_pubkey <IDENTITY
 ### 3. `update-commission`
 
 #### Description
-Updates the validator block reward commission.
+Updates the validator's block reward commission.
 
+Validators can update their share of the block reward at any time, independent of Rakurai. Only the validator can change their commission, and the change will take effect starting from the next epoch. However, if the validator has not yet passed the first leader turn of the current epoch, the new commission will be applied in the following epoch.
+ 
 #### Usage
 
 ```sh
-rakurai-activation -p <PROGRAM_ID> update-commission --commission_bps <VALUE> --identity_pubkey <IDENTITY_PUBKEY> --keypair <IDENTITY_KEYPAIR> --rpc <RPC_URL>
+rakurai-activation -p <PROGRAM_ID> update-commission --commission_bps <VALUE> --identity_pubkey <IDENTITY_PUBKEY> --keypair <IDENTITY_KEYPAIR> --url <RPC_URL>
 ```
 
 #### Options
@@ -119,12 +129,19 @@ rakurai-activation -p <PROGRAM_ID> update-commission --commission_bps <VALUE> --
 ### 4. `show`
 
 #### Description
-Display the rakurai activation account state.
+Displays the current state of the Rakurai Activation Account (RAA).
+
+- **Scheduler status**: Whether the Rakurai scheduler is enabled or disabled.
+- **Validator commission**: The current block reward commission in basis points.
+- **Authority**: The account authorized to manage the Rakurai Activation Account (RAA).
+
+This command provides an overview of the RAA's current configuration and state.
+
 
 #### Usage
 
 ```sh
-rakurai-activation -p <PROGRAM_ID> show --identity_pubkey <IDENTITY_PUBKEY> --rpc <RPC_URL>
+rakurai-activation -p <PROGRAM_ID> show --identity_pubkey <IDENTITY_PUBKEY> --url <RPC_URL>
 ```
 
 #### Options
