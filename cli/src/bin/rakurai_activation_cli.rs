@@ -271,9 +271,12 @@ fn process_init_pda(
         derive_activation_account_address(&program_id, &vote_state.node_pubkey);
 
     println!(
-        "📌 {}: {}",
-        "Rakurai Activation Account Pubkey".bright_green(),
-        activation_pubkey,
+        "📌 {}",
+        "Rakurai Activation Account".bold().underline().blue()
+    );
+    println!(
+        "   🔗 Pubkey: {}",
+        activation_pubkey.to_string().bold().green()
     );
     println!(
         "{} {}\n{} {}\n{} {}",
@@ -336,9 +339,12 @@ pub fn process_scheduler_control(
     }
 
     println!(
-        "📌 {}: {}",
-        "Rakurai Activation Account Pubkey".bright_green(),
-        activation_pubkey,
+        "📌 {}",
+        "Rakurai Activation Account".bold().underline().blue()
+    );
+    println!(
+        "   🔗 Pubkey: {}",
+        activation_pubkey.to_string().bold().green()
     );
     println!(
         "{} {}\n{} {}\n{} {}",
@@ -396,9 +402,12 @@ fn process_update_commission(
     let activation_account = get_activation_account(rpc_client.clone(), activation_pubkey)?;
 
     println!(
-        "📌 {}: {}",
-        "Rakurai Activation Account Pubkey".bright_green(),
-        activation_pubkey,
+        "📌 {}",
+        "Rakurai Activation Account".bold().underline().blue()
+    );
+    println!(
+        "   🔗 Pubkey: {}",
+        activation_pubkey.to_string().bold().green()
     );
     println!(
         "{} {}\n{} {}\n{} {}",
@@ -459,9 +468,12 @@ fn process_close(
     }
 
     println!(
-        "📌 {}: {}",
-        "Rakurai Activation Account Pubkey".bright_green(),
-        activation_pubkey,
+        "📌 {}",
+        "Rakurai Activation Account".bold().underline().blue()
+    );
+    println!(
+        "   🔗 Pubkey: {}",
+        activation_pubkey.to_string().bold().green()
     );
     println!(
         "{} {}\n{} {}",
@@ -494,9 +506,12 @@ fn process_show(
 
     let activation_account = get_activation_account(rpc_client.clone(), activation_pubkey)?;
     println!(
-        "📌 {}: {}",
-        "Rakurai Activation Account Pubkey".bright_green(),
-        activation_pubkey,
+        "📌 {}",
+        "Rakurai Activation Account".bold().underline().blue()
+    );
+    println!(
+        "   🔗 Pubkey: {}",
+        activation_pubkey.to_string().bold().green()
     );
     display_activation_account(activation_account);
     Ok(())
