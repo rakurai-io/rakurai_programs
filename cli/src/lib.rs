@@ -46,18 +46,19 @@ pub fn validate_commission(val: &str) -> Result<u16, String> {
 }
 
 /// Parses a Solana keypair from a file
-pub fn parse_keypair(path: &str) -> Result<Arc<Keypair>, String> {
+pub fn parse_keypair(path: &str) -> Result<Arc<Keypair>, Box<dyn std::error::Error>> {
     let expanded_path = shellexpand::tilde(path).into_owned();
     let path = Path::new(&expanded_path);
     if !path.exists() {
         return Err(format!(
-            "Keypair file not found: {}. Please provide a valid keypair path.",
+            "❌ Keypair file not found: {}. Please provide a valid keypair path. (--keypair path/to/keypair.json)", 
             expanded_path
-        ));
+        )
+        .into());
     }
     Keypair::read_from_file(path)
         .map(Arc::new)
-        .map_err(|e| format!("Failed to read keypair from file {}: {}", expanded_path, e))
+        .map_err(|e| format!("Failed to read keypair from file {}: {}", expanded_path, e).into())
 }
 
 pub fn get_activation_account(
