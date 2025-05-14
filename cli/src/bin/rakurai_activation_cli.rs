@@ -48,7 +48,7 @@ pub struct Cli {
         default_value = "~/.config/solana/id.json",
         help = "Path to the Solana keypair"
     )]
-    pub keypair_path: String,
+    pub keypair: String,
 
     /// RPC URL for sending transactions
     #[arg(short, long, global = true, default_value = "t", value_parser = normalize_to_url_if_moniker, help = "Solana RPC endpoint to send transactions through")]
@@ -519,7 +519,7 @@ fn process_show(
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    let keypair = parse_keypair(&cli.keypair_path)?;
+    let keypair = parse_keypair(&cli.keypair)?;
     let rpc_client = Arc::new(RpcClient::new_with_commitment(
         cli.url.clone(),
         CommitmentConfig::confirmed(),
