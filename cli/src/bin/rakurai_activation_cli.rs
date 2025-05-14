@@ -32,7 +32,7 @@ use {
 #[command(
     author,
     version,
-    about = "A comprehensive CLI tool for managing rakurai Activation account",
+    about = "A comprehensive CLI tool for managing Rakurai Activation Account (RAA)",
     arg_required_else_help = true,
     color = clap::ColorChoice::Always
 )]
@@ -41,12 +41,18 @@ pub struct Cli {
     pub command: Commands,
 
     /// Path to the keypair file (must be a valid Solana keypair)
-    #[arg(short, long, global = true, default_value = "~/.config/solana/id.json", value_parser = parse_keypair, help = "Path to the Solana keypair")]
-    pub keypair: Arc<Keypair>,
+    #[arg(
+        short,
+        long,
+        global = true,
+        default_value = "~/.config/solana/id.json",
+        help = "Path to the Solana keypair"
+    )]
+    pub keypair_path: String,
 
     /// RPC URL for sending transactions
     #[arg(short, long, global = true, default_value = "t", value_parser = normalize_to_url_if_moniker, help = "Solana RPC endpoint to send transactions through")]
-    pub rpc: String,
+    pub url: String,
 
     /// Rakurai Activation Program ID (Pubkey)
     #[arg(
@@ -54,7 +60,7 @@ pub struct Cli {
             long,
             required = true,
             value_parser = parse_pubkey,
-            help = "Rakurai activation Program ID (testnet: pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt, mainnet-beta: rAKACC6Qw8HYa87ntGPRbfYEMnK2D9JVLsmZaKPpMmi)"
+            help = "Rakurai activation Program ID [testnet: pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt, mainnet-beta: rAKACC6Qw8HYa87ntGPRbfYEMnK2D9JVLsmZaKPpMmi]"
         )]
     pub program_id: Pubkey,
 }
@@ -253,11 +259,11 @@ fn process_init_pda(
 
     let vote_state = get_vote_account(rpc_client.clone(), vote_pubkey)?;
     if vote_state.node_pubkey != signer_pubkey {
-        println!(
+        return Err(format!(
             "❌ Unauthorized signer! Expected: {:?}, Found: {:?}",
             vote_state.node_pubkey, signer_pubkey
-        );
-        return Err("Unauthorized signer".into());
+        )
+        .into());
     }
 
     let (activation_config_pubkey, _) = derive_config_account_address(&program_id);
@@ -265,9 +271,12 @@ fn process_init_pda(
         derive_activation_account_address(&program_id, &vote_state.node_pubkey);
 
     println!(
-        "📌 {}: {}",
-        "Rakurai Activation Account Pubkey".bright_green(),
-        activation_pubkey,
+        "📌 {}",
+        "Rakurai Activation Account".bold().underline().blue()
+    );
+    println!(
+        "   🔗 Pubkey: {}",
+        activation_pubkey.to_string().bold().green()
     );
     println!(
         "{} {}\n{} {}\n{} {}",
@@ -318,11 +327,11 @@ pub fn process_scheduler_control(
     if !(identity_pubkey == signer_pubkey
         || activation_config_account.block_builder_authority == signer_pubkey)
     {
-        println!(
+        return Err(format!(
             "❌ Unauthorized Signer! Expected: Validator({}) or BlockBuilder({}), Found: {}",
             identity_pubkey, activation_config_account.block_builder_authority, signer_pubkey
-        );
-        return Err("Unauthorized signer".into());
+        )
+        .into());
     }
 
     if activation_account.is_enabled == false && disable_scheduler == false {
@@ -330,9 +339,12 @@ pub fn process_scheduler_control(
     }
 
     println!(
-        "📌 {}: {}",
-        "Rakurai Activation Account Pubkey".bright_green(),
-        activation_pubkey,
+        "📌 {}",
+        "Rakurai Activation Account".bold().underline().blue()
+    );
+    println!(
+        "   🔗 Pubkey: {}",
+        activation_pubkey.to_string().bold().green()
     );
     println!(
         "{} {}\n{} {}\n{} {}",
@@ -390,9 +402,12 @@ fn process_update_commission(
     let activation_account = get_activation_account(rpc_client.clone(), activation_pubkey)?;
 
     println!(
-        "📌 {}: {}",
-        "Rakurai Activation Account Pubkey".bright_green(),
-        activation_pubkey,
+        "📌 {}",
+        "Rakurai Activation Account".bold().underline().blue()
+    );
+    println!(
+        "   🔗 Pubkey: {}",
+        activation_pubkey.to_string().bold().green()
     );
     println!(
         "{} {}\n{} {}\n{} {}",
@@ -406,15 +421,14 @@ fn process_update_commission(
     if !(signer_pubkey == identity_pubkey
         || signer_pubkey == activation_config_account.block_builder_authority)
     {
-        println!(
+        return Err(format!(
             "❌ Unauthorized Signer! Expected: Validator({}) or BlockBuilder({}), Found: {}",
             identity_pubkey, activation_config_account.block_builder_authority, signer_pubkey
-        );
-        return Err("Unauthorized signer".into());
+        )
+        .into());
     }
     if commission_bps == activation_account.validator_commission_bps {
-        eprintln!("❌ No transaction required, commission value is unchanged.");
-        return Err("No update needed".into());
+        return Err(format!("❌ No transaction required, commission value is unchanged.").into());
     }
 
     let update_commission_instruction = update_rakurai_activation_commission_ix(
@@ -446,17 +460,20 @@ fn process_close(
         derive_activation_account_address(&program_id, &identity_pubkey);
 
     if activation_config_account.block_builder_authority != signer_pubkey {
-        eprintln!(
+        return Err(format!(
             "❌ Unauthorized Signer! Expected: BlockBuilder({}), Found: {}",
             activation_config_account.block_builder_authority, signer_pubkey
-        );
-        return Err("Unauthorized signer".into());
+        )
+        .into());
     }
 
     println!(
-        "📌 {}: {}",
-        "Rakurai Activation Account Pubkey".bright_green(),
-        activation_pubkey,
+        "📌 {}",
+        "Rakurai Activation Account".bold().underline().blue()
+    );
+    println!(
+        "   🔗 Pubkey: {}",
+        activation_pubkey.to_string().bold().green()
     );
     println!(
         "{} {}\n{} {}",
@@ -489,9 +506,12 @@ fn process_show(
 
     let activation_account = get_activation_account(rpc_client.clone(), activation_pubkey)?;
     println!(
-        "📌 {}: {}",
-        "Rakurai Activation Account Pubkey".bright_green(),
-        activation_pubkey,
+        "📌 {}",
+        "Rakurai Activation Account".bold().underline().blue()
+    );
+    println!(
+        "   🔗 Pubkey: {}",
+        activation_pubkey.to_string().bold().green()
     );
     display_activation_account(activation_account);
     Ok(())
@@ -499,44 +519,29 @@ fn process_show(
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-
+    let keypair = parse_keypair(&cli.keypair_path)?;
     let rpc_client = Arc::new(RpcClient::new_with_commitment(
-        cli.rpc.clone(),
+        cli.url.clone(),
         CommitmentConfig::confirmed(),
     ));
 
     match &cli.command {
-        Commands::Init(args) => process_init_pda(
-            rpc_client.clone(),
-            cli.keypair,
-            cli.program_id,
-            args.clone(),
-        )?,
+        Commands::InitConfig(args) => {
+            process_init_config(rpc_client.clone(), keypair, cli.program_id, args.clone())?
+        }
         Commands::ShowConfig => process_show_config(rpc_client.clone(), cli.program_id)?,
-        Commands::InitConfig(args) => process_init_config(
-            rpc_client.clone(),
-            cli.keypair,
-            cli.program_id,
-            args.clone(),
-        )?,
-        Commands::SchedulerControl(args) => process_scheduler_control(
-            rpc_client.clone(),
-            cli.keypair,
-            cli.program_id,
-            args.clone(),
-        )?,
-        Commands::UpdateCommission(args) => process_update_commission(
-            rpc_client.clone(),
-            cli.keypair,
-            cli.program_id,
-            args.clone(),
-        )?,
-        Commands::Close(args) => process_close(
-            rpc_client.clone(),
-            cli.keypair,
-            cli.program_id,
-            args.clone(),
-        )?,
+        Commands::Init(args) => {
+            process_init_pda(rpc_client.clone(), keypair, cli.program_id, args.clone())?
+        }
+        Commands::SchedulerControl(args) => {
+            process_scheduler_control(rpc_client.clone(), keypair, cli.program_id, args.clone())?
+        }
+        Commands::UpdateCommission(args) => {
+            process_update_commission(rpc_client.clone(), keypair, cli.program_id, args.clone())?
+        }
+        Commands::Close(args) => {
+            process_close(rpc_client.clone(), keypair, cli.program_id, args.clone())?
+        }
         Commands::Show(args) => process_show(rpc_client.clone(), cli.program_id, args.clone())?,
     }
 
