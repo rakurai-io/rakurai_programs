@@ -26,9 +26,11 @@ echo "export PATH=\"$(pwd)/release/downloads:\$PATH\"" >> ~/.bashrc && source ~/
 
 ### Option 2: Build from Source
 ```sh
-# Build and install the CLI tool globally
-cargo install --path .
-export PATH="$HOME/.cargo/bin:$PATH"
+# Build the CLI tool globally
+cargo b --release -p rakurai_cli
+
+# Export the CLI path
+echo "export PATH=\"$(pwd)/target/release/:\$PATH\""
 ```
 
 ### Verify Installation
