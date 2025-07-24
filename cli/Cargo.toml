@@ -5,6 +5,7 @@ description = "Created with Anchor"
 edition = "2021"
 
 [dependencies]
+solana-system-interface = { workspace = true }
 anchor-lang = { path = "../../anchor/lang" }
 bincode = {workspace = true}
 bs58 = {workspace = true}
