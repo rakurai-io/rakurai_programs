@@ -164,6 +164,8 @@ pub mod reward_distribution {
         Ok(())
     }
 
+    /// Transfers staking rewards by distributing them into Rakurai commission, validator fee, and staker rewards.
+    /// Validates totals and emits an event after successful transfers
     pub fn transfer_staker_rewards(
         ctx: Context<TransferStakerRewards>,
         total_rewards: u64,
@@ -363,6 +365,7 @@ pub mod reward_distribution {
     }
 }
 
+/// Custom errors for Rakurai activation instructions.
 #[error_code]
 pub enum ErrorCode {
     #[msg("Account failed validation.")]
@@ -411,6 +414,7 @@ pub enum ErrorCode {
     InvalidRakuraiCommissionAccount,
 }
 
+/// Closes a `ClaimStatus` account and refunds lamports to the payer.
 #[derive(Accounts)]
 pub struct CloseClaimStatus<'info> {
     #[account(seeds = [RewardDistributionConfigAccount::SEED], bump)]
@@ -431,6 +435,7 @@ pub struct CloseClaimStatus<'info> {
     pub claim_status_payer: UncheckedAccount<'info>,
 }
 
+/// Initializes the reward distribution config with bump and payer.
 #[derive(Accounts)]
 pub struct Initialize<'info> {
     #[account(
@@ -449,6 +454,7 @@ pub struct Initialize<'info> {
     pub initializer: Signer<'info>,
 }
 
+/// Initializes a new reward collection account for a validator at the current epoch.
 #[derive(Accounts)]
 #[instruction(
     _merkle_root_upload_authority: Pubkey,
@@ -483,6 +489,8 @@ pub struct InitializeRewardCollectionAccount<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// Updates fields in the global reward distribution config.
+/// Requires the authority stored in the config to sign.
 #[derive(Accounts)]
 pub struct UpdateConfig<'info> {
     #[account(mut, rent_exempt = enforce)]
@@ -502,6 +510,7 @@ impl UpdateConfig<'_> {
     }
 }
 
+/// Instruction to close a reward collection account after the epoch has ended.
 #[derive(Accounts)]
 #[instruction(epoch: u64)]
 pub struct CloseRewardCollectionAccount<'info> {
@@ -540,6 +549,8 @@ impl CloseRewardCollectionAccount<'_> {
     }
 }
 
+/// Instruction to claim a portion of the reward collection.
+/// A new `ClaimStatus` account is created to prevent double claims.
 #[derive(Accounts)]
 #[instruction(_bump: u8, _amount: u64, _proof: Vec<[u8; 32]>)]
 pub struct Claim<'info> {
@@ -575,6 +586,7 @@ pub struct Claim<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// Accounts required to upload a Merkle root for reward distribution.
 #[derive(Accounts)]
 pub struct UploadMerkleRoot<'info> {
     pub config: Account<'info, RewardDistributionConfigAccount>,
@@ -601,6 +613,7 @@ impl UploadMerkleRoot<'_> {
     }
 }
 
+/// Accounts required to transfer staker rewards with Rakurai commission applied.
 #[derive(Accounts)]
 pub struct TransferStakerRewards<'info> {
     #[account(mut)]
@@ -634,11 +647,14 @@ impl TransferStakerRewards<'_> {
 
 // Events
 
+// Emitted when a new RewardCollectionAccount is initialized.
 #[event]
 pub struct RewardCollectionAccountInitializedEvent {
+    /// The newly initialized reward colection account.
     pub reward_collection_account: Pubkey,
 }
 
+// Emitted when validator commission basis points are updated.
 #[event]
 pub struct ValidatorCommissionBpsUpdatedEvent {
     pub reward_collection_account: Pubkey,
@@ -646,18 +662,21 @@ pub struct ValidatorCommissionBpsUpdatedEvent {
     pub new_commission_bps: u16,
 }
 
+// Emitted when the Merkle root upload authority is changed.
 #[event]
 pub struct MerkleRootUploadAuthorityUpdatedEvent {
     pub old_authority: Pubkey,
     pub new_authority: Pubkey,
 }
 
+// Emitted when a config value is updated by an authorized entity.
 #[event]
 pub struct ConfigUpdatedEvent {
     /// Who updated it.
     authority: Pubkey,
 }
 
+// Emitted when a user successfully claims rewards from a reward account.
 #[event]
 pub struct ClaimedEvent {
     /// [RewardCollectionAccount] claimed from.
@@ -673,6 +692,7 @@ pub struct ClaimedEvent {
     pub amount: u64,
 }
 
+// Emitted when a Merkle root is uploaded to a reward account.
 #[event]
 pub struct MerkleRootUploadedEvent {
     /// Who uploaded the root.
@@ -682,11 +702,13 @@ pub struct MerkleRootUploadedEvent {
     pub reward_collection_account: Pubkey,
 }
 
+// Emitted when a portion of funds is transferred to the staker.
 #[event]
 pub struct StakerRewardsTransferredEvent {
     pub staker_rewards: u64,
 }
 
+// Emitted when a reward collection account is closed and unclaimed funds are returned.
 #[event]
 pub struct RewardCollectionAccountClosedEvent {
     /// Account where unclaimed funds were transferred to.
@@ -699,6 +721,7 @@ pub struct RewardCollectionAccountClosedEvent {
     pub expired_amount: u64,
 }
 
+// Emitted when a user's ClaimStatus account is closed and remaining funds are returned.
 #[event]
 pub struct ClaimStatusClosedEvent {
     /// Account where funds were transferred to.
