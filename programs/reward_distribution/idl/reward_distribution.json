@@ -4,13 +4,13 @@
     "name": "reward_distribution",
     "version": "0.1.0",
     "spec": "0.1.0",
-    "description": "Created with Anchor"
+    "description": "Solana program to distribute block rewards among Rakurai, validator, and stakers. Staker rewards accumulate in a collection account and are distributed post-epoch proportionally based on stake using Merkle root."
   },
   "instructions": [
     {
       "name": "claim",
       "docs": [
-        "Claims tokens from the [RewardCollectionAccount]."
+        "Claims rewards from the [RewardCollectionAccount] according to merkle proof."
       ],
       "discriminator": [
         62,
@@ -111,8 +111,7 @@
     {
       "name": "close_claim_status",
       "docs": [
-        "Anyone can invoke this only after the [RewardCollectionAccount] has expired.",
-        "This instruction will return any rent back to `claimant` and close the account"
+        "Permissionless; can only be invoked once the [`RewardCollectionAccount`] has expired."
       ],
       "discriminator": [
         163,
@@ -156,6 +155,11 @@
         },
         {
           "name": "claim_status",
+          "docs": [
+            "The [`ClaimStatus`] account associated with the staker's pubkey.",
+            "",
+            "This account is `close`d in this instruction, returning rent to the original payer (`claim_status_payer`)."
+          ],
           "writable": true
         },
         {
@@ -171,9 +175,8 @@
     {
       "name": "close_reward_collection_account",
       "docs": [
-        "Anyone can invoke this only after the [RewardCollectionAccount] has expired.",
-        "This instruction will send any unclaimed funds to the designated `initializer`",
-        "before closing and returning the rent exempt funds to the validator."
+        "Sends unclaimed funds to the `initializer` and closes the [`RewardCollectionAccount`],",
+        "returning rent to the validator."
       ],
       "discriminator": [
         67,
@@ -259,7 +262,7 @@
     {
       "name": "initialize",
       "docs": [
-        "Initialize a singleton instance of the [RewardDistributionConfigAccount] account."
+        "Sets up the singleton [RewardDistributionConfigAccount] to store global configuration settings for Rakurai."
       ],
       "discriminator": [
         175,
@@ -389,21 +392,19 @@
               {
                 "kind": "account",
                 "path": "validator_vote_account"
+              },
+              {
+                "kind": "arg",
+                "path": "epoch"
               }
             ]
           }
         },
         {
-          "name": "validator_vote_account",
-          "docs": [
-            "The validator's vote account is used to check this transaction's signer is also the authorized withdrawer."
-          ]
+          "name": "validator_vote_account"
         },
         {
           "name": "signer",
-          "docs": [
-            "Must be equal to the supplied validator vote account's authorized withdrawer."
-          ],
           "writable": true,
           "signer": true
         },
@@ -438,8 +439,10 @@
     {
       "name": "transfer_staker_rewards",
       "docs": [
-        "Transfers staking rewards by distributing them into Rakurai commission, validator fee, and staker rewards.",
-        "Validates totals and emits an event after successful transfers"
+        "Distributes staking rewards according to the commission, invoked every leader turn:",
+        "- Rakurai commission (transferred first),",
+        "- Staker rewards (transferred next),",
+        "- Validator commission (remaining balance, stays in the validator's identity account)."
       ],
       "discriminator": [
         114,
@@ -517,9 +520,7 @@
     {
       "name": "upload_merkle_root",
       "docs": [
-        "Uploads a merkle root to the provided [RewardCollectionAccount]. This instruction may be",
-        "invoked many times as long as the account is at least one epoch old and not expired; and",
-        "no funds have already been claimed. Only the `merkle_root_upload_authority` has the",
+        "Uploads a merkle root to the [RewardCollectionAccount]. Only the `merkle_root_upload_authority` has the",
         "authority to invoke."
       ],
       "discriminator": [

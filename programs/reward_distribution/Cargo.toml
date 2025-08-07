@@ -1,19 +1,19 @@
 [package]
+description = "Solana program to distribute block rewards among Rakurai, validator, and stakers. Staker rewards accumulate in a collection account and are distributed post-epoch proportionally based on stake using Merkle root."
+edition = "2021"
 name = "reward_distribution"
 version = "0.1.0"
-description = "Created with Anchor"
-edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
 name = "reward_distribution"
 
 [features]
-default = []
+anchor-debug = []
 cpi = ["no-entrypoint"]
+default = []
 no-entrypoint = []
 no-idl = []
-anchor-debug = []
 no-log-ix-name = []
 
 [dependencies]

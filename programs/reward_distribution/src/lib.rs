@@ -29,7 +29,7 @@ pub mod reward_distribution {
     use super::*;
     use crate::ErrorCode::*;
 
-    /// Initialize a singleton instance of the [RewardDistributionConfigAccount] account.
+    /// Sets up the singleton [RewardDistributionConfigAccount] to store global configuration settings for Rakurai.
     pub fn initialize(
         ctx: Context<Initialize>,
         authority: Pubkey,
@@ -119,9 +119,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Uploads a merkle root to the provided [RewardCollectionAccount]. This instruction may be
-    /// invoked many times as long as the account is at least one epoch old and not expired; and
-    /// no funds have already been claimed. Only the `merkle_root_upload_authority` has the
+    /// Uploads a merkle root to the [RewardCollectionAccount]. Only the `merkle_root_upload_authority` has the
     /// authority to invoke.
     pub fn upload_merkle_root(
         ctx: Context<UploadMerkleRoot>,
@@ -164,8 +162,10 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Transfers staking rewards by distributing them into Rakurai commission, validator fee, and staker rewards.
-    /// Validates totals and emits an event after successful transfers
+    /// Distributes staking rewards according to the commission, invoked every leader turn:
+    /// - Rakurai commission (transferred first),
+    /// - Staker rewards (transferred next),
+    /// - Validator commission (remaining balance, stays in the validator's identity account).
     pub fn transfer_staker_rewards(
         ctx: Context<TransferStakerRewards>,
         total_rewards: u64,
@@ -235,12 +235,10 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Anyone can invoke this only after the [RewardCollectionAccount] has expired.
-    /// This instruction will return any rent back to `claimant` and close the account
+    /// Permissionless; can only be invoked once the [`RewardCollectionAccount`] has expired.
     pub fn close_claim_status(ctx: Context<CloseClaimStatus>) -> Result<()> {
         let claim_status = &ctx.accounts.claim_status;
 
-        // can only claim after claim_status has expired to prevent draining.
         if Clock::get()?.epoch <= claim_status.expires_at {
             return Err(PrematureCloseClaimStatus.into());
         }
@@ -253,9 +251,8 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Anyone can invoke this only after the [RewardCollectionAccount] has expired.
-    /// This instruction will send any unclaimed funds to the designated `initializer`
-    /// before closing and returning the rent exempt funds to the validator.
+    /// Sends unclaimed funds to the `initializer` and closes the [`RewardCollectionAccount`],
+    /// returning rent to the validator.
     pub fn close_reward_collection_account(
         ctx: Context<CloseRewardCollectionAccount>,
         _epoch: u64,
@@ -283,7 +280,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Claims tokens from the [RewardCollectionAccount].
+    /// Claims rewards from the [RewardCollectionAccount] according to merkle proof.
     pub fn claim(ctx: Context<Claim>, bump: u8, amount: u64, proof: Vec<[u8; 32]>) -> Result<()> {
         let claim_status = &mut ctx.accounts.claim_status;
         claim_status.bump = bump;
@@ -296,7 +293,6 @@ pub mod reward_distribution {
             return Err(ExpiredRewardCollectionAccount.into());
         }
 
-        // Redundant check since we shouldn't be able to init a claim status account using the same seeds.
         if claim_status.is_claimed {
             return Err(FundsAlreadyClaimed.into());
         }
@@ -308,7 +304,6 @@ pub mod reward_distribution {
             .as_mut()
             .ok_or(RootNotUploaded)?;
 
-        // Verify the merkle proof.
         let node = &solana_program::hash::hashv(&[
             &[0u8],
             &solana_program::hash::hashv(&[
@@ -328,7 +323,6 @@ pub mod reward_distribution {
             amount,
         )?;
 
-        // Mark it claimed.
         claim_status.amount = amount;
         claim_status.is_claimed = true;
         claim_status.slot_claimed_at = clock.slot;
@@ -420,8 +414,9 @@ pub struct CloseClaimStatus<'info> {
     #[account(seeds = [RewardDistributionConfigAccount::SEED], bump)]
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
-    // bypass seed check since owner check prevents attacker from passing in invalid data
-    // account can only be transferred to us if it is zeroed, failing the deserialization check
+    /// The [`ClaimStatus`] account associated with the staker's pubkey.  
+    ///  
+    /// This account is `close`d in this instruction, returning rent to the original payer (`claim_status_payer`).  
     #[account(
         mut,
         close = claim_status_payer,
@@ -478,11 +473,10 @@ pub struct InitializeRewardCollectionAccount<'info> {
     )]
     pub reward_collection_account: Account<'info, RewardCollectionAccount>,
 
-    /// CHECK: Safe because we check the vote program is the owner before deserialization.
-    /// The validator's vote account is used to check this transaction's signer is also the authorized withdrawer.
+    /// CHECK: The validator's vote account (used for metadata and on-chain validation).
     pub validator_vote_account: AccountInfo<'info>,
 
-    /// Must be equal to the supplied validator vote account's authorized withdrawer.
+    /// CHECK: The validator's identity account (used to derive the PDA and verify authority).
     #[account(mut)]
     pub signer: Signer<'info>,
 
@@ -516,6 +510,7 @@ impl UpdateConfig<'_> {
 pub struct CloseRewardCollectionAccount<'info> {
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
+    /// CHECK:
     #[account(mut)]
     pub initializer: AccountInfo<'info>,
 
@@ -616,6 +611,7 @@ impl UploadMerkleRoot<'_> {
 /// Accounts required to transfer staker rewards with Rakurai commission applied.
 #[derive(Accounts)]
 pub struct TransferStakerRewards<'info> {
+    /// CHECK:
     #[account(mut)]
     pub rakurai_commission_account: AccountInfo<'info>,
 
