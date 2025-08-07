@@ -1,23 +1,23 @@
 [package]
+description = "A multisig-based Solana smart contract for enabling or disabling the Rakurai scheduler. It also governs the commission on block rewards logic for block builder and validators, with remaining block rewards distributed to stakers via the RewardDistributionProgram."
+edition = "2021"
 name = "rakurai_activation"
 version = "0.1.0"
-description = "A multisig-based Solana smart contract responsible for enabling or disabling the Rakurai scheduler"
-edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
 name = "rakurai_activation"
 
 [features]
-default = []
+anchor-debug = []
 cpi = ["no-entrypoint"]
+default = []
 no-entrypoint = []
 no-idl = []
-anchor-debug = []
 no-log-ix-name = []
 
 [dependencies]
 anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "8b391aa278387b6f6ce3133453619a175544631e" }
-rakurai-vote-state = { path = "../vote_state" }
-solana-program = "2.1.21"
+rakurai-vote-state = {path = "../vote_state"}
+solana-program = "2"
 solana-security-txt = "1.1.1"

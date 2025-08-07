@@ -4,7 +4,7 @@
     "name": "rakurai_activation",
     "version": "0.1.0",
     "spec": "0.1.0",
-    "description": "A multisig-based Solana smart contract responsible for enabling or disabling the Rakurai scheduler"
+    "description": "A multisig-based Solana smart contract for enabling or disabling the Rakurai scheduler. It also governs the commission on block rewards logic for block builder and validators, with remaining block rewards distributed to stakers via the RewardDistributionProgram."
   },
   "instructions": [
     {
@@ -26,13 +26,13 @@
         {
           "name": "config",
           "docs": [
-            "Config account holding global authorities like `block_builder_authority`."
+            "The global configuration account for Rakurai settings."
           ]
         },
         {
           "name": "activation_account",
           "docs": [
-            "PDA holding validator-specific activation data; closed during this instruction."
+            "PDA storing validator-specific Rakurai activation state; closed during this instruction."
           ],
           "writable": true,
           "pda": {
@@ -93,7 +93,7 @@
     {
       "name": "initialize",
       "docs": [
-        "Initialize a singleton instance of the [RakuraiActivationConfigAccount] account."
+        "Sets up the singleton [RakuraiActivationConfigAccount] to store global configuration settings for Rakurai."
       ],
       "discriminator": [
         175,
@@ -189,8 +189,7 @@
     {
       "name": "initialize_rakurai_activation_account",
       "docs": [
-        "Initialize a new [RakuraiActivationAccount] associated with the given validator vote key",
-        "and current epoch."
+        "Initialize a new [RakuraiActivationAccount] associated with the given validator identity account key and seed."
       ],
       "discriminator": [
         170,
@@ -206,7 +205,7 @@
         {
           "name": "config",
           "docs": [
-            "The immutable global configuration account for Rakurai settings."
+            "The global configuration account for Rakurai settings."
           ]
         },
         {
@@ -265,7 +264,7 @@
         {
           "name": "signer",
           "docs": [
-            "Payer of the initialization fee and signer of the transaction."
+            "Payer for account creation; must sign the transaction. In current context validator's identity account."
           ],
           "writable": true,
           "signer": true
@@ -335,7 +334,7 @@
     {
       "name": "update_rakurai_activation_approval",
       "docs": [
-        "Updates Rakurai activation approval by either Validator or block builder.",
+        "Updates rakurai activation account approval by either Validator or block builder.",
         "Handles enabling/disabling and hash updates."
       ],
       "discriminator": [
@@ -352,13 +351,13 @@
         {
           "name": "config",
           "docs": [
-            "PDA storing config including authority (block_builder_authority)"
+            "The global configuration account for Rakurai settings."
           ]
         },
         {
           "name": "activation_account",
           "docs": [
-            "PDA tracking validator's activation info (must match `validator_identity_account`)"
+            "PDA storing validator-specific Rakurai activation state."
           ],
           "writable": true,
           "pda": {
@@ -450,7 +449,7 @@
         {
           "name": "config",
           "docs": [
-            "Config account holding global authorities and settings."
+            "The global configuration account for Rakurai settings."
           ]
         },
         {
@@ -669,7 +668,7 @@
           {
             "name": "is_enabled",
             "docs": [
-              "Whether the activation is enabled."
+              "Whether the rakurai scheduler is enabled."
             ],
             "type": "bool"
           },
@@ -785,7 +784,7 @@
           {
             "name": "block_builder_authority",
             "docs": [
-              "Authority related to block building logic."
+              "Co-signer authority required to update Rakurai activation status."
             ],
             "type": "pubkey"
           },

@@ -10,7 +10,7 @@ pub struct RakuraiActivationConfigAccount {
     /// Primary authority over this PDA.
     pub authority: Pubkey,
 
-    /// Authority related to block building logic.
+    /// Co-signer authority required to update Rakurai activation status.
     pub block_builder_authority: Pubkey,
 
     /// Commission charged by block builder (in basis points).
@@ -26,7 +26,7 @@ pub struct RakuraiActivationConfigAccount {
 #[account]
 #[derive(Default)]
 pub struct RakuraiActivationAccount {
-    /// Whether the activation is enabled.
+    /// Whether the rakurai scheduler is enabled.
     pub is_enabled: bool,
 
     /// Who proposed this change (optional).

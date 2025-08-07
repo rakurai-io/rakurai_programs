@@ -26,7 +26,7 @@ pub mod rakurai_activation {
 
     use super::*;
 
-    /// Initialize a singleton instance of the [RakuraiActivationConfigAccount] account.
+    /// Sets up the singleton [RakuraiActivationConfigAccount] to store global configuration settings for Rakurai.
     pub fn initialize(
         ctx: Context<Initialize>,
         authority: Pubkey,
@@ -67,8 +67,7 @@ pub mod rakurai_activation {
         Ok(())
     }
 
-    /// Initialize a new [RakuraiActivationAccount] associated with the given validator vote key
-    /// and current epoch.
+    /// Initialize a new [RakuraiActivationAccount] associated with the given validator identity account key and seed.
     pub fn initialize_rakurai_activation_account(
         ctx: Context<InitializeRakuraiActivationAccount>,
         validator_commission_bps: u16,
@@ -102,7 +101,7 @@ pub mod rakurai_activation {
         Ok(())
     }
 
-    /// Updates Rakurai activation approval by either Validator or block builder.
+    /// Updates rakurai activation account approval by either Validator or block builder.
     /// Handles enabling/disabling and hash updates.
     pub fn update_rakurai_activation_approval(
         ctx: Context<UpdateRakuraiActivationApproval>,
@@ -285,7 +284,7 @@ impl UpdateConfig<'_> {
     _bump: u8
 )]
 pub struct InitializeRakuraiActivationAccount<'info> {
-    /// The immutable global configuration account for Rakurai settings.
+    /// The global configuration account for Rakurai settings.
     pub config: Account<'info, RakuraiActivationConfigAccount>,
 
     /// The Rakurai activation PDA account to be created for the validator.
@@ -309,7 +308,7 @@ pub struct InitializeRakuraiActivationAccount<'info> {
     /// CHECK: The validator's identity account (used to derive the PDA and verify authority).
     pub validator_identity_account: AccountInfo<'info>,
 
-    /// Payer of the initialization fee and signer of the transaction.
+    /// Payer for account creation; must sign the transaction. In current context validator's identity account.
     #[account(mut)]
     pub signer: Signer<'info>,
 
@@ -319,10 +318,10 @@ pub struct InitializeRakuraiActivationAccount<'info> {
 
 #[derive(Accounts)]
 pub struct UpdateRakuraiActivationApproval<'info> {
-    /// PDA storing config including authority (block_builder_authority)
+    /// The global configuration account for Rakurai settings.
     pub config: Account<'info, RakuraiActivationConfigAccount>,
 
-    /// PDA tracking validator's activation info (must match `validator_identity_account`)
+    /// PDA storing validator-specific Rakurai activation state.
     #[account(
         mut,
         seeds = [
@@ -358,7 +357,7 @@ impl UpdateRakuraiActivationApproval<'_> {
 /// Updates the Rakurai activation commission for a specific validator.
 #[derive(Accounts)]
 pub struct UpdateRakuraiActivationCommission<'info> {
-    /// Config account holding global authorities and settings.
+    /// The global configuration account for Rakurai settings.
     pub config: Account<'info, RakuraiActivationConfigAccount>,
 
     /// PDA storing validator-specific Rakurai activation state.
@@ -373,7 +372,7 @@ pub struct UpdateRakuraiActivationCommission<'info> {
     )]
     pub activation_account: Account<'info, RakuraiActivationAccount>,
 
-    /// CHECK: Validator identity (used in PDA derivation; not deserialized).
+    /// CHECK: Validator identity associated with the activation account.
     #[account(mut)]
     pub validator_identity_account: AccountInfo<'info>,
 
@@ -397,10 +396,10 @@ impl UpdateRakuraiActivationCommission<'_> {
 
 #[derive(Accounts)]
 pub struct CloseRakuraiActivationAccount<'info> {
-    /// Config account holding global authorities like `block_builder_authority`.
+    /// The global configuration account for Rakurai settings.
     pub config: Account<'info, RakuraiActivationConfigAccount>,
 
-    /// PDA holding validator-specific activation data; closed during this instruction.
+    /// PDA storing validator-specific Rakurai activation state; closed during this instruction.
     #[account(
         mut,
         close = validator_identity_account,
