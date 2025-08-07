@@ -2,6 +2,8 @@
 
 A multisig-based Solana smart contract responsible for enabling or disabling the Rakurai scheduler on a per-validator basis.
 
+➤ For more details, refer to the [IDL File](./idl/rakurai_activation.json).
+
 ---
 
 ## Purpose

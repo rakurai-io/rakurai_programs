@@ -2,6 +2,8 @@
 
 A Solana smart contract for distributing block rewards among **Rakurai**, **validators**, and **stakers**. Rewards are accumulated throughout each epoch and distributed **post-epoch** to stakers using a **Merkle tree-based mechanism**.
 
+➤ For more details, refer to the [IDL File](./idl/reward_distribution.json).
+
 ---
 
 ## How It Works
