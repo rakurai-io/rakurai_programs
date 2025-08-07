@@ -24,7 +24,10 @@
       ],
       "accounts": [
         {
-          "name": "config"
+          "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ]
         },
         {
           "name": "reward_collection_account",
@@ -76,7 +79,7 @@
         {
           "name": "payer",
           "docs": [
-            "Who is paying for the claim."
+            "Fee payer for the claim transaction."
           ],
           "writable": true,
           "signer": true
@@ -126,6 +129,9 @@
       "accounts": [
         {
           "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ],
           "pda": {
             "seeds": [
               {
@@ -156,16 +162,14 @@
         {
           "name": "claim_status",
           "docs": [
-            "The [`ClaimStatus`] account associated with the staker's pubkey.",
-            "",
-            "This account is `close`d in this instruction, returning rent to the original payer (`claim_status_payer`)."
+            "The [`ClaimStatus`] account associated with the staker's pubkey is closed in this instruction, returning rent to the original payer (`claim_status_payer`)."
           ],
           "writable": true
         },
         {
           "name": "claim_status_payer",
           "docs": [
-            "Receiver of the funds."
+            "Account that receives the closed account's lamports."
           ],
           "writable": true
         }
@@ -190,7 +194,10 @@
       ],
       "accounts": [
         {
-          "name": "config"
+          "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ]
         },
         {
           "name": "initializer",
@@ -277,6 +284,9 @@
       "accounts": [
         {
           "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -311,6 +321,9 @@
         },
         {
           "name": "initializer",
+          "docs": [
+            "Fee payer for the initialize transaction"
+          ],
           "writable": true,
           "signer": true
         }
@@ -352,7 +365,10 @@
       ],
       "accounts": [
         {
-          "name": "config"
+          "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ]
         },
         {
           "name": "reward_collection_account",
@@ -439,10 +455,7 @@
     {
       "name": "transfer_staker_rewards",
       "docs": [
-        "Distributes staking rewards according to the commission, invoked every leader turn:",
-        "- Rakurai commission (transferred first),",
-        "- Staker rewards (transferred next),",
-        "- Validator commission (remaining balance, stays in the validator's identity account)."
+        "Transfer staker rewards according to the commission, invoked every leader turn:"
       ],
       "discriminator": [
         114,
@@ -498,6 +511,9 @@
       "accounts": [
         {
           "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ],
           "writable": true
         },
         {
@@ -520,8 +536,7 @@
     {
       "name": "upload_merkle_root",
       "docs": [
-        "Uploads a merkle root to the [RewardCollectionAccount]. Only the `merkle_root_upload_authority` has the",
-        "authority to invoke."
+        "Uploads a merkle root to the [RewardCollectionAccount]. Only the `merkle_root_upload_authority` can invole this instruction."
       ],
       "discriminator": [
         70,
@@ -535,7 +550,10 @@
       ],
       "accounts": [
         {
-          "name": "config"
+          "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ]
         },
         {
           "name": "reward_collection_account",
@@ -1031,7 +1049,7 @@
     {
       "name": "RewardCollectionAccount",
       "docs": [
-        "Stores validator reward distribution data for a given period."
+        "Stores validator reward collection account data for a given epoch."
       ],
       "type": {
         "kind": "struct",
@@ -1101,7 +1119,7 @@
           {
             "name": "initializer",
             "docs": [
-              "Who initialized the account."
+              "Who initialized the account (validator identity)."
             ],
             "type": "pubkey"
           },

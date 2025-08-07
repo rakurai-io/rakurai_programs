@@ -119,8 +119,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Uploads a merkle root to the [RewardCollectionAccount]. Only the `merkle_root_upload_authority` has the
-    /// authority to invoke.
+    /// Uploads a merkle root to the [RewardCollectionAccount]. Only the `merkle_root_upload_authority` can invole this instruction.
     pub fn upload_merkle_root(
         ctx: Context<UploadMerkleRoot>,
         root: [u8; 32],
@@ -162,10 +161,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Distributes staking rewards according to the commission, invoked every leader turn:
-    /// - Rakurai commission (transferred first),
-    /// - Staker rewards (transferred next),
-    /// - Validator commission (remaining balance, stays in the validator's identity account).
+    /// Transfer staker rewards according to the commission, invoked every leader turn:
     pub fn transfer_staker_rewards(
         ctx: Context<TransferStakerRewards>,
         total_rewards: u64,
@@ -411,12 +407,11 @@ pub enum ErrorCode {
 /// Closes a `ClaimStatus` account and refunds lamports to the payer.
 #[derive(Accounts)]
 pub struct CloseClaimStatus<'info> {
+    /// The global configuration account for Rakurai settings.
     #[account(seeds = [RewardDistributionConfigAccount::SEED], bump)]
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
-    /// The [`ClaimStatus`] account associated with the staker's pubkey.  
-    ///  
-    /// This account is `close`d in this instruction, returning rent to the original payer (`claim_status_payer`).  
+    /// The [`ClaimStatus`] account associated with the staker's pubkey is closed in this instruction, returning rent to the original payer (`claim_status_payer`).  
     #[account(
         mut,
         close = claim_status_payer,
@@ -425,7 +420,7 @@ pub struct CloseClaimStatus<'info> {
     pub claim_status: Account<'info, ClaimStatus>,
 
     /// CHECK: This is checked against claim_status in the constraint
-    /// Receiver of the funds.
+    /// Account that receives the closed account's lamports.
     #[account(mut)]
     pub claim_status_payer: UncheckedAccount<'info>,
 }
@@ -433,6 +428,7 @@ pub struct CloseClaimStatus<'info> {
 /// Initializes the reward distribution config with bump and payer.
 #[derive(Accounts)]
 pub struct Initialize<'info> {
+    /// The global configuration account for Rakurai settings.
     #[account(
         init,
         seeds = [RewardDistributionConfigAccount::SEED],
@@ -445,6 +441,7 @@ pub struct Initialize<'info> {
 
     pub system_program: Program<'info, System>,
 
+    /// Fee payer for the initialize transaction
     #[account(mut)]
     pub initializer: Signer<'info>,
 }
@@ -457,6 +454,7 @@ pub struct Initialize<'info> {
     _bump: u8
 )]
 pub struct InitializeRewardCollectionAccount<'info> {
+    /// The global configuration account for Rakurai settings.
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
     #[account(
@@ -487,6 +485,7 @@ pub struct InitializeRewardCollectionAccount<'info> {
 /// Requires the authority stored in the config to sign.
 #[derive(Accounts)]
 pub struct UpdateConfig<'info> {
+    /// The global configuration account for Rakurai settings.
     #[account(mut, rent_exempt = enforce)]
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
@@ -508,6 +507,7 @@ impl UpdateConfig<'_> {
 #[derive(Accounts)]
 #[instruction(epoch: u64)]
 pub struct CloseRewardCollectionAccount<'info> {
+    /// The global configuration account for Rakurai settings.
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
     /// CHECK:
@@ -549,6 +549,7 @@ impl CloseRewardCollectionAccount<'_> {
 #[derive(Accounts)]
 #[instruction(_bump: u8, _amount: u64, _proof: Vec<[u8; 32]>)]
 pub struct Claim<'info> {
+    /// The global configuration account for Rakurai settings.
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
     #[account(mut, rent_exempt = enforce)]
@@ -574,7 +575,7 @@ pub struct Claim<'info> {
     #[account(mut)]
     pub claimant: AccountInfo<'info>,
 
-    /// Who is paying for the claim.
+    /// Fee payer for the claim transaction.
     #[account(mut)]
     pub payer: Signer<'info>,
 
@@ -584,6 +585,7 @@ pub struct Claim<'info> {
 /// Accounts required to upload a Merkle root for reward distribution.
 #[derive(Accounts)]
 pub struct UploadMerkleRoot<'info> {
+    /// The global configuration account for Rakurai settings.
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
     #[account(mut, rent_exempt = enforce)]

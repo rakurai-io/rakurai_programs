@@ -16,7 +16,7 @@ pub struct RewardDistributionConfigAccount {
     pub bump: u8,
 }
 
-/// Stores validator reward distribution data for a given period.
+/// Stores validator reward collection account data for a given epoch.
 #[account]
 #[derive(Default)]
 pub struct RewardCollectionAccount {
@@ -36,7 +36,7 @@ pub struct RewardCollectionAccount {
     pub rakurai_commission_account: Pubkey,
     /// Epoch when claims expire.
     pub expires_at: u64,
-    /// Who initialized the account.
+    /// Who initialized the account (validator identity).
     pub initializer: Pubkey,
     /// PDA bump.
     pub bump: u8,
