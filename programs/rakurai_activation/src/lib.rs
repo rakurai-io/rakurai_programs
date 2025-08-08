@@ -67,7 +67,7 @@ pub mod rakurai_activation {
         Ok(())
     }
 
-    /// Initialize a new [RakuraiActivationAccount] associated with the given validator identity account key and seed.
+    /// Initialize a new [RakuraiActivationAccount] associated with the given validator identity account key and a seed.
     pub fn initialize_rakurai_activation_account(
         ctx: Context<InitializeRakuraiActivationAccount>,
         validator_commission_bps: u16,
@@ -101,8 +101,7 @@ pub mod rakurai_activation {
         Ok(())
     }
 
-    /// Updates rakurai activation account approval by either Validator or block builder.
-    /// Handles enabling/disabling and hash updates.
+    /// Updates rakurai activation account approval. This can be done either by the Validator or the block builder.
     pub fn update_rakurai_activation_approval(
         ctx: Context<UpdateRakuraiActivationApproval>,
         grant_approval: bool,
@@ -164,7 +163,7 @@ pub mod rakurai_activation {
         Ok(())
     }
 
-    /// Updates commission BPS for validator or block builder based on signer authority.
+    /// Updates commission BPS for either Validator or block builder based on signer authority.
     pub fn update_rakurai_activation_commission(
         ctx: Context<UpdateRakuraiActivationCommission>,
         commission_bps: u16,
@@ -192,7 +191,7 @@ pub mod rakurai_activation {
         Ok(())
     }
 
-    /// Closes the Rakurai activation account and claims any remaining lamports.
+    /// Closes the Rakurai activation account and claims any remaining lamports to validator identity account. This can only be done by the block builder authority.
     pub fn close_rakurai_activation_account(
         ctx: Context<CloseRakuraiActivationAccount>,
     ) -> Result<()> {

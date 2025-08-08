@@ -161,7 +161,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Transfer staker rewards according to the commission, invoked every leader turn:
+    /// Transfer staker rewards according to the commission to the [RewardCollectionAccount]. This is invoked every leader turn.
     pub fn transfer_staker_rewards(
         ctx: Context<TransferStakerRewards>,
         total_rewards: u64,
@@ -276,7 +276,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Claims rewards from the [RewardCollectionAccount] according to merkle proof.
+    /// Claims rewards for a staker from the [RewardCollectionAccount] according to their merkle proof.
     pub fn claim(ctx: Context<Claim>, bump: u8, amount: u64, proof: Vec<[u8; 32]>) -> Result<()> {
         let claim_status = &mut ctx.accounts.claim_status;
         claim_status.bump = bump;

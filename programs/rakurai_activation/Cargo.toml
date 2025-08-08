@@ -1,5 +1,5 @@
 [package]
-description = "A multisig-based Solana smart contract for enabling or disabling the Rakurai scheduler. It also governs the commission on block rewards logic for block builder and validators, with remaining block rewards distributed to stakers via the RewardDistributionProgram."
+description = "A multisig-based Solana smart contract for enabling or disabling the Rakurai scheduler. It also governs the commission on block rewards for both, the block builder (i.e: Rakurai) and the validator. Note: The remaining block rewards after deducting the two commissions are distributed to stakers via the RewardDistributionProgram."
 edition = "2021"
 name = "rakurai_activation"
 version = "0.1.0"

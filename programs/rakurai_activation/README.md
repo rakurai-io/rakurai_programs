@@ -1,6 +1,6 @@
 # Rakurai Activation Program
 
-A multisig-based Solana smart contract responsible for enabling or disabling the Rakurai scheduler on a per-validator basis.
+A multisig-based Solana smart contract for enabling or disabling the Rakurai scheduler. It also governs the commission on block rewards for both, the block builder (i.e: Rakurai) and the validator. Note: The remaining block rewards after deducting the two commissions are distributed to stakers via the RewardDistributionProgram.
 
 ➤ For more details, refer to the [IDL File](./idl/rakurai_activation.json).
 
@@ -13,7 +13,7 @@ Each validator must create a **Rakurai Activation Account (RAA)** — a **PDA jo
 This account governs:
 - Whether the validator is **actively using Rakurai Scheduler** to schedule their blocks or not.
 - The **commission percentage** the validator want to retains from total block rewards.
-- Rakurai’s own commission (set during initialization, read from global config (**Rakurai Activation Config Account**)).
+- Rakurai’s commission from total block rewards (set during initialization, read from global config (**Rakurai Activation Config Account**)).
 
 ---
 
@@ -49,7 +49,7 @@ Once created, this account:
 
 - The validator may update their **commission percentage** at any time.
 - The updated commission applies either:
-  - From the **current epoch**, if no [`RewardCollectionAccount`](../reward_distribution/README.md) exists yet
+  - From the **current epoch**, if no [`RewardCollectionAccount`](../reward_distribution/README.md) not initialized yet
   - Or from the **next epoch**, if already initialized.
 
 ---

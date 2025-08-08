@@ -4,13 +4,280 @@
     "name": "reward_distribution",
     "version": "0.1.0",
     "spec": "0.1.0",
-    "description": "Solana program to distribute block rewards among Rakurai, validator, and stakers. Staker rewards accumulate in a collection account and are distributed post-epoch proportionally based on stake using Merkle root."
+    "description": "Solana program to distribute block rewards amongst Rakurai, validator, and stakers. Staker rewards accumulate in a collection account and are distributed post-epoch using a merkle root."
   },
   "instructions": [
     {
+      "name": "initialize",
+      "docs": [
+        "Sets up the singleton [RewardDistributionConfigAccount] to store global configuration settings for Rakurai."
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  68,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "initializer",
+          "docs": [
+            "Fee payer for the initialize transaction"
+          ],
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "num_epochs_valid",
+          "type": "u64"
+        },
+        {
+          "name": "max_commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "bump",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "update_config",
+      "docs": [
+        "Update config fields. Only the [RewardDistributionConfigAccount] authority can invoke this."
+      ],
+      "discriminator": [
+        29,
+        158,
+        252,
+        191,
+        10,
+        83,
+        219,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ],
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_config",
+          "type": {
+            "defined": {
+              "name": "RewardDistributionConfigAccount"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "initialize_reward_collection_account",
+      "docs": [
+        "Initialize a new [RewardCollectionAccount] associated with the given validator vote key",
+        "and current epoch."
+      ],
+      "discriminator": [
+        202,
+        216,
+        172,
+        90,
+        142,
+        218,
+        173,
+        132
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ]
+        },
+        {
+          "name": "reward_collection_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  69,
+                  87,
+                  65,
+                  82,
+                  68,
+                  95,
+                  67,
+                  79,
+                  76,
+                  76,
+                  69,
+                  67,
+                  84,
+                  73,
+                  79,
+                  78,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "validator_vote_account"
+              },
+              {
+                "kind": "arg",
+                "path": "epoch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "validator_vote_account"
+        },
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "merkle_root_upload_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "validator_commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "rakurai_commission_account",
+          "type": "pubkey"
+        },
+        {
+          "name": "rakurai_commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "bump",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "transfer_staker_rewards",
+      "docs": [
+        "Transfer staker rewards according to the commission to the [RewardCollectionAccount]. This is invoked every leader turn."
+      ],
+      "discriminator": [
+        114,
+        182,
+        73,
+        5,
+        49,
+        3,
+        248,
+        141
+      ],
+      "accounts": [
+        {
+          "name": "rakurai_commission_account",
+          "writable": true
+        },
+        {
+          "name": "reward_collection_account",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "total_rewards",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "claim",
       "docs": [
-        "Claims rewards from the [RewardCollectionAccount] according to merkle proof."
+        "Claims rewards for a staker from the [RewardCollectionAccount] according to their merkle proof."
       ],
       "discriminator": [
         62,
@@ -267,276 +534,9 @@
       ]
     },
     {
-      "name": "initialize",
-      "docs": [
-        "Sets up the singleton [RewardDistributionConfigAccount] to store global configuration settings for Rakurai."
-      ],
-      "discriminator": [
-        175,
-        175,
-        109,
-        31,
-        13,
-        152,
-        155,
-        237
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "docs": [
-            "The global configuration account for Rakurai settings."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  82,
-                  68,
-                  95,
-                  67,
-                  79,
-                  78,
-                  70,
-                  73,
-                  71,
-                  95,
-                  65,
-                  67,
-                  67,
-                  79,
-                  85,
-                  78,
-                  84
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "initializer",
-          "docs": [
-            "Fee payer for the initialize transaction"
-          ],
-          "writable": true,
-          "signer": true
-        }
-      ],
-      "args": [
-        {
-          "name": "authority",
-          "type": "pubkey"
-        },
-        {
-          "name": "num_epochs_valid",
-          "type": "u64"
-        },
-        {
-          "name": "max_commission_bps",
-          "type": "u16"
-        },
-        {
-          "name": "bump",
-          "type": "u8"
-        }
-      ]
-    },
-    {
-      "name": "initialize_reward_collection_account",
-      "docs": [
-        "Initialize a new [RewardCollectionAccount] associated with the given validator vote key",
-        "and current epoch."
-      ],
-      "discriminator": [
-        202,
-        216,
-        172,
-        90,
-        142,
-        218,
-        173,
-        132
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "docs": [
-            "The global configuration account for Rakurai settings."
-          ]
-        },
-        {
-          "name": "reward_collection_account",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  82,
-                  69,
-                  87,
-                  65,
-                  82,
-                  68,
-                  95,
-                  67,
-                  79,
-                  76,
-                  76,
-                  69,
-                  67,
-                  84,
-                  73,
-                  79,
-                  78,
-                  95,
-                  65,
-                  67,
-                  67,
-                  79,
-                  85,
-                  78,
-                  84
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "validator_vote_account"
-              },
-              {
-                "kind": "arg",
-                "path": "epoch"
-              }
-            ]
-          }
-        },
-        {
-          "name": "validator_vote_account"
-        },
-        {
-          "name": "signer",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "merkle_root_upload_authority",
-          "type": "pubkey"
-        },
-        {
-          "name": "validator_commission_bps",
-          "type": "u16"
-        },
-        {
-          "name": "rakurai_commission_account",
-          "type": "pubkey"
-        },
-        {
-          "name": "rakurai_commission_bps",
-          "type": "u16"
-        },
-        {
-          "name": "bump",
-          "type": "u8"
-        }
-      ]
-    },
-    {
-      "name": "transfer_staker_rewards",
-      "docs": [
-        "Transfer staker rewards according to the commission, invoked every leader turn:"
-      ],
-      "discriminator": [
-        114,
-        182,
-        73,
-        5,
-        49,
-        3,
-        248,
-        141
-      ],
-      "accounts": [
-        {
-          "name": "rakurai_commission_account",
-          "writable": true
-        },
-        {
-          "name": "reward_collection_account",
-          "writable": true
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "signer",
-          "writable": true,
-          "signer": true
-        }
-      ],
-      "args": [
-        {
-          "name": "total_rewards",
-          "type": "u64"
-        }
-      ]
-    },
-    {
-      "name": "update_config",
-      "docs": [
-        "Update config fields. Only the [RewardDistributionConfigAccount] authority can invoke this."
-      ],
-      "discriminator": [
-        29,
-        158,
-        252,
-        191,
-        10,
-        83,
-        219,
-        99
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "docs": [
-            "The global configuration account for Rakurai settings."
-          ],
-          "writable": true
-        },
-        {
-          "name": "authority",
-          "writable": true,
-          "signer": true
-        }
-      ],
-      "args": [
-        {
-          "name": "new_config",
-          "type": {
-            "defined": {
-              "name": "RewardDistributionConfigAccount"
-            }
-          }
-        }
-      ]
-    },
-    {
       "name": "upload_merkle_root",
       "docs": [
-        "Uploads a merkle root to the [RewardCollectionAccount]. Only the `merkle_root_upload_authority` can invole this instruction."
+        "Uploads a merkle root to the [RewardCollectionAccount]. Only the `merkle_root_upload_authority` can invoke this instruction."
       ],
       "discriminator": [
         70,

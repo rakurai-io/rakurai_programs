@@ -25,9 +25,9 @@ Each **validator**, for each **epoch**, creates a unique PDA called `RewardColle
 ## 🔁 Epoch Flow
 
 ### 1. Account Initialization
-On the first turn of each epoch, the validator initializes the `RewardCollectionAccount`, providing:
-- Commission details (from `RakuraiActivationAccount`)
-- Authority to update the reward Merkle root
+On the first turn of each epoch, the `RewardCollectionAccount` is automatically initialized by the Rakurai Solana client. This initialization includes:
+- Commission details (from validator specific [`RakuraiActivationAccount`](../rakurai_activation/README.md))
+- Authority to update the reward Merkle root (only this authority can upload merkle root to the `RewardCollectionAccount` account)
 > Account initialization logic is part of rakurai solana client. The node operator must specify the following [CLI arguments](https://docs.rakurai.io/nodeoperator#step-5-add-additional-cli-args).
 
 
@@ -43,20 +43,20 @@ During every leader turn:
 ---
 
 ## 3. Post-Epoch Staker Distribution
+At the final slot of each epoch, the following process takes place:
+- A snapshot of Solana accounts is captured.
+- each validator’s staker details and stake weights are extracted.
+- An off-chain Merkle tree is generated containing reward share data.
+  - **Extra flexibility:** During this step, node operators can blacklist specific stakers or adjust individual stake weights before finalizing the tree.
+- The Merkle root is uploaded to the `RewardCollectionAccount` by the `reward_merkle_root_authority`.
+- Each staker claims their rewards by submitting a valid Merkle proof derived from the Merkle root. Claims are processed individually per staker.
 
-At the end of each epoch:
-1. A **snapshot** of Solana accounts is taken.
-2. Staker info and stake weights are extracted for the validator.
-3. A **Merkle tree** is generated with reward shares proportional to stake.
-4. The **Merkle root** is uploaded to the `RewardCollectionAccount`.
-5. Stakers can claim their share using a valid **Merkle proof**.
+## Reward Distribution — Free & Automated by Rakurai
+- Set this authority to **Rakurai** for fully automated root generation and uploads.
+- Keep it yourself if you prefer manual management.
 
-### 4. Reward Merkle Root Authority
+> **0% Rakurai commission** — only standard Solana transaction fees apply.
 
-- Set this authority to **Rakurai** if you'd like automated root generation and uploads.
-- Or retain it yourself and manage the process manually.
-
-> Rakurai charges **0% commission** for distributing rewards. Only Solana transaction fees apply.
 
 ---
 
