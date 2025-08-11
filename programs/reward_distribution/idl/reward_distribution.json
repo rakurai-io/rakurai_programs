@@ -1,0 +1,1252 @@
+{
+  "address": "A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB",
+  "metadata": {
+    "name": "reward_distribution",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Solana program to distribute block rewards amongst Rakurai, validator, and stakers. Staker rewards accumulate in a collection account and are distributed post-epoch using a merkle root."
+  },
+  "instructions": [
+    {
+      "name": "initialize",
+      "docs": [
+        "Sets up the singleton [RewardDistributionConfigAccount] to store global configuration settings for Rakurai."
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  68,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "initializer",
+          "docs": [
+            "Fee payer for the initialize transaction"
+          ],
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "num_epochs_valid",
+          "type": "u64"
+        },
+        {
+          "name": "max_commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "bump",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "update_config",
+      "docs": [
+        "Update config fields. Only the [RewardDistributionConfigAccount] authority can invoke this."
+      ],
+      "discriminator": [
+        29,
+        158,
+        252,
+        191,
+        10,
+        83,
+        219,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ],
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_config",
+          "type": {
+            "defined": {
+              "name": "RewardDistributionConfigAccount"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "initialize_reward_collection_account",
+      "docs": [
+        "Initialize a new [RewardCollectionAccount] associated with the given validator vote key",
+        "and current epoch."
+      ],
+      "discriminator": [
+        202,
+        216,
+        172,
+        90,
+        142,
+        218,
+        173,
+        132
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ]
+        },
+        {
+          "name": "reward_collection_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  69,
+                  87,
+                  65,
+                  82,
+                  68,
+                  95,
+                  67,
+                  79,
+                  76,
+                  76,
+                  69,
+                  67,
+                  84,
+                  73,
+                  79,
+                  78,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "validator_vote_account"
+              },
+              {
+                "kind": "arg",
+                "path": "epoch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "validator_vote_account"
+        },
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "merkle_root_upload_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "validator_commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "rakurai_commission_account",
+          "type": "pubkey"
+        },
+        {
+          "name": "rakurai_commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "bump",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "transfer_staker_rewards",
+      "docs": [
+        "Transfer staker rewards according to the commission to the [RewardCollectionAccount]. This is invoked every leader turn."
+      ],
+      "discriminator": [
+        114,
+        182,
+        73,
+        5,
+        49,
+        3,
+        248,
+        141
+      ],
+      "accounts": [
+        {
+          "name": "rakurai_commission_account",
+          "writable": true
+        },
+        {
+          "name": "reward_collection_account",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "total_rewards",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "claim",
+      "docs": [
+        "Claims rewards for a staker from the [RewardCollectionAccount] according to their merkle proof."
+      ],
+      "discriminator": [
+        62,
+        198,
+        214,
+        193,
+        213,
+        159,
+        108,
+        210
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ]
+        },
+        {
+          "name": "reward_collection_account",
+          "writable": true
+        },
+        {
+          "name": "claim_status",
+          "docs": [
+            "Status of the claim. Used to prevent the same party from claiming multiple times."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  67,
+                  76,
+                  65,
+                  73,
+                  77,
+                  95,
+                  83,
+                  84,
+                  65,
+                  84,
+                  85,
+                  83
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "claimant"
+              },
+              {
+                "kind": "account",
+                "path": "reward_collection_account"
+              }
+            ]
+          }
+        },
+        {
+          "name": "claimant",
+          "docs": [
+            "Receiver of the funds."
+          ],
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Fee payer for the claim transaction."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "bump",
+          "type": "u8"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "proof",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "close_claim_status",
+      "docs": [
+        "Permissionless; can only be invoked once the [`RewardCollectionAccount`] has expired."
+      ],
+      "discriminator": [
+        163,
+        214,
+        191,
+        165,
+        245,
+        188,
+        17,
+        185
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  68,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "claim_status",
+          "docs": [
+            "The [`ClaimStatus`] account associated with the staker's pubkey is closed in this instruction, returning rent to the original payer (`claim_status_payer`)."
+          ],
+          "writable": true
+        },
+        {
+          "name": "claim_status_payer",
+          "docs": [
+            "Account that receives the closed account's lamports."
+          ],
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_reward_collection_account",
+      "docs": [
+        "Sends unclaimed funds to the `initializer` and closes the [`RewardCollectionAccount`],",
+        "returning rent to the validator."
+      ],
+      "discriminator": [
+        67,
+        0,
+        77,
+        132,
+        28,
+        95,
+        25,
+        67
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ]
+        },
+        {
+          "name": "initializer",
+          "writable": true
+        },
+        {
+          "name": "reward_collection_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  69,
+                  87,
+                  65,
+                  82,
+                  68,
+                  95,
+                  67,
+                  79,
+                  76,
+                  76,
+                  69,
+                  67,
+                  84,
+                  73,
+                  79,
+                  78,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "validator_vote_account"
+              },
+              {
+                "kind": "arg",
+                "path": "epoch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "validator_vote_account",
+          "writable": true
+        },
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "_epoch",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "upload_merkle_root",
+      "docs": [
+        "Uploads a merkle root to the [RewardCollectionAccount]. Only the `merkle_root_upload_authority` can invoke this instruction."
+      ],
+      "discriminator": [
+        70,
+        3,
+        110,
+        29,
+        199,
+        190,
+        205,
+        176
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ]
+        },
+        {
+          "name": "reward_collection_account",
+          "writable": true
+        },
+        {
+          "name": "merkle_root_upload_authority",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "root",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "max_total_claim",
+          "type": "u64"
+        },
+        {
+          "name": "max_num_nodes",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "ClaimStatus",
+      "discriminator": [
+        22,
+        183,
+        249,
+        157,
+        247,
+        95,
+        150,
+        96
+      ]
+    },
+    {
+      "name": "RewardCollectionAccount",
+      "discriminator": [
+        151,
+        52,
+        131,
+        137,
+        45,
+        16,
+        228,
+        73
+      ]
+    },
+    {
+      "name": "RewardDistributionConfigAccount",
+      "discriminator": [
+        98,
+        255,
+        139,
+        89,
+        2,
+        206,
+        36,
+        194
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "ClaimStatusClosedEvent",
+      "discriminator": [
+        188,
+        143,
+        237,
+        229,
+        192,
+        182,
+        164,
+        118
+      ]
+    },
+    {
+      "name": "ClaimedEvent",
+      "discriminator": [
+        144,
+        172,
+        209,
+        86,
+        144,
+        87,
+        84,
+        115
+      ]
+    },
+    {
+      "name": "ConfigUpdatedEvent",
+      "discriminator": [
+        245,
+        158,
+        129,
+        99,
+        60,
+        100,
+        214,
+        220
+      ]
+    },
+    {
+      "name": "MerkleRootUploadAuthorityUpdatedEvent",
+      "discriminator": [
+        83,
+        157,
+        58,
+        165,
+        200,
+        171,
+        8,
+        106
+      ]
+    },
+    {
+      "name": "MerkleRootUploadedEvent",
+      "discriminator": [
+        94,
+        233,
+        236,
+        49,
+        52,
+        224,
+        181,
+        167
+      ]
+    },
+    {
+      "name": "RewardCollectionAccountClosedEvent",
+      "discriminator": [
+        215,
+        46,
+        177,
+        21,
+        98,
+        228,
+        207,
+        221
+      ]
+    },
+    {
+      "name": "RewardCollectionAccountInitializedEvent",
+      "discriminator": [
+        210,
+        176,
+        37,
+        90,
+        37,
+        104,
+        163,
+        167
+      ]
+    },
+    {
+      "name": "StakerRewardsTransferredEvent",
+      "discriminator": [
+        221,
+        235,
+        178,
+        198,
+        87,
+        128,
+        19,
+        230
+      ]
+    },
+    {
+      "name": "ValidatorCommissionBpsUpdatedEvent",
+      "discriminator": [
+        4,
+        34,
+        92,
+        25,
+        228,
+        88,
+        51,
+        206
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "AccountValidationFailure",
+      "msg": "Account failed validation."
+    },
+    {
+      "code": 6001,
+      "name": "ArithmeticError",
+      "msg": "Encountered an arithmetic under/overflow error."
+    },
+    {
+      "code": 6002,
+      "name": "ExceedsMaxClaim",
+      "msg": "The maximum number of funds to be claimed has been exceeded."
+    },
+    {
+      "code": 6003,
+      "name": "ExceedsMaxNumNodes",
+      "msg": "The maximum number of claims has been exceeded."
+    },
+    {
+      "code": 6004,
+      "name": "ExpiredRewardCollectionAccount",
+      "msg": "The given RewardCollectionAccount has expired."
+    },
+    {
+      "code": 6005,
+      "name": "FundsAlreadyClaimed",
+      "msg": "The funds for the given index and RewardCollectionAccount have already been claimed."
+    },
+    {
+      "code": 6006,
+      "name": "InvalidProof",
+      "msg": "The given proof is invalid."
+    },
+    {
+      "code": 6007,
+      "name": "MaxCommissionFeeBpsExceeded",
+      "msg": "Validator's commission basis points must be less than or equal to the RewardDistributionConfigAccount account's max_commission_bps."
+    },
+    {
+      "code": 6008,
+      "name": "PrematureCloseRewardCollectionAccount",
+      "msg": "The given RewardCollectionAccount is not ready to be closed."
+    },
+    {
+      "code": 6009,
+      "name": "PrematureCloseClaimStatus",
+      "msg": "The given ClaimStatus account is not ready to be closed."
+    },
+    {
+      "code": 6010,
+      "name": "PrematureMerkleRootUpload",
+      "msg": "Must wait till at least one epoch after the reward distribution account was created to upload the merkle root."
+    },
+    {
+      "code": 6011,
+      "name": "RootNotUploaded",
+      "msg": "No merkle root has been uploaded to the given RewardCollectionAccount."
+    },
+    {
+      "code": 6012,
+      "name": "Unauthorized",
+      "msg": "Unauthorized signer."
+    },
+    {
+      "code": 6013,
+      "name": "RewardsTooLow",
+      "msg": "Total rewards must be greater than 0."
+    },
+    {
+      "code": 6014,
+      "name": "InvalidRakuraiCommissionAccount",
+      "msg": "Rakurai's commission account must be equal to the RewardCollectionAccount account's rakurai_commission_account."
+    }
+  ],
+  "types": [
+    {
+      "name": "ClaimStatus",
+      "docs": [
+        "Stores claim status for a given leaf in the Merkle tree."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "is_claimed",
+            "docs": [
+              "Whether the claim was already made."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "claimant",
+            "docs": [
+              "Who made the claim."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "claim_status_payer",
+            "docs": [
+              "Payer of the claim status account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "slot_claimed_at",
+            "docs": [
+              "Slot when the claim was made."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Amount claimed."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "expires_at",
+            "docs": [
+              "Expiry of this claim."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ClaimStatusClosedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "claim_status_payer",
+            "docs": [
+              "Account where funds were transferred to."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "claim_status_account",
+            "docs": [
+              "[ClaimStatus] account that was closed."
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ClaimedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "reward_collection_account",
+            "docs": [
+              "[RewardCollectionAccount] claimed from."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "payer",
+            "docs": [
+              "User that paid for the claim, may or may not be the same as claimant."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "claimant",
+            "docs": [
+              "Account that received the funds."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Amount of funds to distribute."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfigUpdatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "docs": [
+              "Who updated it."
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MerkleRoot",
+      "docs": [
+        "Metadata about the Merkle root used for claims."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "root",
+            "docs": [
+              "Merkle root hash."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "max_total_claim",
+            "docs": [
+              "Max total funds claimable."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "max_num_nodes",
+            "docs": [
+              "Max number of nodes that can claim."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_funds_claimed",
+            "docs": [
+              "Funds already claimed."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "num_nodes_claimed",
+            "docs": [
+              "Number of nodes that have claimed."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MerkleRootUploadAuthorityUpdatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "old_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MerkleRootUploadedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "merkle_root_upload_authority",
+            "docs": [
+              "Who uploaded the root."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "reward_collection_account",
+            "docs": [
+              "Where the root was uploaded to."
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RewardCollectionAccount",
+      "docs": [
+        "Stores validator reward collection account data for a given epoch."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "validator_vote_account",
+            "docs": [
+              "Validator's vote account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "merkle_root_upload_authority",
+            "docs": [
+              "Authorized uploader of the Merkle root."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "merkle_root",
+            "docs": [
+              "Optional Merkle root used for claims."
+            ],
+            "type": {
+              "option": {
+                "defined": {
+                  "name": "MerkleRoot"
+                }
+              }
+            }
+          },
+          {
+            "name": "creation_epoch",
+            "docs": [
+              "Epoch when account was initialized."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "validator_commission_bps",
+            "docs": [
+              "Commission taken by validator (bps)."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "rakurai_commission_bps",
+            "docs": [
+              "Commission taken by Rakurai (bps)."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "rakurai_commission_account",
+            "docs": [
+              "Account receiving Rakurai commission."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "expires_at",
+            "docs": [
+              "Epoch when claims expire."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "initializer",
+            "docs": [
+              "Who initialized the account (validator identity)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RewardCollectionAccountClosedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "initializer",
+            "docs": [
+              "Account where unclaimed funds were transferred to."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "reward_collection_account",
+            "docs": [
+              "[RewardCollectionAccount] closed."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "expired_amount",
+            "docs": [
+              "Unclaimed amount transferred."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RewardCollectionAccountInitializedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "reward_collection_account",
+            "docs": [
+              "The newly initialized reward colection account."
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RewardDistributionConfigAccount",
+      "docs": [
+        "Stores configuration for the reward distribution program."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "docs": [
+              "Authorized updater of the config."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "num_epochs_valid",
+            "docs": [
+              "Number of epochs the collection account is valid."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "max_commission_bps",
+            "docs": [
+              "Max allowed validator commission (basis points)."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "StakerRewardsTransferredEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "staker_rewards",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ValidatorCommissionBpsUpdatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "reward_collection_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "old_commission_bps",
+            "type": "u16"
+          },
+          {
+            "name": "new_commission_bps",
+            "type": "u16"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -29,7 +29,7 @@ pub mod reward_distribution {
     use super::*;
     use crate::ErrorCode::*;
 
-    /// Initialize a singleton instance of the [RewardDistributionConfigAccount] account.
+    /// Sets up the singleton [RewardDistributionConfigAccount] to store global configuration settings for Rakurai.
     pub fn initialize(
         ctx: Context<Initialize>,
         authority: Pubkey,
@@ -119,10 +119,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Uploads a merkle root to the provided [RewardCollectionAccount]. This instruction may be
-    /// invoked many times as long as the account is at least one epoch old and not expired; and
-    /// no funds have already been claimed. Only the `merkle_root_upload_authority` has the
-    /// authority to invoke.
+    /// Uploads a merkle root to the [RewardCollectionAccount]. Only the `merkle_root_upload_authority` can invole this instruction.
     pub fn upload_merkle_root(
         ctx: Context<UploadMerkleRoot>,
         root: [u8; 32],
@@ -164,6 +161,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
+    /// Transfer staker rewards according to the commission to the [RewardCollectionAccount]. This is invoked every leader turn.
     pub fn transfer_staker_rewards(
         ctx: Context<TransferStakerRewards>,
         total_rewards: u64,
@@ -233,12 +231,10 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Anyone can invoke this only after the [RewardCollectionAccount] has expired.
-    /// This instruction will return any rent back to `claimant` and close the account
+    /// Permissionless; can only be invoked once the [`RewardCollectionAccount`] has expired.
     pub fn close_claim_status(ctx: Context<CloseClaimStatus>) -> Result<()> {
         let claim_status = &ctx.accounts.claim_status;
 
-        // can only claim after claim_status has expired to prevent draining.
         if Clock::get()?.epoch <= claim_status.expires_at {
             return Err(PrematureCloseClaimStatus.into());
         }
@@ -251,9 +247,8 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Anyone can invoke this only after the [RewardCollectionAccount] has expired.
-    /// This instruction will send any unclaimed funds to the designated `initializer`
-    /// before closing and returning the rent exempt funds to the validator.
+    /// Sends unclaimed funds to the `initializer` and closes the [`RewardCollectionAccount`],
+    /// returning rent to the validator.
     pub fn close_reward_collection_account(
         ctx: Context<CloseRewardCollectionAccount>,
         _epoch: u64,
@@ -281,7 +276,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Claims tokens from the [RewardCollectionAccount].
+    /// Claims rewards for a staker from the [RewardCollectionAccount] according to their merkle proof.
     pub fn claim(ctx: Context<Claim>, bump: u8, amount: u64, proof: Vec<[u8; 32]>) -> Result<()> {
         let claim_status = &mut ctx.accounts.claim_status;
         claim_status.bump = bump;
@@ -294,7 +289,6 @@ pub mod reward_distribution {
             return Err(ExpiredRewardCollectionAccount.into());
         }
 
-        // Redundant check since we shouldn't be able to init a claim status account using the same seeds.
         if claim_status.is_claimed {
             return Err(FundsAlreadyClaimed.into());
         }
@@ -306,7 +300,6 @@ pub mod reward_distribution {
             .as_mut()
             .ok_or(RootNotUploaded)?;
 
-        // Verify the merkle proof.
         let node = &solana_program::hash::hashv(&[
             &[0u8],
             &solana_program::hash::hashv(&[
@@ -326,7 +319,6 @@ pub mod reward_distribution {
             amount,
         )?;
 
-        // Mark it claimed.
         claim_status.amount = amount;
         claim_status.is_claimed = true;
         claim_status.slot_claimed_at = clock.slot;
@@ -363,6 +355,7 @@ pub mod reward_distribution {
     }
 }
 
+/// Custom errors for Rakurai activation instructions.
 #[error_code]
 pub enum ErrorCode {
     #[msg("Account failed validation.")]
@@ -411,13 +404,14 @@ pub enum ErrorCode {
     InvalidRakuraiCommissionAccount,
 }
 
+/// Closes a `ClaimStatus` account and refunds lamports to the payer.
 #[derive(Accounts)]
 pub struct CloseClaimStatus<'info> {
+    /// The global configuration account for Rakurai settings.
     #[account(seeds = [RewardDistributionConfigAccount::SEED], bump)]
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
-    // bypass seed check since owner check prevents attacker from passing in invalid data
-    // account can only be transferred to us if it is zeroed, failing the deserialization check
+    /// The [`ClaimStatus`] account associated with the staker's pubkey is closed in this instruction, returning rent to the original payer (`claim_status_payer`).  
     #[account(
         mut,
         close = claim_status_payer,
@@ -426,13 +420,15 @@ pub struct CloseClaimStatus<'info> {
     pub claim_status: Account<'info, ClaimStatus>,
 
     /// CHECK: This is checked against claim_status in the constraint
-    /// Receiver of the funds.
+    /// Account that receives the closed account's lamports.
     #[account(mut)]
     pub claim_status_payer: UncheckedAccount<'info>,
 }
 
+/// Initializes the reward distribution config with bump and payer.
 #[derive(Accounts)]
 pub struct Initialize<'info> {
+    /// The global configuration account for Rakurai settings.
     #[account(
         init,
         seeds = [RewardDistributionConfigAccount::SEED],
@@ -445,10 +441,12 @@ pub struct Initialize<'info> {
 
     pub system_program: Program<'info, System>,
 
+    /// Fee payer for the initialize transaction
     #[account(mut)]
     pub initializer: Signer<'info>,
 }
 
+/// Initializes a new reward collection account for a validator at the current epoch.
 #[derive(Accounts)]
 #[instruction(
     _merkle_root_upload_authority: Pubkey,
@@ -456,6 +454,7 @@ pub struct Initialize<'info> {
     _bump: u8
 )]
 pub struct InitializeRewardCollectionAccount<'info> {
+    /// The global configuration account for Rakurai settings.
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
     #[account(
@@ -472,19 +471,21 @@ pub struct InitializeRewardCollectionAccount<'info> {
     )]
     pub reward_collection_account: Account<'info, RewardCollectionAccount>,
 
-    /// CHECK: Safe because we check the vote program is the owner before deserialization.
-    /// The validator's vote account is used to check this transaction's signer is also the authorized withdrawer.
+    /// CHECK: The validator's vote account (used for metadata and on-chain validation).
     pub validator_vote_account: AccountInfo<'info>,
 
-    /// Must be equal to the supplied validator vote account's authorized withdrawer.
+    /// CHECK: The validator's identity account (used to derive the PDA and verify authority).
     #[account(mut)]
     pub signer: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }
 
+/// Updates fields in the global reward distribution config.
+/// Requires the authority stored in the config to sign.
 #[derive(Accounts)]
 pub struct UpdateConfig<'info> {
+    /// The global configuration account for Rakurai settings.
     #[account(mut, rent_exempt = enforce)]
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
@@ -502,11 +503,14 @@ impl UpdateConfig<'_> {
     }
 }
 
+/// Instruction to close a reward collection account after the epoch has ended.
 #[derive(Accounts)]
 #[instruction(epoch: u64)]
 pub struct CloseRewardCollectionAccount<'info> {
+    /// The global configuration account for Rakurai settings.
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
+    /// CHECK:
     #[account(mut)]
     pub initializer: AccountInfo<'info>,
 
@@ -540,9 +544,12 @@ impl CloseRewardCollectionAccount<'_> {
     }
 }
 
+/// Instruction to claim a portion of the reward collection.
+/// A new `ClaimStatus` account is created to prevent double claims.
 #[derive(Accounts)]
 #[instruction(_bump: u8, _amount: u64, _proof: Vec<[u8; 32]>)]
 pub struct Claim<'info> {
+    /// The global configuration account for Rakurai settings.
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
     #[account(mut, rent_exempt = enforce)]
@@ -568,15 +575,17 @@ pub struct Claim<'info> {
     #[account(mut)]
     pub claimant: AccountInfo<'info>,
 
-    /// Who is paying for the claim.
+    /// Fee payer for the claim transaction.
     #[account(mut)]
     pub payer: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }
 
+/// Accounts required to upload a Merkle root for reward distribution.
 #[derive(Accounts)]
 pub struct UploadMerkleRoot<'info> {
+    /// The global configuration account for Rakurai settings.
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
     #[account(mut, rent_exempt = enforce)]
@@ -601,8 +610,10 @@ impl UploadMerkleRoot<'_> {
     }
 }
 
+/// Accounts required to transfer staker rewards with Rakurai commission applied.
 #[derive(Accounts)]
 pub struct TransferStakerRewards<'info> {
+    /// CHECK:
     #[account(mut)]
     pub rakurai_commission_account: AccountInfo<'info>,
 
@@ -634,11 +645,14 @@ impl TransferStakerRewards<'_> {
 
 // Events
 
+// Emitted when a new RewardCollectionAccount is initialized.
 #[event]
 pub struct RewardCollectionAccountInitializedEvent {
+    /// The newly initialized reward colection account.
     pub reward_collection_account: Pubkey,
 }
 
+// Emitted when validator commission basis points are updated.
 #[event]
 pub struct ValidatorCommissionBpsUpdatedEvent {
     pub reward_collection_account: Pubkey,
@@ -646,18 +660,21 @@ pub struct ValidatorCommissionBpsUpdatedEvent {
     pub new_commission_bps: u16,
 }
 
+// Emitted when the Merkle root upload authority is changed.
 #[event]
 pub struct MerkleRootUploadAuthorityUpdatedEvent {
     pub old_authority: Pubkey,
     pub new_authority: Pubkey,
 }
 
+// Emitted when a config value is updated by an authorized entity.
 #[event]
 pub struct ConfigUpdatedEvent {
     /// Who updated it.
     authority: Pubkey,
 }
 
+// Emitted when a user successfully claims rewards from a reward account.
 #[event]
 pub struct ClaimedEvent {
     /// [RewardCollectionAccount] claimed from.
@@ -673,6 +690,7 @@ pub struct ClaimedEvent {
     pub amount: u64,
 }
 
+// Emitted when a Merkle root is uploaded to a reward account.
 #[event]
 pub struct MerkleRootUploadedEvent {
     /// Who uploaded the root.
@@ -682,11 +700,13 @@ pub struct MerkleRootUploadedEvent {
     pub reward_collection_account: Pubkey,
 }
 
+// Emitted when a portion of funds is transferred to the staker.
 #[event]
 pub struct StakerRewardsTransferredEvent {
     pub staker_rewards: u64,
 }
 
+// Emitted when a reward collection account is closed and unclaimed funds are returned.
 #[event]
 pub struct RewardCollectionAccountClosedEvent {
     /// Account where unclaimed funds were transferred to.
@@ -699,6 +719,7 @@ pub struct RewardCollectionAccountClosedEvent {
     pub expired_amount: u64,
 }
 
+// Emitted when a user's ClaimStatus account is closed and remaining funds are returned.
 #[event]
 pub struct ClaimStatusClosedEvent {
     /// Account where funds were transferred to.

@@ -5,17 +5,22 @@ use anchor_lang::{
 
 use crate::RewardDistributionConfigAccount;
 
+/// Arguments for initializing the reward distribution config account.
 pub struct InitializeArgs {
     pub authority: Pubkey,
     pub num_epochs_valid: u64,
     pub max_commission_bps: u16,
     pub bump: u8,
 }
+
+/// Accounts needed to initialize the reward distribution config.
 pub struct InitializeAccounts {
     pub config: Pubkey,
     pub system_program: Pubkey,
     pub initializer: Pubkey,
 }
+
+/// Builds the instruction to initialize the reward distribution config.
 pub fn initialize_ix(
     program_id: Pubkey,
     args: InitializeArgs,
@@ -52,6 +57,7 @@ pub fn initialize_ix(
     }
 }
 
+/// Arguments for initializing the reward collection account.
 pub struct InitializeRewardCollectionAccountArgs {
     pub merkle_root_upload_authority: Pubkey,
     pub validator_commission_bps: u16,
@@ -59,6 +65,8 @@ pub struct InitializeRewardCollectionAccountArgs {
     pub rakurai_commission_bps: u16,
     pub bump: u8,
 }
+
+/// Accounts needed to initialize the reward collection account.
 pub struct InitializeRewardCollectionAccountAccounts {
     pub config: Pubkey,
     pub signer: Pubkey,
@@ -66,6 +74,8 @@ pub struct InitializeRewardCollectionAccountAccounts {
     pub reward_collection_account: Pubkey,
     pub validator_vote_account: Pubkey,
 }
+
+/// Builds the instruction to initialize the reward collection account.
 pub fn initialize_reward_collection_account_ix(
     program_id: Pubkey,
     args: InitializeRewardCollectionAccountArgs,
@@ -108,12 +118,17 @@ pub fn initialize_reward_collection_account_ix(
     }
 }
 
+/// Args for closing the claim status account (empty).
 pub struct CloseClaimStatusArgs;
+
+/// Accounts required to close a claim status account.
 pub struct CloseClaimStatusAccounts {
     pub config: Pubkey,
     pub claim_status: Pubkey,
     pub claim_status_payer: Pubkey,
 }
+
+/// Builds the instruction to close the claim status account.
 pub fn close_claim_status_ix(
     program_id: Pubkey,
     _args: CloseClaimStatusArgs,
@@ -137,13 +152,18 @@ pub fn close_claim_status_ix(
     }
 }
 
+/// Arguments to update the reward config account.
 pub struct UpdateConfigArgs {
     new_config: RewardDistributionConfigAccount,
 }
+
+/// Accounts needed to update the config.
 pub struct UpdateConfigAccounts {
     pub config: Pubkey,
     pub authority: Pubkey,
 }
+
+/// Builds the instruction to update the reward distribution config.
 pub fn update_config_ix(
     program_id: Pubkey,
     args: UpdateConfigArgs,
@@ -160,16 +180,21 @@ pub fn update_config_ix(
     }
 }
 
+/// Merkle root and claim limits for uploading new rewards.
 pub struct UploadMerkleRootArgs {
     pub root: [u8; 32],
     pub max_total_claim: u64,
     pub max_num_nodes: u64,
 }
+
+/// Accounts for uploading a Merkle root to the reward collection account.
 pub struct UploadMerkleRootAccounts {
     pub config: Pubkey,
     pub merkle_root_upload_authority: Pubkey,
     pub reward_collection_account: Pubkey,
 }
+
+/// Builds the instruction to upload a Merkle root.
 pub fn upload_merkle_root_ix(
     program_id: Pubkey,
     args: UploadMerkleRootArgs,
@@ -204,15 +229,20 @@ pub fn upload_merkle_root_ix(
     }
 }
 
+/// Total amount to be transferred to stakers.
 pub struct TransferStakerRewardsArgs {
     pub total_rewards: u64,
 }
+
+/// Accounts required to transfer rewards to stakers.
 pub struct TransferStakerRewardsAccounts {
     pub rakurai_commission_account: Pubkey,
     pub reward_collection_account: Pubkey,
     pub system_program: Pubkey,
     pub signer: Pubkey,
 }
+
+/// Builds the instruction to transfer staker rewards.
 pub fn transfer_staker_rewards_ix(
     program_id: Pubkey,
     args: TransferStakerRewardsArgs,
@@ -240,9 +270,12 @@ pub fn transfer_staker_rewards_ix(
     }
 }
 
+/// Epoch argument (for context) when closing the reward collection account.
 pub struct CloseRewardCollectionAccountArgs {
     pub _epoch: u64,
 }
+
+/// Accounts needed to close the reward collection account.
 pub struct CloseRewardCollectionAccounts {
     pub config: Pubkey,
     pub initializer: Pubkey,
@@ -250,6 +283,8 @@ pub struct CloseRewardCollectionAccounts {
     pub validator_vote_account: Pubkey,
     pub signer: Pubkey,
 }
+
+/// Builds the instruction to close the reward collection account.
 pub fn close_reward_collection_account_ix(
     program_id: Pubkey,
     args: CloseRewardCollectionAccountArgs,
@@ -279,11 +314,14 @@ pub fn close_reward_collection_account_ix(
     }
 }
 
+/// Proof and metadata for a Merkle claim.
 pub struct ClaimArgs {
     pub proof: Vec<[u8; 32]>,
     pub amount: u64,
     pub bump: u8,
 }
+
+/// Accounts needed to execute a Merkle reward claim.
 pub struct ClaimAccounts {
     pub config: Pubkey,
     pub reward_collection_account: Pubkey,
@@ -292,6 +330,8 @@ pub struct ClaimAccounts {
     pub payer: Pubkey,
     pub system_program: Pubkey,
 }
+
+/// Builds the instruction for claiming Merkle rewards.
 pub fn claim_ix(program_id: Pubkey, args: ClaimArgs, accounts: ClaimAccounts) -> Instruction {
     let ClaimArgs {
         proof,

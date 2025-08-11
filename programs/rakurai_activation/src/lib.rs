@@ -26,7 +26,7 @@ pub mod rakurai_activation {
 
     use super::*;
 
-    /// Initialize a singleton instance of the [RakuraiActivationConfigAccount] account.
+    /// Sets up the singleton [RakuraiActivationConfigAccount] to store global configuration settings for Rakurai.
     pub fn initialize(
         ctx: Context<Initialize>,
         authority: Pubkey,
@@ -67,8 +67,7 @@ pub mod rakurai_activation {
         Ok(())
     }
 
-    /// Initialize a new [RakuraiActivationAccount] associated with the given validator vote key
-    /// and current epoch.
+    /// Initialize a new [RakuraiActivationAccount] associated with the given validator identity account key and a seed.
     pub fn initialize_rakurai_activation_account(
         ctx: Context<InitializeRakuraiActivationAccount>,
         validator_commission_bps: u16,
@@ -102,6 +101,7 @@ pub mod rakurai_activation {
         Ok(())
     }
 
+    /// Updates rakurai activation account approval. This can be done either by the Validator or the block builder.
     pub fn update_rakurai_activation_approval(
         ctx: Context<UpdateRakuraiActivationApproval>,
         grant_approval: bool,
@@ -163,6 +163,7 @@ pub mod rakurai_activation {
         Ok(())
     }
 
+    /// Updates commission BPS for either Validator or block builder based on signer authority.
     pub fn update_rakurai_activation_commission(
         ctx: Context<UpdateRakuraiActivationCommission>,
         commission_bps: u16,
@@ -190,6 +191,7 @@ pub mod rakurai_activation {
         Ok(())
     }
 
+    /// Closes the Rakurai activation account and claims any remaining lamports to validator identity account. This can only be done by the block builder authority.
     pub fn close_rakurai_activation_account(
         ctx: Context<CloseRakuraiActivationAccount>,
     ) -> Result<()> {
@@ -210,6 +212,7 @@ pub mod rakurai_activation {
     }
 }
 
+/// Custom errors for Rakurai activation instructions.
 #[error_code]
 pub enum ErrorCode {
     #[msg("Account failed validation.")]
@@ -228,8 +231,10 @@ pub enum ErrorCode {
     Unauthorized,
 }
 
+/// Initializes the Rakurai config account with default parameters and stores it at a fixed PDA.
 #[derive(Accounts)]
 pub struct Initialize<'info> {
+    /// The Rakurai config account (PDA).
     #[account(
         init,
         seeds = [RakuraiActivationConfigAccount::SEED],
@@ -240,21 +245,28 @@ pub struct Initialize<'info> {
     )]
     pub config: Account<'info, RakuraiActivationConfigAccount>,
 
+    /// Solana system program required to create accounts.
     pub system_program: Program<'info, System>,
 
+    /// Payer for account creation; must sign the transaction.
     #[account(mut)]
     pub initializer: Signer<'info>,
 }
 
+/// Allows the authorized signer to update the Rakurai config parameters.
 #[derive(Accounts)]
 pub struct UpdateConfig<'info> {
+    /// Mutable config account storing Rakurai activation settings.
     #[account(mut, rent_exempt = enforce)]
     pub config: Account<'info, RakuraiActivationConfigAccount>,
+
+    /// Authorized signer allowed to update the config.
     #[account(mut)]
     pub authority: Signer<'info>,
 }
 
 impl UpdateConfig<'_> {
+    /// Checks if the signer is the authorized config updater.
     fn auth(ctx: &Context<UpdateConfig>) -> Result<()> {
         if ctx.accounts.config.authority == ctx.accounts.authority.key() {
             Ok(())
@@ -264,13 +276,18 @@ impl UpdateConfig<'_> {
     }
 }
 
+/// Initializes a new Rakurai Activation Account(RAA) for a specific validator.
 #[derive(Accounts)]
 #[instruction(
     _validator_commission_bps: u16,
     _bump: u8
 )]
 pub struct InitializeRakuraiActivationAccount<'info> {
+    /// The global configuration account for Rakurai settings.
     pub config: Account<'info, RakuraiActivationConfigAccount>,
+
+    /// The Rakurai activation PDA account to be created for the validator.
+    /// Seeds: [b"rakurai_activation", validator_identity_account.key()]
     #[account(
         init,
         seeds = [
@@ -283,16 +300,27 @@ pub struct InitializeRakuraiActivationAccount<'info> {
         rent_exempt = enforce
     )]
     pub activation_account: Account<'info, RakuraiActivationAccount>,
+
+    /// CHECK: The validator's vote account (used for metadata and on-chain validation).
     pub validator_vote_account: AccountInfo<'info>,
+
+    /// CHECK: The validator's identity account (used to derive the PDA and verify authority).
     pub validator_identity_account: AccountInfo<'info>,
+
+    /// Payer for account creation; must sign the transaction. In current context validator's identity account.
     #[account(mut)]
     pub signer: Signer<'info>,
+
+    /// Standard Solana system program for account creation.
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct UpdateRakuraiActivationApproval<'info> {
+    /// The global configuration account for Rakurai settings.
     pub config: Account<'info, RakuraiActivationConfigAccount>,
+
+    /// PDA storing validator-specific Rakurai activation state.
     #[account(
         mut,
         seeds = [
@@ -303,12 +331,17 @@ pub struct UpdateRakuraiActivationApproval<'info> {
         rent_exempt = enforce,
     )]
     pub activation_account: Account<'info, RakuraiActivationAccount>,
+
+    /// CHECK: Validator identity associated with the activation account
     pub validator_identity_account: AccountInfo<'info>,
+
+    /// Signer must match either validator authority or block builder authority
     #[account(mut)]
     pub signer: Signer<'info>,
 }
 
 impl UpdateRakuraiActivationApproval<'_> {
+    /// Authorizes signer as either validator authority or block builder authority
     fn auth(ctx: &Context<UpdateRakuraiActivationApproval>) -> Result<()> {
         if ctx.accounts.signer.key() == ctx.accounts.activation_account.validator_authority.key()
             || ctx.accounts.signer.key() == ctx.accounts.config.block_builder_authority.key()
@@ -320,9 +353,13 @@ impl UpdateRakuraiActivationApproval<'_> {
     }
 }
 
+/// Updates the Rakurai activation commission for a specific validator.
 #[derive(Accounts)]
 pub struct UpdateRakuraiActivationCommission<'info> {
+    /// The global configuration account for Rakurai settings.
     pub config: Account<'info, RakuraiActivationConfigAccount>,
+
+    /// PDA storing validator-specific Rakurai activation state.
     #[account(
         mut,
         seeds = [
@@ -333,13 +370,18 @@ pub struct UpdateRakuraiActivationCommission<'info> {
         rent_exempt = enforce,
     )]
     pub activation_account: Account<'info, RakuraiActivationAccount>,
+
+    /// CHECK: Validator identity associated with the activation account.
     #[account(mut)]
     pub validator_identity_account: AccountInfo<'info>,
+
+    /// Signer who must be either validator authority or block builder authority.
     #[account(mut)]
     pub signer: Signer<'info>,
 }
 
 impl UpdateRakuraiActivationCommission<'_> {
+    /// Checks if signer is authorized to update commission (validator or block builder authority).
     fn auth(ctx: &Context<UpdateRakuraiActivationCommission>) -> Result<()> {
         if ctx.accounts.signer.key() == ctx.accounts.activation_account.validator_authority.key()
             || ctx.accounts.signer.key() == ctx.accounts.config.block_builder_authority.key()
@@ -353,7 +395,10 @@ impl UpdateRakuraiActivationCommission<'_> {
 
 #[derive(Accounts)]
 pub struct CloseRakuraiActivationAccount<'info> {
+    /// The global configuration account for Rakurai settings.
     pub config: Account<'info, RakuraiActivationConfigAccount>,
+
+    /// PDA storing validator-specific Rakurai activation state; closed during this instruction.
     #[account(
         mut,
         close = validator_identity_account,
@@ -365,13 +410,18 @@ pub struct CloseRakuraiActivationAccount<'info> {
         rent_exempt = enforce,
     )]
     pub activation_account: Account<'info, RakuraiActivationAccount>,
+
+    /// CHECK: Validator's identity account that receives the closed account's lamports.
     #[account(mut)]
     pub validator_identity_account: AccountInfo<'info>,
+
+    /// Signer authorized to close activation accounts (must match block_builder_authority).
     #[account(mut)]
     pub signer: Signer<'info>,
 }
 
 impl CloseRakuraiActivationAccount<'_> {
+    /// Ensures the signer is the `block_builder_authority` from the config.
     fn auth(ctx: &Context<CloseRakuraiActivationAccount>) -> Result<()> {
         if ctx.accounts.signer.key() == ctx.accounts.config.block_builder_authority.key() {
             Ok(())
@@ -383,31 +433,43 @@ impl CloseRakuraiActivationAccount<'_> {
 
 // Events
 
+/// Emitted when the global config is updated.
 #[event]
 pub struct ConfigUpdatedEvent {
-    /// Who updated it.
+    /// The authority that performed the update.
     authority: Pubkey,
 }
 
+/// Emitted when a new Rakurai activation account is initialized.
 #[event]
 pub struct RakuraiActivationAccountInitializedEvent {
+    /// The newly initialized activation account.
     pub activation_account: Pubkey,
 }
 
+/// Emitted when one of the authorities approves a Rakurai activation update.
 #[event]
 pub struct UpdateRakuraiActivationApprovalEvent {
+    /// The activation account receiving the update.
     pub activation_account: Pubkey,
+    /// The signer (authority) who approved the update.
     pub signer: Pubkey,
 }
 
+/// Emitted when the operator commission of an activation account is updated.
 #[event]
 pub struct UpdateRakuraiActivationCommissionEvent {
+    /// The activation account whose commission was updated.
     pub activation_account: Pubkey,
+    /// The new operator commission (basis points or percent, depending on program logic).
     pub operator_commission: u16,
 }
 
+/// Emitted when a Rakurai activation account is closed and funds are claimed.
 #[event]
 pub struct RakuraiActivationAccountClosedEvent {
+    /// The closed activation account.
     pub activation_account: Pubkey,
+    /// Total lamports claimed during closure.
     pub amount_claimed: u64,
 }
