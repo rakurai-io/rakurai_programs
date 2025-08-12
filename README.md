@@ -1,9 +1,9 @@
 # Rakurai Programs
 
-This repository contains Solana smart contracts and tools for managing Rakurai’s validator operations:
+This repository contains Solana smart contracts and tools for managing Rakurai's validator operations:
 
 - **Rakurai Activation**  
-  A multisig based smart contract that enables and control validators to run a Rakurai node.
+  A multisig-based smart contract that enables and controls validators to run a Rakurai node.
   ➤ For more details, refer to the [README](./programs/rakurai_activation/README.md).
 
 - **Reward Distribution**  
@@ -11,11 +11,11 @@ This repository contains Solana smart contracts and tools for managing Rakurai�
   ➤ For more details, refer to the [README](./programs/reward_distribution/README.md).
 
 - **Rakurai Activation CLI**  
-  A command-line interface for proposing and approving multisig actions related to **Rakurai Activation** smart contract.  
+  A command-line interface for proposing and approving multisig actions related to the **Rakurai Activation** smart contract.  
   ➤ For more details, refer to the [README](./cli/README.md).
 
 
-## How to build and deploy program using anchor
+## How to build and deploy programs using Anchor
 This repository contains the necessary commands and steps for building, deploying, upgrading, and closing Solana programs. The commands utilize the Anchor framework for managing the deployment and interaction with Solana-based programs.
 
 ## Setup & Installation
