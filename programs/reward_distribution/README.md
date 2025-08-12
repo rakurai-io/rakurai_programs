@@ -18,25 +18,25 @@ Each **validator**, for each **epoch**, creates a unique PDA called `RewardColle
   - `rakurai_commission_bps` — Commission (in basis points) for Rakurai from block rewards.
   - `rakurai_commission_account` — Destination account for Rakurai's commission.
 
-> The values for `rakurai_commission_bps`, `validator_commission_bps`, and `rakurai_commission_account` are pulled from the `RakuraiActivationAccount`, a validator-specific PDA (not epoch-specific), part of the [`rakurai_activation`](../rakurai_activation/) program ([Rakurai Programs Overview](https://docs.rakurai.io/nodeoperator#2.-rakurai-smart-contracts-programs)). This account controls whether the validator is running the Rakurai scheduler (and should be charged commission).
+> The values for `rakurai_commission_bps`, `validator_commission_bps`, and `rakurai_commission_account` are pulled from the [RakuraiActivationAccount](../rakurai_activation/README.md#rakuraiactivationaccount-account-creation), a validator-specific PDA (not epoch-specific), part of the [`rakurai_activation`](../rakurai_activation/README.md) program. This account controls whether the validator is running the Rakurai scheduler (and should be charged commission).
 
 ---
 
 ## 🔁 Epoch Flow
 
-### 1. Account Initialization
+### 1. RewardCollectionAccount Account Initialization
 On the first turn of each epoch, the `RewardCollectionAccount` is automatically initialized by the Rakurai Solana client. This initialization includes:
-- Commission details (from validator specific [`RakuraiActivationAccount`](../rakurai_activation/README.md))
-- Authority to update the reward Merkle root (only this authority can upload merkle root to the `RewardCollectionAccount` account)
-> Account initialization logic is part of rakurai solana client. The node operator must specify the following [CLI arguments](https://docs.rakurai.io/nodeoperator#step-5-add-additional-cli-args).
+- Commission details (from validator-specific [`RakuraiActivationAccount`](../rakurai_activation/README.md)).
+- Authority to update the reward Merkle root (only this authority can upload the Merkle root to the `RewardCollectionAccount` account).
+> Account initialization logic is part of the Rakurai Solana client. The node operator must specify the following [CLI arguments](https://docs.rakurai.io/nodeoperator#step-5-add-additional-cli-args).
 
 
 ### 2. Per-Turn Transfers
 During every leader turn:
-- The **previous turn’s block reward** is processed:
-  - **Rakurai commission** → transferred to Rakurai's account
-  - **Validator commission** → remains in the validator's identity account
-  - **Staker share** → accumulated into the `RewardCollectionAccount`
+- The **previous turn's block reward** is processed:
+  - **Rakurai commission** → transferred to Rakurai's account.
+  - **Validator commission** → remains in the validator's identity account.
+  - **Staker share** → accumulated into the `RewardCollectionAccount`.
 
 > Because the reward of the current turn is transferred during the next one, the **first turn** of an epoch handles the **last reward** of the previous epoch.
 
@@ -45,18 +45,28 @@ During every leader turn:
 ## 3. Post-Epoch Staker Distribution
 At the final slot of each epoch, the following process takes place:
 - A snapshot of Solana accounts is captured.
-- each validator’s staker details and stake weights are extracted.
+- Each validator's staker details and stake weights are extracted.
 - An off-chain Merkle tree is generated containing reward share data.
-  - **Extra flexibility:** During this step, node operators can blacklist specific stakers or adjust individual stake weights before finalizing the tree.
+  - **Extra flexibility**: At this stage, specific stakers can be blacklisted, and individual stake weights can be adjusted before finalizing the tree.
 - The Merkle root is uploaded to the `RewardCollectionAccount` by the `reward_merkle_root_authority`.
 - Each staker claims their rewards by submitting a valid Merkle proof derived from the Merkle root. Claims are processed individually per staker.
 
+
 ## Reward Distribution — Free & Automated by Rakurai
-- Set this authority to **Rakurai** for fully automated root generation and uploads.
-- Keep it yourself if you prefer manual management.
 
-> **0% Rakurai commission** — only standard Solana transaction fees apply.
+- Set this authority to [**Rakurai**](https://docs.rakurai.io/nodeoperator#step-5-add-additional-cli-args) for fully automated reward distribution.
+- Keep it yourself if you want to do the distribution yourself.
 
+When set to **Rakurai**, the rakurai will automatically:
+1. **Create a snapshot**
+2. **Calculate the Merkle root**
+3. **Upload it on-chain**
+4. **Distribute rewards to stakers**
+
+<p style="font-size:14px;">
+    <span style="color:#66ff66;"><i><b>0% Rakurai commission</b></i></span>
+    — only standard Solana transaction fees apply.
+</p>
 
 ---
 
@@ -64,7 +74,7 @@ At the final slot of each epoch, the following process takes place:
 
 - `RewardCollectionAccount` is valid for **10 epochs**.
 - After that:
-  - Any unclaimed funds are returned to the **validator’s identity account**.
+  - Any unclaimed funds are returned to the **validator's identity account**.
   - The account is closed to reclaim rent.
 
 ---

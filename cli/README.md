@@ -58,7 +58,7 @@ These options are **critical** and must be used with care:
   - **Mainnet:** `rAKACC6Qw8HYa87ntGPRbfYEMnK2D9JVLsmZaKPpMmi`  
   - **Testnet:** `pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt`
 
-> ❗ Incorrect keypair, rpc, or program ID will result in failed transactions.
+> ❗ Incorrect keypair, RPC, or program ID will result in failed transactions.
 
 ---
 
