@@ -1,6 +1,8 @@
 # Rakurai Activation Program
 
-A multisig-based Solana smart contract for enabling or disabling the Rakurai scheduler. It also governs the commission on block rewards for both the block builder (i.e., Rakurai) and the validator. Note: The remaining block rewards after deducting the two commissions are distributed to stakers via the RewardDistributionProgram.
+A multisig-based Solana smart contract for enabling or disabling the Rakurai scheduler. It also governs the commission on block rewards for both the block builder (i.e., Rakurai) and the validator.
+
+Note: The remaining block rewards after deducting the two commissions are distributed to stakers via the [`RewardDistributionProgram`](../reward_distribution/README.md).
 
 ➤ For more details, refer to the [IDL File](./idl/rakurai_activation.json).
 
@@ -30,7 +32,7 @@ This program implements a 2-party asynchronous multisig:
 > Unlike traditional multisig, both parties do not sign the same transaction. Instead, actions are proposed and approved via separate transactions.
 ---
 
-## Account Creation
+## RakuraiActivationAccount Account Creation
 
 - The validator initializes their **RakuraiActivationAccount** PDA using:
   - Their **identity pubkey**.
@@ -47,9 +49,9 @@ Once created, this account:
 
 ## Commission Updates
 
-- The validator may update their **commission percentage** at any time.
+- The validator may update their [**commission percentage**](../../cli/README.md#3-update-commission) at any time.
 - The updated commission applies either:
-  - From the **current epoch**, if no [`RewardCollectionAccount`](../reward_distribution/README.md) has been initialized yet.
+  - From the **current epoch**, if no [`RewardCollectionAccount`](../reward_distribution/README.md#1-rewardcollectionaccount-account-initialization) has been initialized yet.
   - Or from the **next epoch**, if already initialized.
 
 ---
@@ -57,7 +59,7 @@ Once created, this account:
 ## Activation Flow
 
 1. **Enabling Rakurai**:
-   - The validator submits a `propose_enable` transaction.
+   - The validator submits a [`update_rakurai_activation_approval`](../../cli/README.md#2-scheduler-control) transaction.
    - In response to that transaction, Rakurai submits a transaction to approve and activate the Rakurai scheduler.
 
 2. **Disabling Rakurai**:
@@ -74,7 +76,6 @@ Once created, this account:
 
 A CLI tool is available for operators to:
 - Initialize their RakuraiActivationAccount.
-- Propose and approve changes.
 - Update commission settings.
 - Enable/disable the Rakurai scheduler.
 
