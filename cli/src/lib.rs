@@ -10,8 +10,8 @@ use {
         signature::Keypair,
         signer::{EncodableKey, Signer},
         transaction::Transaction,
-        vote::state::{VoteState, VoteStateVersions},
     },
+    solana_vote_interface::state::{VoteStateV3, VoteStateVersions},
     std::{path::Path, str::FromStr, sync::Arc},
 };
 
@@ -161,10 +161,10 @@ pub fn display_activation_config_account(
 pub fn get_vote_account(
     rpc_client: Arc<RpcClient>,
     vote_pubkey: Pubkey,
-) -> Result<VoteState, Box<dyn std::error::Error>> {
+) -> Result<VoteStateV3, Box<dyn std::error::Error>> {
     let account_info = rpc_client.get_account(&vote_pubkey)?;
     let vote_state_versions: VoteStateVersions = bincode::deserialize(&account_info.data)?;
-    Ok(vote_state_versions.convert_to_current())
+    Ok(vote_state_versions.convert_to_v3())
 }
 
 pub fn sign_and_send_transaction(

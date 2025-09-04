@@ -11,6 +11,9 @@ bincode = {workspace = true}
 bs58 = {workspace = true}
 clap = { version = "4.4", features = ["derive"] }
 colored = "2.0"
+solana-vote-interface = "3.0.0"
+solana-pubkey = { version = "3.0.0", default-features = false }
+solana-commitment-config = "3.0.0"
 rakurai_activation = { path = "../programs/rakurai_activation" }
 serde = {workspace = true}
 serde_derive = {workspace = true}

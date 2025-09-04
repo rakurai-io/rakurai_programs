@@ -1,4 +1,5 @@
 use {
+    anchor_lang::prelude::Pubkey as AnchorPubkey,
     clap::{Args, Parser, Subcommand},
     colored::*,
     rakurai_activation::sdk::{
@@ -18,12 +19,11 @@ use {
         get_activation_config_account, get_vote_account, normalize_to_url_if_moniker,
         parse_keypair, parse_pubkey, sign_and_send_transaction, validate_commission,
     },
+    solana_commitment_config::CommitmentConfig,
+    solana_pubkey::Pubkey,
     solana_rpc_client::rpc_client::RpcClient,
-    solana_sdk::{
-        commitment_config::CommitmentConfig,
-        pubkey::Pubkey,
-        signature::{Keypair, Signer},
-    },
+    solana_sdk::instruction::{AccountMeta, Instruction},
+    solana_sdk::signature::{Keypair, Signer},
     solana_system_interface::program,
     std::sync::Arc,
 };
@@ -197,6 +197,7 @@ fn process_init_config(
         .block_builder_commission_account
         .unwrap_or(signer_pubkey);
 
+    let program_id = AnchorPubkey::from(program_id.as_array().clone());
     let (activation_config_pubkey, bump) = derive_config_account_address(&program_id);
     println!(
         "📌 Derived Config Account: {} (Bump: {})",
@@ -215,20 +216,38 @@ fn process_init_config(
         signer_pubkey
     );
 
-    let initialize_instruction = initialize_ix(
+    let mut initialize_instruction = initialize_ix(
         program_id,
         InitializeArgs {
-            authority: config_authority,
+            authority: AnchorPubkey::from(config_authority.as_array().clone()),
             block_builder_commission_bps,
-            block_builder_commission_account,
-            block_builder_authority,
+            block_builder_commission_account: AnchorPubkey::from(
+                block_builder_commission_account.as_array().clone(),
+            ),
+            block_builder_authority: AnchorPubkey::from(block_builder_authority.as_array().clone()),
             bump,
         },
         InitializeAccounts {
             config: activation_config_pubkey,
-            system_program: program::id(),
-            initializer: signer_pubkey,
+            system_program: AnchorPubkey::from(program::id().as_array().clone()),
+            initializer: AnchorPubkey::from(signer_pubkey.as_array().clone()),
         },
+    );
+
+    let acct_metas: Vec<AccountMeta> = initialize_instruction
+        .accounts
+        .iter_mut()
+        .map(|acct| AccountMeta {
+            pubkey: Pubkey::from(acct.pubkey.as_array().clone()),
+            is_signer: acct.is_signer,
+            is_writable: acct.is_writable,
+        })
+        .collect();
+
+    let initialize_instruction = Instruction::new_with_bytes(
+        Pubkey::from(program_id.as_array().clone()),
+        &initialize_instruction.data,
+        acct_metas,
     );
 
     sign_and_send_transaction(rpc_client, initialize_instruction, &kp)
@@ -238,7 +257,13 @@ fn process_show_config(
     rpc_client: Arc<RpcClient>,
     program_id: Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let (activation_config_pubkey, _) = derive_config_account_address(&program_id);
+    let program_id = AnchorPubkey::from(program_id.as_array().clone());
+    let activation_config_pubkey = Pubkey::from(
+        derive_config_account_address(&program_id)
+            .0
+            .as_array()
+            .clone(),
+    );
 
     let activation_account =
         get_activation_config_account(rpc_client.clone(), activation_config_pubkey)?;
@@ -265,10 +290,11 @@ fn process_init_pda(
         )
         .into());
     }
-
+    let program_id = AnchorPubkey::from(program_id.as_array().clone());
     let (activation_config_pubkey, _) = derive_config_account_address(&program_id);
+    let vote_state_anchor = AnchorPubkey::from(vote_state.node_pubkey.as_array().clone());
     let (activation_pubkey, bump) =
-        derive_activation_account_address(&program_id, &vote_state.node_pubkey);
+        derive_activation_account_address(&program_id, &vote_state_anchor);
 
     println!(
         "📌 {}",
@@ -288,7 +314,7 @@ fn process_init_pda(
         signer_pubkey
     );
 
-    let initialize_instruction = initialize_rakurai_activation_account_ix(
+    let mut initialize_instruction = initialize_rakurai_activation_account_ix(
         program_id,
         InitializeRakuraiActivationAccountArgs {
             validator_commission_bps,
@@ -296,12 +322,30 @@ fn process_init_pda(
         },
         InitializeRakuraiActivationAccountAccounts {
             config: activation_config_pubkey,
-            system_program: program::id(),
-            validator_vote_account: vote_pubkey,
-            validator_identity_account: vote_state.node_pubkey,
+            system_program: AnchorPubkey::from(program::id().as_array().clone()),
+            validator_vote_account: AnchorPubkey::from(vote_pubkey.as_array().clone()),
+            validator_identity_account: AnchorPubkey::from(
+                vote_state.node_pubkey.as_array().clone(),
+            ),
             activation_account: activation_pubkey,
-            signer: signer_pubkey,
+            signer: AnchorPubkey::from(signer_pubkey.as_array().clone()),
         },
+    );
+
+    let acct_metas: Vec<AccountMeta> = initialize_instruction
+        .accounts
+        .iter_mut()
+        .map(|acct| AccountMeta {
+            pubkey: Pubkey::from(acct.pubkey.as_array().clone()),
+            is_signer: acct.is_signer,
+            is_writable: acct.is_writable,
+        })
+        .collect();
+
+    let initialize_instruction = Instruction::new_with_bytes(
+        Pubkey::from(program_id.as_array().clone()),
+        &initialize_instruction.data,
+        acct_metas,
     );
 
     sign_and_send_transaction(rpc_client.clone(), initialize_instruction, &kp)
@@ -318,14 +362,28 @@ pub fn process_scheduler_control(
     let disable_scheduler = args.disable_scheduler;
     let identity_pubkey = args.identity_pubkey;
 
+    let program_id = AnchorPubkey::from(program_id.as_array().clone());
     let (activation_config_pubkey, _) = derive_config_account_address(&program_id);
-    let activation_config_account =
-        get_activation_config_account(rpc_client.clone(), activation_config_pubkey)?;
+    let activation_config_pubkey = AnchorPubkey::from(activation_config_pubkey.as_array().clone());
+    let activation_config_account = get_activation_config_account(
+        rpc_client.clone(),
+        Pubkey::from(activation_config_pubkey.as_array().clone()),
+    )?;
+    let identity_pubkey = AnchorPubkey::from(identity_pubkey.as_array().clone());
     let (activation_pubkey, _bump) =
         derive_activation_account_address(&program_id, &identity_pubkey);
-    let activation_account = get_activation_account(rpc_client.clone(), activation_pubkey)?;
-    if !(identity_pubkey == signer_pubkey
-        || activation_config_account.block_builder_authority == signer_pubkey)
+    let activation_account = get_activation_account(
+        rpc_client.clone(),
+        Pubkey::from(activation_pubkey.as_array().clone()),
+    )?;
+
+    if !(solana_pubkey::Pubkey::from(identity_pubkey.as_array().clone()) == signer_pubkey
+        || solana_pubkey::Pubkey::from(
+            activation_config_account
+                .block_builder_authority
+                .as_array()
+                .clone(),
+        ) == signer_pubkey)
     {
         return Err(format!(
             "❌ Unauthorized Signer! Expected: Validator({}) or BlockBuilder({}), Found: {}",
@@ -368,7 +426,7 @@ pub fn process_scheduler_control(
         None
     };
 
-    let update_approval_instruction = update_rakurai_activation_approval_ix(
+    let mut update_approval_instruction = update_rakurai_activation_approval_ix(
         program_id,
         UpdateRakuraiActivationApprovalArgs {
             grant_approval: disable_scheduler,
@@ -378,9 +436,26 @@ pub fn process_scheduler_control(
             config: activation_config_pubkey,
             validator_identity_account: identity_pubkey,
             activation_account: activation_pubkey,
-            signer: signer_pubkey,
+            signer: AnchorPubkey::from(signer_pubkey.as_array().clone()),
         },
     );
+
+    let acct_metas: Vec<AccountMeta> = update_approval_instruction
+        .accounts
+        .iter_mut()
+        .map(|acct| AccountMeta {
+            pubkey: Pubkey::from(acct.pubkey.as_array().clone()),
+            is_signer: acct.is_signer,
+            is_writable: acct.is_writable,
+        })
+        .collect();
+
+    let update_approval_instruction = Instruction::new_with_bytes(
+        Pubkey::from(program_id.as_array().clone()),
+        &update_approval_instruction.data,
+        acct_metas,
+    );
+
     sign_and_send_transaction(rpc_client.clone(), update_approval_instruction, &kp)
 }
 
@@ -394,12 +469,20 @@ fn process_update_commission(
     let commission_bps = args.commission_bps;
     let identity_pubkey = args.identity_pubkey;
 
+    let program_id = AnchorPubkey::from(program_id.as_array().clone());
     let (activation_config_pubkey, _) = derive_config_account_address(&program_id);
-    let activation_config_account =
-        get_activation_config_account(rpc_client.clone(), activation_config_pubkey)?;
+    let activation_config_account = get_activation_config_account(
+        rpc_client.clone(),
+        Pubkey::from(activation_config_pubkey.as_array().clone()),
+    )?;
+    let identity_pubkey = AnchorPubkey::from(identity_pubkey.as_array().clone());
+
     let (activation_pubkey, _bump) =
         derive_activation_account_address(&program_id, &identity_pubkey);
-    let activation_account = get_activation_account(rpc_client.clone(), activation_pubkey)?;
+    let activation_account = get_activation_account(
+        rpc_client.clone(),
+        Pubkey::from(activation_pubkey.as_array().clone()),
+    )?;
 
     println!(
         "📌 {}",
@@ -418,8 +501,14 @@ fn process_update_commission(
         "🔗 Signer:".cyan(),
         signer_pubkey
     );
-    if !(signer_pubkey == identity_pubkey
-        || signer_pubkey == activation_config_account.block_builder_authority)
+    if !(signer_pubkey == Pubkey::from(identity_pubkey.as_array().clone())
+        || signer_pubkey
+            == Pubkey::from(
+                activation_config_account
+                    .block_builder_authority
+                    .as_array()
+                    .clone(),
+            ))
     {
         return Err(format!(
             "❌ Unauthorized Signer! Expected: Validator({}) or BlockBuilder({}), Found: {}",
@@ -431,16 +520,33 @@ fn process_update_commission(
         return Err(format!("❌ No transaction required, commission value is unchanged.").into());
     }
 
-    let update_commission_instruction = update_rakurai_activation_commission_ix(
+    let mut update_commission_instruction = update_rakurai_activation_commission_ix(
         program_id,
         UpdateRakuraiActivationCommissionArgs { commission_bps },
         UpdateRakuraiActivationCommissionAccounts {
             config: activation_config_pubkey,
             validator_identity_account: identity_pubkey,
             activation_account: activation_pubkey,
-            signer: signer_pubkey,
+            signer: AnchorPubkey::from(signer_pubkey.as_array().clone()),
         },
     );
+
+    let acct_metas: Vec<AccountMeta> = update_commission_instruction
+        .accounts
+        .iter_mut()
+        .map(|acct| AccountMeta {
+            pubkey: Pubkey::from(acct.pubkey.as_array().clone()),
+            is_signer: acct.is_signer,
+            is_writable: acct.is_writable,
+        })
+        .collect();
+
+    let update_commission_instruction = Instruction::new_with_bytes(
+        Pubkey::from(program_id.as_array().clone()),
+        &update_commission_instruction.data,
+        acct_metas,
+    );
+
     sign_and_send_transaction(rpc_client.clone(), update_commission_instruction, &kp)
 }
 
@@ -453,13 +559,23 @@ fn process_close(
     let signer_pubkey = kp.pubkey();
     let identity_pubkey = args.identity_pubkey;
 
+    let program_id = AnchorPubkey::from(program_id.as_array().clone());
     let (activation_config_pubkey, _) = derive_config_account_address(&program_id);
-    let activation_config_account =
-        get_activation_config_account(rpc_client.clone(), activation_config_pubkey)?;
+    let activation_config_account = get_activation_config_account(
+        rpc_client.clone(),
+        Pubkey::from(activation_config_pubkey.as_array().clone()),
+    )?;
+    let identity_pubkey = AnchorPubkey::from(identity_pubkey.as_array().clone());
     let (activation_pubkey, _bump) =
         derive_activation_account_address(&program_id, &identity_pubkey);
 
-    if activation_config_account.block_builder_authority != signer_pubkey {
+    if Pubkey::from(
+        activation_config_account
+            .block_builder_authority
+            .as_array()
+            .clone(),
+    ) != signer_pubkey
+    {
         return Err(format!(
             "❌ Unauthorized Signer! Expected: BlockBuilder({}), Found: {}",
             activation_config_account.block_builder_authority, signer_pubkey
@@ -482,16 +598,33 @@ fn process_close(
         "🔗 Signer:".cyan(),
         signer_pubkey
     );
-    let update_approval_instruction = close_rakurai_activation_account_ix(
+    let mut update_approval_instruction = close_rakurai_activation_account_ix(
         program_id,
         CloseRakuraiActivationAccountArgs {},
         CloseRakuraiActivationAccounts {
             config: activation_config_pubkey,
             validator_identity_account: identity_pubkey,
             activation_account: activation_pubkey,
-            signer: signer_pubkey,
+            signer: AnchorPubkey::from(signer_pubkey.as_array().clone()),
         },
     );
+
+    let acct_metas: Vec<AccountMeta> = update_approval_instruction
+        .accounts
+        .iter_mut()
+        .map(|acct| AccountMeta {
+            pubkey: Pubkey::from(acct.pubkey.as_array().clone()),
+            is_signer: acct.is_signer,
+            is_writable: acct.is_writable,
+        })
+        .collect();
+
+    let update_approval_instruction = Instruction::new_with_bytes(
+        Pubkey::from(program_id.as_array().clone()),
+        &update_approval_instruction.data,
+        acct_metas,
+    );
+
     sign_and_send_transaction(rpc_client.clone(), update_approval_instruction, &kp)
 }
 
@@ -502,9 +635,15 @@ fn process_show(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let identity_pubkey = args.identity_pubkey;
 
-    let (activation_pubkey, _) = derive_activation_account_address(&program_id, &identity_pubkey);
+    let (activation_pubkey, _) = derive_activation_account_address(
+        &AnchorPubkey::from(program_id.as_array().clone()),
+        &AnchorPubkey::from(identity_pubkey.as_array().clone()),
+    );
 
-    let activation_account = get_activation_account(rpc_client.clone(), activation_pubkey)?;
+    let activation_account = get_activation_account(
+        rpc_client.clone(),
+        Pubkey::from(activation_pubkey.as_array().clone()),
+    )?;
     println!(
         "📌 {}",
         "Rakurai Activation Account".bold().underline().blue()

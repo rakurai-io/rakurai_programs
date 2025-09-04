@@ -21,6 +21,7 @@ pub mod state;
 
 declare_id!("A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB");
 
+#[allow(deprecated)]
 #[program]
 pub mod reward_distribution {
     use rakurai_vote_state::VoteState;
