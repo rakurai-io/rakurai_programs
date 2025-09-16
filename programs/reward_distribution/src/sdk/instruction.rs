@@ -270,6 +270,47 @@ pub fn transfer_staker_rewards_ix(
     }
 }
 
+/// Total mev amount.
+pub struct TransferMevCommissionArgs {
+    pub mev_rewards: u64,
+}
+
+/// Accounts required to transfer mev commission to Block Builder.
+pub struct TransferMevCommissionAccounts {
+    pub rakurai_commission_account: Pubkey,
+    pub reward_collection_account: Pubkey,
+    pub system_program: Pubkey,
+    pub signer: Pubkey,
+}
+
+/// Builds the instruction to transfer deduct mev commission from mev_rewards.
+pub fn transfer_mev_commission_ix(
+    program_id: Pubkey,
+    args: TransferMevCommissionArgs,
+    accounts: TransferMevCommissionAccounts,
+) -> Instruction {
+    let TransferMevCommissionArgs { mev_rewards } = args;
+
+    let TransferMevCommissionAccounts {
+        rakurai_commission_account,
+        reward_collection_account,
+        system_program,
+        signer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::TransferMevCommission { mev_rewards }.data(),
+        accounts: crate::accounts::TransferMevCommission {
+            rakurai_commission_account,
+            reward_collection_account,
+            system_program,
+            signer,
+        }
+        .to_account_metas(None),
+    }
+}
+
 /// Epoch argument (for context) when closing the reward collection account.
 pub struct CloseRewardCollectionAccountArgs {
     pub _epoch: u64,

@@ -58,6 +58,7 @@ pub struct MerkleRoot {
 }
 
 const HEADER_SIZE: usize = 8;
+pub const MAX_COMMISSION_BPS: u16 = 10000;
 
 impl RewardDistributionConfigAccount {
     /// PDA seed for the config account.
@@ -68,7 +69,6 @@ impl RewardDistributionConfigAccount {
     /// Validates config constraints.
     pub fn validate(&self) -> Result<()> {
         const MAX_NUM_EPOCHS_VALID: u64 = 10;
-        const MAX_COMMISSION_BPS: u16 = 10000;
 
         if self.num_epochs_valid == 0 || self.num_epochs_valid > MAX_NUM_EPOCHS_VALID {
             return Err(AccountValidationFailure.into());
