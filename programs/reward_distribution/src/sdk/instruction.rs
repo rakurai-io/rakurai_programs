@@ -157,7 +157,7 @@ pub fn close_claim_status_ix(
 
 /// Arguments to update the reward config account.
 pub struct UpdateConfigArgs {
-    new_config: RewardDistributionConfigAccount,
+    pub new_config: RewardDistributionConfigAccount,
 }
 
 /// Accounts needed to update the config.
