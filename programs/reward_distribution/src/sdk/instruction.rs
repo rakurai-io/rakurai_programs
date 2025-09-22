@@ -10,6 +10,7 @@ pub struct InitializeArgs {
     pub authority: Pubkey,
     pub num_epochs_valid: u64,
     pub max_commission_bps: u16,
+    pub mev_commission_enabled: bool,
     pub bump: u8,
 }
 
@@ -30,6 +31,7 @@ pub fn initialize_ix(
         authority,
         num_epochs_valid,
         max_commission_bps,
+        mev_commission_enabled,
         bump,
     } = args;
 
@@ -45,6 +47,7 @@ pub fn initialize_ix(
             authority,
             num_epochs_valid,
             max_commission_bps,
+            mev_commission_enabled,
             bump,
         }
         .data(),
@@ -177,6 +180,30 @@ pub fn update_config_ix(
         program_id,
         data: crate::instruction::UpdateConfig { new_config }.data(),
         accounts: crate::accounts::UpdateConfig { config, authority }.to_account_metas(None),
+    }
+}
+
+/// Arguments for closing the config account (empty).
+pub struct CloseConfigArgs;
+
+/// Accounts needed to close the config account.
+pub struct CloseConfigAccounts {
+    pub config: Pubkey,
+    pub signer: Pubkey,
+}
+
+/// Builds the instruction to close the reward distribution config account.
+pub fn close_config_ix(
+    program_id: Pubkey,
+    _args: CloseConfigArgs,
+    accounts: CloseConfigAccounts,
+) -> Instruction {
+    let CloseConfigAccounts { config, signer } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::CloseConfig {}.data(),
+        accounts: crate::accounts::CloseConfig { config, signer }.to_account_metas(None),
     }
 }
 

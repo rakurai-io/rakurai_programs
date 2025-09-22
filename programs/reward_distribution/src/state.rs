@@ -14,6 +14,8 @@ pub struct RewardDistributionConfigAccount {
     pub max_commission_bps: u16,
     /// PDA bump.
     pub bump: u8,
+    /// Whether MEV commission tracking is enabled.
+    pub mev_commission_enabled: Option<bool>,
 }
 
 /// Stores validator reward collection account data for a given epoch.
@@ -40,6 +42,8 @@ pub struct RewardCollectionAccount {
     pub initializer: Pubkey,
     /// PDA bump.
     pub bump: u8,
+    /// MEV commission amount.
+    pub mev_commission_amount: Option<u64>,
 }
 
 /// Metadata about the Merkle root used for claims.
@@ -65,6 +69,21 @@ impl RewardDistributionConfigAccount {
     pub const SEED: &'static [u8] = b"RD_CONFIG_ACCOUNT";
     /// Account size for rent-exemption.
     pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
+
+    /// Gets whether MEV commission is enabled, defaulting to false for old configs.
+    pub fn is_mev_commission_enabled(&self) -> bool {
+        self.mev_commission_enabled.unwrap_or(false)
+    }
+
+    /// Sets MEV commission enabled status.
+    pub fn set_mev_commission_enabled(&mut self, enabled: bool) {
+        self.mev_commission_enabled = Some(enabled);
+    }
+
+    /// Checks if MEV commission setting is configured.
+    pub fn has_mev_commission_setting(&self) -> bool {
+        self.mev_commission_enabled.is_some()
+    }
 
     /// Validates config constraints.
     pub fn validate(&self) -> Result<()> {

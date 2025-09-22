@@ -35,12 +35,14 @@ pub mod reward_distribution {
         authority: Pubkey,
         num_epochs_valid: u64,
         max_commission_bps: u16,
+        mev_commission_enabled: bool,
         bump: u8,
     ) -> Result<()> {
         let cfg = &mut ctx.accounts.config;
         cfg.authority = authority;
         cfg.num_epochs_valid = num_epochs_valid;
         cfg.max_commission_bps = max_commission_bps;
+        cfg.set_mev_commission_enabled(mev_commission_enabled);
         cfg.bump = bump;
         cfg.validate()?;
 
@@ -90,6 +92,14 @@ pub mod reward_distribution {
             .ok_or(ArithmeticError)?;
         reward_collection_acc.initializer = ctx.accounts.signer.key();
         reward_collection_acc.bump = bump;
+
+        // Initialize MEV commission based on config setting
+        if ctx.accounts.config.is_mev_commission_enabled() {
+            reward_collection_acc.mev_commission_amount = Some(0);
+        } else {
+            reward_collection_acc.mev_commission_amount = None;
+        }
+
         reward_collection_acc.validate()?;
 
         emit!(RewardCollectionAccountInitializedEvent {
@@ -110,10 +120,36 @@ pub mod reward_distribution {
         config.authority = new_config.authority;
         config.num_epochs_valid = new_config.num_epochs_valid;
         config.max_commission_bps = new_config.max_commission_bps;
+        config.set_mev_commission_enabled(new_config.is_mev_commission_enabled());
         config.validate()?;
 
         emit!(ConfigUpdatedEvent {
             authority: ctx.accounts.authority.key(),
+        });
+
+        Ok(())
+    }
+
+    /// Closes the reward distribution config account and reclaims rent.
+    /// Only the config authority can invoke this instruction.
+    pub fn close_config(ctx: Context<CloseConfig>) -> Result<()> {
+        CloseConfig::auth(&ctx)?;
+
+        // Close the config account and send lamports to the authority
+        let config_account = &mut ctx.accounts.config;
+        let authority = &mut ctx.accounts.signer;
+
+        // Transfer all lamports from config to authority
+        let config_lamports = config_account.to_account_info().lamports();
+        **config_account.to_account_info().try_borrow_mut_lamports()? = 0;
+        **authority.try_borrow_mut_lamports()? = authority
+            .lamports()
+            .checked_add(config_lamports)
+            .ok_or(ArithmeticError)?;
+
+        emit!(ConfigClosedEvent {
+            authority: authority.key(),
+            lamports_reclaimed: config_lamports,
         });
 
         Ok(())
@@ -267,6 +303,7 @@ pub mod reward_distribution {
                     ctx.accounts.system_program.to_account_info(),
                 ],
             )?;
+            ctx.accounts.reward_collection_account.mev_commission_amount = Some(block_builder_fee);
         }
 
         emit!(MevRewardsTransferredEvent {
@@ -549,6 +586,35 @@ impl UpdateConfig<'_> {
     }
 }
 
+/// Closes the global reward distribution config account.
+/// Only the config authority can invoke this instruction.
+#[derive(Accounts)]
+pub struct CloseConfig<'info> {
+    /// The global configuration account for Rakurai settings to be closed.
+    #[account(
+        mut,
+        close = signer,
+        seeds = [RewardDistributionConfigAccount::SEED],
+        bump = config.bump,
+        rent_exempt = enforce
+    )]
+    pub config: Account<'info, RewardDistributionConfigAccount>,
+
+    /// The authority that can close the config account.
+    #[account(mut)]
+    pub signer: Signer<'info>,
+}
+
+impl CloseConfig<'_> {
+    fn auth(ctx: &Context<CloseConfig>) -> Result<()> {
+        if ctx.accounts.config.authority != ctx.accounts.signer.key() {
+            Err(Unauthorized.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
 /// Instruction to close a reward collection account after the epoch has ended.
 #[derive(Accounts)]
 #[instruction(epoch: u64)]
@@ -751,6 +817,14 @@ pub struct MerkleRootUploadAuthorityUpdatedEvent {
 pub struct ConfigUpdatedEvent {
     /// Who updated it.
     authority: Pubkey,
+}
+
+#[event]
+pub struct ConfigClosedEvent {
+    /// Authority that closed the config account.
+    pub authority: Pubkey,
+    /// Amount of lamports reclaimed.
+    pub lamports_reclaimed: u64,
 }
 
 // Emitted when a user successfully claims rewards from a reward account.
