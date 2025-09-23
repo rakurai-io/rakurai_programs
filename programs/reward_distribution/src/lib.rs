@@ -155,7 +155,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Uploads a merkle root to the [RewardCollectionAccount]. Only the `merkle_root_upload_authority` can invole this instruction.
+    /// Uploads a merkle root to the [RewardCollectionAccount]. Only the `merkle_root_upload_authority` can invoke this instruction.
     pub fn upload_merkle_root(
         ctx: Context<UploadMerkleRoot>,
         root: [u8; 32],

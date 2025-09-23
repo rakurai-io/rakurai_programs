@@ -14,7 +14,7 @@ pub struct RewardDistributionConfigAccount {
     pub max_commission_bps: u16,
     /// PDA bump.
     pub bump: u8,
-    /// Whether MEV commission tracking is enabled.
+    /// Whether MEV commission deduction is enabled.
     pub mev_commission_enabled: Option<bool>,
 }
 
@@ -42,7 +42,7 @@ pub struct RewardCollectionAccount {
     pub initializer: Pubkey,
     /// PDA bump.
     pub bump: u8,
-    /// MEV commission amount.
+    /// MEV commission amount if deducted. 
     pub mev_commission_amount: Option<u64>,
 }
 
