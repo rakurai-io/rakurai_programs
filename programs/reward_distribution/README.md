@@ -64,9 +64,24 @@ When set to **Rakurai**, the rakurai will automatically:
 4. **Distribute rewards to stakers**
 
 <p style="font-size:14px;">
-    <span style="color:#66ff66;"><i><b>0% Rakurai commission</b></i></span>
+    <span style="color:#66ff66;"><i><b>0% distribution fees charged by Rakurai</b></i></span>
     — only standard Solana transaction fees apply.
 </p>
+
+---
+### Rakurai MEV Commission
+Rakurai charges commission on MEV tips **only** if the following two conditions are met:
+- The validator is actively running **Rakurai during that epoch**.
+- The validator has set a non-zero **MEV commission** in Tip Distribution Account.
+
+*`Note`* If Validator MEV Commission is **0%:** Rakurai charges **nothing** on the MEV tips.
+
+### Deduction Flow
+ 1. Validator receives their share of MEV tips via Tip Distribution Program in the next epoch.
+ 2. A `ClaimStatus` account is created when the validator receives their share.
+ 3. We track the `ClaimStatus` account; once created, we deduct commission.
+ 4. Commission is deducted using the `transfer_mev_commission` instruction of the Reward Distribution Program.
+ 5. The commission rate is specified in the RewardDistribution Config account.
 
 ---
 

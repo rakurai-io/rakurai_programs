@@ -237,11 +237,6 @@ pub mod reward_distribution {
                 ],
             )?;
         }
-        if ctx
-            .accounts
-            .reward_collection_account
-            .validator_commission_bps
-            != MAX_COMMISSION_BPS
         {
             invoke(
                 &system_instruction::transfer(
@@ -280,6 +275,12 @@ pub mod reward_distribution {
         }
 
         let reward_collection_acc = &ctx.accounts.reward_collection_account;
+        if reward_collection_acc.mev_commission_amount.is_some()
+            && reward_collection_acc.mev_commission_amount.unwrap() > 0
+        {
+            return Err(MevCommissionAlreadyDeducted.into());
+        }
+
         let block_builder_fee = mev_rewards
             .checked_mul(reward_collection_acc.rakurai_commission_bps as u64)
             .ok_or(ArithmeticError)?
@@ -485,6 +486,9 @@ pub enum ErrorCode {
 
     #[msg("Rakurai's commission account must be equal to the RewardCollectionAccount account's rakurai_commission_account.")]
     InvalidRakuraiCommissionAccount,
+
+    #[msg("MEV commission already deducted")]
+    MevCommissionAlreadyDeducted,
 }
 
 /// Closes a `ClaimStatus` account and refunds lamports to the payer.
