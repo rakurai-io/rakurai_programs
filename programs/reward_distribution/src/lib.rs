@@ -27,7 +27,7 @@ pub mod reward_distribution {
     use solana_program::{program::invoke, system_instruction};
 
     use super::*;
-    use crate::{state::MAX_COMMISSION_BPS, ErrorCode::*};
+    use crate::ErrorCode::*;
 
     /// Sets up the singleton [RewardDistributionConfigAccount] to store global configuration settings for Rakurai.
     pub fn initialize(

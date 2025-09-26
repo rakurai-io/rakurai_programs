@@ -62,7 +62,7 @@ pub struct MerkleRoot {
 }
 
 const HEADER_SIZE: usize = 8;
-pub const MAX_COMMISSION_BPS: u16 = 10000;
+const MAX_COMMISSION_BPS: u16 = 10000;
 
 impl RewardDistributionConfigAccount {
     /// PDA seed for the config account.
