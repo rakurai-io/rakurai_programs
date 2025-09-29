@@ -23,8 +23,8 @@ use {
         commitment_config::CommitmentConfig,
         pubkey::Pubkey,
         signature::{Keypair, Signer},
-        system_program,
     },
+    solana_system_interface::program,
     std::sync::Arc,
 };
 
@@ -226,7 +226,7 @@ fn process_init_config(
         },
         InitializeAccounts {
             config: activation_config_pubkey,
-            system_program: system_program::id(),
+            system_program: program::id(),
             initializer: signer_pubkey,
         },
     );
@@ -296,7 +296,7 @@ fn process_init_pda(
         },
         InitializeRakuraiActivationAccountAccounts {
             config: activation_config_pubkey,
-            system_program: system_program::id(),
+            system_program: program::id(),
             validator_vote_account: vote_pubkey,
             validator_identity_account: vote_state.node_pubkey,
             activation_account: activation_pubkey,
