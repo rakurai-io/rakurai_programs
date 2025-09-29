@@ -35,14 +35,14 @@ pub mod reward_distribution {
         authority: Pubkey,
         num_epochs_valid: u64,
         max_commission_bps: u16,
-        mev_commission_enabled: bool,
+        rakurai_commission_on_mev_commission_enabled: bool,
         bump: u8,
     ) -> Result<()> {
         let cfg = &mut ctx.accounts.config;
         cfg.authority = authority;
         cfg.num_epochs_valid = num_epochs_valid;
         cfg.max_commission_bps = max_commission_bps;
-        cfg.set_mev_commission_enabled(mev_commission_enabled);
+        cfg.set_mev_commission_enabled(rakurai_commission_on_mev_commission_enabled);
         cfg.bump = bump;
         cfg.validate()?;
 
@@ -95,9 +95,9 @@ pub mod reward_distribution {
 
         // Initialize MEV commission based on config setting
         if ctx.accounts.config.is_mev_commission_enabled() {
-            reward_collection_acc.mev_commission_amount = Some(0);
+            reward_collection_acc.rakurai_mev_commission_deducted = Some(0);
         } else {
-            reward_collection_acc.mev_commission_amount = None;
+            reward_collection_acc.rakurai_mev_commission_deducted = None;
         }
 
         reward_collection_acc.validate()?;
@@ -133,23 +133,24 @@ pub mod reward_distribution {
     /// Closes the reward distribution config account and reclaims rent.
     /// Only the config authority can invoke this instruction.
     pub fn close_config(ctx: Context<CloseConfig>) -> Result<()> {
+        // Verify caller authority
         CloseConfig::auth(&ctx)?;
 
-        // Close the config account and send lamports to the authority
         let config_account = &mut ctx.accounts.config;
         let authority = &mut ctx.accounts.signer;
 
         // Transfer all lamports from config to authority
-        let config_lamports = config_account.to_account_info().lamports();
+        let lamports_to_reclaim = config_account.to_account_info().lamports();
         **config_account.to_account_info().try_borrow_mut_lamports()? = 0;
         **authority.try_borrow_mut_lamports()? = authority
             .lamports()
-            .checked_add(config_lamports)
+            .checked_add(lamports_to_reclaim)
             .ok_or(ArithmeticError)?;
 
+        // Emit closure event
         emit!(ConfigClosedEvent {
             authority: authority.key(),
-            lamports_reclaimed: config_lamports,
+            lamports_reclaimed: lamports_to_reclaim,
         });
 
         Ok(())
@@ -197,119 +198,119 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Transfer staker rewards according to the commission to the [RewardCollectionAccount]. This is invoked every leader turn.
+    /// Transfers staker rewards to the [RewardCollectionAccount] and Rakurai commission to commission account from `total_rewards`.
+    /// Invoked every leader turn.
     pub fn transfer_staker_rewards(
         ctx: Context<TransferStakerRewards>,
         total_rewards: u64,
     ) -> Result<()> {
         TransferStakerRewards::auth(&ctx)?;
 
-        if total_rewards <= 0 {
+        if total_rewards == 0 {
             return Err(RewardsTooLow.into());
         }
 
         let reward_collection_acc = &ctx.accounts.reward_collection_account;
-        let block_builder_fee = total_rewards
+
+        // Calculate Rakurai commission (basis points)
+        let rakurai_commission_amount = total_rewards
             .checked_mul(reward_collection_acc.rakurai_commission_bps as u64)
             .ok_or(ArithmeticError)?
             .checked_div(10_000)
             .ok_or(ArithmeticError)?;
 
         let staker_rewards = total_rewards
-            .checked_sub(block_builder_fee)
+            .checked_sub(rakurai_commission_amount)
             .ok_or(ArithmeticError)?;
 
-        if block_builder_fee > 0 {
+        // Transfer Rakurai commission if applicable
+        if rakurai_commission_amount > 0 {
             invoke(
                 &system_instruction::transfer(
                     &ctx.accounts.signer.key(),
-                    &&ctx
-                        .accounts
-                        .reward_collection_account
-                        .rakurai_commission_account
-                        .key(),
-                    block_builder_fee,
+                    &ctx.accounts.rakurai_commission_account.key(),
+                    rakurai_commission_amount,
                 ),
                 &[
                     ctx.accounts.signer.to_account_info(),
-                    ctx.accounts.rakurai_commission_account.clone(),
+                    ctx.accounts.rakurai_commission_account.to_account_info(),
                     ctx.accounts.system_program.to_account_info(),
                 ],
             )?;
         }
-        {
-            invoke(
-                &system_instruction::transfer(
-                    &ctx.accounts.signer.key(),
-                    &ctx.accounts
-                        .reward_collection_account
-                        .to_account_info()
-                        .key(),
-                    staker_rewards,
-                ),
-                &[
-                    ctx.accounts.signer.to_account_info(),
-                    ctx.accounts.reward_collection_account.to_account_info(),
-                    ctx.accounts.system_program.to_account_info(),
-                ],
-            )?;
-        }
+
+        // Transfer remaining rewards to [RewardCollectionAccount]
+        invoke(
+            &system_instruction::transfer(
+                &ctx.accounts.signer.key(),
+                &reward_collection_acc.key(),
+                staker_rewards,
+            ),
+            &[
+                ctx.accounts.signer.to_account_info(),
+                reward_collection_acc.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+        )?;
 
         emit!(StakerRewardsTransferredEvent {
             staker_rewards,
-            block_builder_commission: block_builder_fee,
-            total_rewards
+            rakurai_commission_amount,
+            total_rewards,
         });
 
         Ok(())
     }
 
-    pub fn transfer_mev_commission(
-        ctx: Context<TransferMevCommission>,
+    /// Deducts Rakurai commission from MEV rewards earned by the validator.
+    pub fn transfer_rakurai_commission_on_mev_commission(
+        ctx: Context<TransferRakuraiCommissionOnMevCommission>,
         mev_rewards: u64,
     ) -> Result<()> {
-        TransferMevCommission::auth(&ctx)?;
+        TransferRakuraiCommissionOnMevCommission::auth(&ctx)?;
 
-        if mev_rewards <= 0 {
+        if mev_rewards == 0 {
             return Err(RewardsTooLow.into());
         }
 
-        let reward_collection_acc = &ctx.accounts.reward_collection_account;
-        if reward_collection_acc.mev_commission_amount.is_some()
-            && reward_collection_acc.mev_commission_amount.unwrap() > 0
-        {
-            return Err(MevCommissionAlreadyDeducted.into());
+        let reward_collection_acc = &mut ctx.accounts.reward_collection_account;
+
+        // Prevent double deduction
+        if let Some(amount) = reward_collection_acc.rakurai_mev_commission_deducted {
+            if amount > 0 {
+                return Err(MevCommissionAlreadyDeducted.into());
+            }
         }
 
-        let block_builder_fee = mev_rewards
+        // Calculate Rakurai commission
+        let rakurai_mev_commission = mev_rewards
             .checked_mul(reward_collection_acc.rakurai_commission_bps as u64)
             .ok_or(ArithmeticError)?
             .checked_div(10_000)
             .ok_or(ArithmeticError)?;
 
-        if block_builder_fee > 0 {
+        // Transfer commission if > 0
+        if rakurai_mev_commission > 0 {
             invoke(
                 &system_instruction::transfer(
                     &ctx.accounts.signer.key(),
-                    &&ctx
-                        .accounts
-                        .reward_collection_account
-                        .rakurai_commission_account
-                        .key(),
-                    block_builder_fee,
+                    &ctx.accounts.rakurai_commission_account.key(),
+                    rakurai_mev_commission,
                 ),
                 &[
                     ctx.accounts.signer.to_account_info(),
-                    ctx.accounts.rakurai_commission_account.clone(),
+                    ctx.accounts.rakurai_commission_account.to_account_info(),
                     ctx.accounts.system_program.to_account_info(),
                 ],
             )?;
-            ctx.accounts.reward_collection_account.mev_commission_amount = Some(block_builder_fee);
+
+            reward_collection_acc.rakurai_mev_commission_deducted = Some(rakurai_mev_commission);
         }
 
-        emit!(MevRewardsTransferredEvent {
+        // Emit event
+        emit!(MevCommissionTransferredEvent {
             mev_rewards,
-            deducted: block_builder_fee
+            commission_amount: rakurai_mev_commission,
         });
 
         Ok(())
@@ -487,7 +488,7 @@ pub enum ErrorCode {
     #[msg("Rakurai's commission account must be equal to the RewardCollectionAccount account's rakurai_commission_account.")]
     InvalidRakuraiCommissionAccount,
 
-    #[msg("MEV commission already deducted")]
+    #[msg("MEV commission has already been deducted for this epoch")]
     MevCommissionAlreadyDeducted,
 }
 
@@ -761,7 +762,7 @@ impl TransferStakerRewards<'_> {
 
 /// Accounts required to transfer mev commission with Rakurai commission applied.
 #[derive(Accounts)]
-pub struct TransferMevCommission<'info> {
+pub struct TransferRakuraiCommissionOnMevCommission<'info> {
     /// CHECK:
     #[account(mut)]
     pub rakurai_commission_account: AccountInfo<'info>,
@@ -775,8 +776,8 @@ pub struct TransferMevCommission<'info> {
     pub signer: Signer<'info>,
 }
 
-impl TransferMevCommission<'_> {
-    fn auth(ctx: &Context<TransferMevCommission>) -> Result<()> {
+impl TransferRakuraiCommissionOnMevCommission<'_> {
+    fn auth(ctx: &Context<TransferRakuraiCommissionOnMevCommission>) -> Result<()> {
         if ctx.accounts.signer.key() != ctx.accounts.reward_collection_account.initializer {
             Err(Unauthorized.into())
         } else if ctx.accounts.rakurai_commission_account.key()
@@ -857,19 +858,24 @@ pub struct MerkleRootUploadedEvent {
     pub reward_collection_account: Pubkey,
 }
 
-// Emitted when a portion of funds is transferred to the staker.
+/// Emitted when staker rewards are transferred after deducting commission.
 #[event]
 pub struct StakerRewardsTransferredEvent {
+    // Total rewards for the last leader turn
     pub total_rewards: u64,
+    // Commission amount sent to block builder
+    pub rakurai_commission_amount: u64,
+    // Remaining rewards sent to [RewardCollectionAccount]
     pub staker_rewards: u64,
-    pub block_builder_commission: u64,
 }
 
-// Emitted when a portion of mev rewards is transferred to the rakurai commission account.
+/// Emitted when rakurai commission on MEV rewards is transferred.
 #[event]
-pub struct MevRewardsTransferredEvent {
+pub struct MevCommissionTransferredEvent {
+    // Total MEV rewards earned
     pub mev_rewards: u64,
-    pub deducted: u64,
+    // Amount deducted as Rakurai commission for total mev rewards.
+    pub commission_amount: u64,
 }
 
 // Emitted when a reward collection account is closed and unclaimed funds are returned.

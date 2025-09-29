@@ -10,7 +10,7 @@ pub struct InitializeArgs {
     pub authority: Pubkey,
     pub num_epochs_valid: u64,
     pub max_commission_bps: u16,
-    pub mev_commission_enabled: bool,
+    pub rakurai_commission_on_mev_commission_enabled: bool,
     pub bump: u8,
 }
 
@@ -31,7 +31,7 @@ pub fn initialize_ix(
         authority,
         num_epochs_valid,
         max_commission_bps,
-        mev_commission_enabled,
+        rakurai_commission_on_mev_commission_enabled,
         bump,
     } = args;
 
@@ -47,7 +47,7 @@ pub fn initialize_ix(
             authority,
             num_epochs_valid,
             max_commission_bps,
-            mev_commission_enabled,
+            rakurai_commission_on_mev_commission_enabled,
             bump,
         }
         .data(),
@@ -183,10 +183,10 @@ pub fn update_config_ix(
     }
 }
 
-/// Arguments for closing the config account (empty).
+/// Arguments for closing the reward distribution config account.
 pub struct CloseConfigArgs;
 
-/// Accounts needed to close the config account.
+/// Accounts required to close the reward distribution config account.
 pub struct CloseConfigAccounts {
     pub config: Pubkey,
     pub signer: Pubkey,
@@ -297,28 +297,28 @@ pub fn transfer_staker_rewards_ix(
     }
 }
 
-/// Total mev amount.
-pub struct TransferMevCommissionArgs {
+/// Total MEV rewards earned by the validator in the epoch (if MEV commission is set by validator in TipDistributionAccount).
+pub struct TransferRakuraiCommissionOnMevCommissionArgs {
     pub mev_rewards: u64,
 }
 
-/// Accounts required to transfer mev commission to Block Builder.
-pub struct TransferMevCommissionAccounts {
+/// Accounts required to transfer MEV commission to the Rakurai commission account.
+pub struct TransferRakuraiCommissionOnMevCommissionAccounts {
     pub rakurai_commission_account: Pubkey,
     pub reward_collection_account: Pubkey,
     pub system_program: Pubkey,
     pub signer: Pubkey,
 }
 
-/// Builds the instruction to transfer deduct mev commission from mev_rewards.
-pub fn transfer_mev_commission_ix(
+/// Builds the instruction to deduct Rakurai’s commission from the validator’s MEV rewards.
+pub fn transfer_rakurai_commission_on_mev_commission_ix(
     program_id: Pubkey,
-    args: TransferMevCommissionArgs,
-    accounts: TransferMevCommissionAccounts,
+    args: TransferRakuraiCommissionOnMevCommissionArgs,
+    accounts: TransferRakuraiCommissionOnMevCommissionAccounts,
 ) -> Instruction {
-    let TransferMevCommissionArgs { mev_rewards } = args;
+    let TransferRakuraiCommissionOnMevCommissionArgs { mev_rewards } = args;
 
-    let TransferMevCommissionAccounts {
+    let TransferRakuraiCommissionOnMevCommissionAccounts {
         rakurai_commission_account,
         reward_collection_account,
         system_program,
@@ -327,8 +327,8 @@ pub fn transfer_mev_commission_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::TransferMevCommission { mev_rewards }.data(),
-        accounts: crate::accounts::TransferMevCommission {
+        data: crate::instruction::TransferRakuraiCommissionOnMevCommission { mev_rewards }.data(),
+        accounts: crate::accounts::TransferRakuraiCommissionOnMevCommission {
             rakurai_commission_account,
             reward_collection_account,
             system_program,

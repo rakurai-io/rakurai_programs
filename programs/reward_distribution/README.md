@@ -69,20 +69,30 @@ When set to **Rakurai**, the rakurai will automatically:
 </p>
 
 ---
-### Rakurai MEV Commission
-Rakurai charges commission on MEV tips **only** if the following two conditions are met:
-- The validator is actively running **Rakurai during that epoch**.
-- The validator has set a non-zero **MEV commission** in Tip Distribution Account.
 
-*`Note`* If Validator MEV Commission is **0%:** Rakurai charges **nothing** on the MEV tips.
+### Rakurai Commission on MEV Rewards
+
+Rakurai charges commission on MEV Rewards **only** if the following conditions are met:
+
+- The validator is actively running **Rakurai during that epoch**.  
+- The validator has set a non-zero **MEV commission** in their **Tip Distribution Account**.
+
+*Note:* If the validator’s MEV commission is **0%**, Rakurai does **not** charge any commission on MEV tips.
+
+---
 
 ### Deduction Flow
- 1. Validator receives their share of MEV tips via Tip Distribution Program in the next epoch.
- 2. A `ClaimStatus` account is created when the validator receives their share.
- 3. We track the `ClaimStatus` account; once created, we deduct commission.
- 4. Commission is deducted using the `transfer_mev_commission` instruction of the Reward Distribution Program.
- 5. The commission rate is specified in the RewardDistribution Config account.
 
+1. The validator’s share of MEV tips is credited to their **vote account** by the Tip Distribution Program in the following epoch.  
+2. A `ClaimStatus` account is created to track that the validator has received MEV rewards.  
+3. Rakurai monitors the `ClaimStatus` account; once it is created, Rakurai is eligible to deduct commission.  
+4. Rakurai cannot deduct directly from the vote account, so the **same commission amount** is deducted from the validator’s **identity account** instead.  
+5. The deduction is performed by invoking the `transfer_mev_commission` instruction in the **Reward Distribution Program**.  
+6. The commission rate is defined in the **RewardDistribution Config account**.
+
+---
+
+Would you like me to also draw a **sequence diagram** (Validator Vote → ClaimStatus → Rakurai Commission from Identity) so it’s crystal clear how the flow works?
 ---
 
 ## Account Lifecycle

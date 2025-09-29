@@ -2,7 +2,7 @@
   "address": "A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB",
   "metadata": {
     "name": "reward_distribution",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "spec": "0.1.0",
     "description": "Solana program to distribute block rewards amongst Rakurai, validator, and stakers. Staker rewards accumulate in a collection account and are distributed post-epoch using a merkle root."
   },
@@ -83,7 +83,7 @@
           "type": "u16"
         },
         {
-          "name": "mev_commission_enabled",
+          "name": "rakurai_commission_on_mev_commission_enabled",
           "type": "bool"
         },
         {
@@ -301,7 +301,8 @@
     {
       "name": "transfer_staker_rewards",
       "docs": [
-        "Transfer staker rewards according to the commission to the [RewardCollectionAccount]. This is invoked every leader turn."
+        "Transfers staker rewards to the [RewardCollectionAccount] and Rakurai commission to commission account from `total_rewards`.",
+        "Invoked every leader turn."
       ],
       "discriminator": [
         114,
@@ -340,16 +341,19 @@
       ]
     },
     {
-      "name": "transfer_mev_commission",
+      "name": "transfer_rakurai_commission_on_mev_commission",
+      "docs": [
+        "Deducts Rakurai commission from MEV rewards earned by the validator."
+      ],
       "discriminator": [
-        155,
-        122,
-        7,
-        183,
-        97,
-        253,
+        210,
+        143,
+        167,
+        78,
         48,
-        87
+        37,
+        137,
+        239
       ],
       "accounts": [
         {
@@ -810,16 +814,16 @@
       ]
     },
     {
-      "name": "MevRewardsTransferredEvent",
+      "name": "MevCommissionTransferredEvent",
       "discriminator": [
-        28,
-        75,
+        185,
         121,
-        145,
-        141,
-        31,
-        142,
-        71
+        44,
+        3,
+        198,
+        205,
+        182,
+        85
       ]
     },
     {
@@ -950,6 +954,11 @@
       "code": 6014,
       "name": "InvalidRakuraiCommissionAccount",
       "msg": "Rakurai's commission account must be equal to the RewardCollectionAccount account's rakurai_commission_account."
+    },
+    {
+      "code": 6015,
+      "name": "MevCommissionAlreadyDeducted",
+      "msg": "MEV commission has already been deducted for this epoch"
     }
   ],
   "types": [
@@ -1198,7 +1207,10 @@
       }
     },
     {
-      "name": "MevRewardsTransferredEvent",
+      "name": "MevCommissionTransferredEvent",
+      "docs": [
+        "Emitted when rakurai commission on MEV rewards is transferred."
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -1207,7 +1219,7 @@
             "type": "u64"
           },
           {
-            "name": "deducted",
+            "name": "commission_amount",
             "type": "u64"
           }
         ]
@@ -1298,9 +1310,9 @@
             "type": "u8"
           },
           {
-            "name": "mev_commission_amount",
+            "name": "rakurai_mev_commission_deducted",
             "docs": [
-              "MEV commission amount if deducted."
+              "Amount of MEV commission deducted by Rakurai"
             ],
             "type": {
               "option": "u64"
@@ -1390,9 +1402,9 @@
             "type": "u8"
           },
           {
-            "name": "mev_commission_enabled",
+            "name": "rakurai_commission_on_mev_commission_enabled",
             "docs": [
-              "Whether MEV commission deduction is enabled."
+              "If enabled, Rakurai will also deduct its commission from the validator’s MEV commission."
             ],
             "type": {
               "option": "bool"
@@ -1403,6 +1415,9 @@
     },
     {
       "name": "StakerRewardsTransferredEvent",
+      "docs": [
+        "Emitted when staker rewards are transferred after deducting commission."
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -1411,11 +1426,11 @@
             "type": "u64"
           },
           {
-            "name": "staker_rewards",
+            "name": "rakurai_commission_amount",
             "type": "u64"
           },
           {
-            "name": "block_builder_commission",
+            "name": "staker_rewards",
             "type": "u64"
           }
         ]
