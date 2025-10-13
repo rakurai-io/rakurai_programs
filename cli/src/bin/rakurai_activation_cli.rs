@@ -283,7 +283,7 @@ fn process_init_pda(
     let vote_pubkey = AnchorPubkey::new_from_array(args.vote_pubkey.as_array().clone());
     let program_id = AnchorPubkey::new_from_array(program_id.as_array().clone());
 
-    let vote_state = get_vote_account(rpc_client.clone(), vote_pubkey)?;
+    let vote_state = get_vote_account(rpc_client.clone(), args.vote_pubkey)?;
     if vote_state.node_pubkey != signer_pubkey {
         return Err(format!(
             "❌ Unauthorized signer! Expected: {:?}, Found: {:?}",
