@@ -2,16 +2,14 @@ use {
     anchor_lang::AccountDeserialize,
     colored::*,
     rakurai_activation::state::{RakuraiActivationAccount, RakuraiActivationConfigAccount},
+    solana_instruction::Instruction,
+    solana_keypair::{read_keypair_file, Keypair},
+    solana_message::Message,
+    solana_pubkey::Pubkey,
     solana_rpc_client::rpc_client::RpcClient,
-    solana_sdk::{
-        instruction::Instruction,
-        message::Message,
-        pubkey::Pubkey,
-        signature::Keypair,
-        signer::{EncodableKey, Signer},
-        transaction::Transaction,
-        vote::state::{VoteState, VoteStateVersions},
-    },
+    solana_signer::Signer,
+    solana_transaction::Transaction,
+    solana_vote_program::vote_state::VoteStateV3,
     std::{path::Path, str::FromStr, sync::Arc},
 };
 
@@ -56,7 +54,7 @@ pub fn parse_keypair(path: &str) -> Result<Arc<Keypair>, Box<dyn std::error::Err
         )
         .into());
     }
-    Keypair::read_from_file(path)
+    read_keypair_file(path)
         .map(Arc::new)
         .map_err(|e| format!("Failed to read keypair from file {}: {}", expanded_path, e).into())
 }
@@ -161,10 +159,10 @@ pub fn display_activation_config_account(
 pub fn get_vote_account(
     rpc_client: Arc<RpcClient>,
     vote_pubkey: Pubkey,
-) -> Result<VoteState, Box<dyn std::error::Error>> {
+) -> Result<VoteStateV3, Box<dyn std::error::Error>> {
     let account_info = rpc_client.get_account(&vote_pubkey)?;
-    let vote_state_versions: VoteStateVersions = bincode::deserialize(&account_info.data)?;
-    Ok(vote_state_versions.convert_to_current())
+    VoteStateV3::deserialize(&account_info.data)
+        .map_err(|_| "Account data could not be deserialized to vote state".into())
 }
 
 pub fn sign_and_send_transaction(
