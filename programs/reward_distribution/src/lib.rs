@@ -61,8 +61,6 @@ pub mod reward_distribution {
     ) -> Result<()> {
         if validator_commission_bps > ctx.accounts.config.max_commission_bps
             || rakurai_commission_bps > ctx.accounts.config.max_commission_bps
-            || (validator_commission_bps + rakurai_commission_bps)
-                > ctx.accounts.config.max_commission_bps
         {
             return Err(MaxCommissionFeeBpsExceeded.into());
         }
@@ -240,18 +238,20 @@ pub mod reward_distribution {
         }
 
         // Transfer remaining rewards to [RewardCollectionAccount]
-        invoke(
-            &system_instruction::transfer(
-                &ctx.accounts.signer.key(),
-                &reward_collection_acc.key(),
-                staker_rewards,
-            ),
-            &[
-                ctx.accounts.signer.to_account_info(),
-                reward_collection_acc.to_account_info(),
-                ctx.accounts.system_program.to_account_info(),
-            ],
-        )?;
+        if staker_rewards > 0 {
+            invoke(
+                &system_instruction::transfer(
+                    &ctx.accounts.signer.key(),
+                    &reward_collection_acc.key(),
+                    staker_rewards,
+                ),
+                &[
+                    ctx.accounts.signer.to_account_info(),
+                    reward_collection_acc.to_account_info(),
+                    ctx.accounts.system_program.to_account_info(),
+                ],
+            )?;
+        }
 
         emit!(StakerRewardsTransferredEvent {
             staker_rewards,
