@@ -15,6 +15,8 @@ use {
     std::{path::Path, str::FromStr, sync::Arc},
 };
 
+pub const MAX_COMMISSION_BPS: u16 = 10_000;
+
 /// Parses and validates a Solana `Pubkey` from a string
 pub fn parse_pubkey(s: &str) -> Result<Pubkey, String> {
     Pubkey::from_str(s).map_err(|_| format!("Invalid Solana public key: {}", s))
@@ -88,13 +90,26 @@ pub fn display_activation_account(activation_account: RakuraiActivationAccount) 
         activation_account.is_enabled.to_string().blue()
     );
     println!(
-        "   {} {:<10} {}",
+        "   {} {:<10} {} ({}%) -> {}",
         "💰".green(),
         "Commission:",
         activation_account
             .validator_commission_bps
             .to_string()
-            .magenta()
+            .magenta(),
+        (activation_account.validator_commission_bps as f64 / 100.0),
+        if activation_account.validator_commission_bps == MAX_COMMISSION_BPS {
+            "Validator will keep 100% of the block rewards. No rewards will be distributed to stakers."
+                .green()
+                .to_string()
+        } else {
+            format!(
+                "{} Validator will keep {}% of the block rewards. The remaining {}% will be distributed among stakers.",
+                "Note:".yellow().bold(),
+                (activation_account.validator_commission_bps as f64 / 100.0),
+                ((MAX_COMMISSION_BPS - activation_account.validator_commission_bps) as f64 / 100.0),
+            )
+        },
     );
     println!(
         "   {} {:<10} {}",
@@ -110,15 +125,6 @@ pub fn display_activation_account(activation_account: RakuraiActivationAccount) 
             "📝".cyan(),
             "Proposer:",
             proposer.to_string()
-        );
-    }
-    if let Some(array) = activation_account.hash {
-        println!("{}", "📝 Hash".bold().underline().blue());
-        println!(
-            "   {} {:<10} {}",
-            "📝".cyan(),
-            "Hash:",
-            bs58::encode(array).into_string()
         );
     }
 }

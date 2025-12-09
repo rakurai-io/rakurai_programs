@@ -92,9 +92,6 @@ Rakurai charges commission on MEV Rewards **only** if the following conditions a
 
 ---
 
-Would you like me to also draw a **sequence diagram** (Validator Vote → ClaimStatus → Rakurai Commission from Identity) so it’s crystal clear how the flow works?
----
-
 ## Account Lifecycle
 
 - `RewardCollectionAccount` is valid for **10 epochs**.

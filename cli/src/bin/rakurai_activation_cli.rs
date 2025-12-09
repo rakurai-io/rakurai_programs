@@ -17,6 +17,7 @@ use {
         display_activation_account, display_activation_config_account, get_activation_account,
         get_activation_config_account, get_vote_account, normalize_to_url_if_moniker,
         parse_keypair, parse_pubkey, sign_and_send_transaction, validate_commission,
+        MAX_COMMISSION_BPS,
     },
     solana_rpc_client::rpc_client::RpcClient,
     solana_sdk::{
@@ -116,8 +117,8 @@ pub struct InitConfigArgs {
 #[command(arg_required_else_help = true, color = clap::ColorChoice::Always)]
 pub struct InitArgs {
     /// Initial commission percentage in base points (0 to 10,000)
-    #[arg(short = 'c', long = "commission_bps", required = true, value_parser = validate_commission, help = "Commission percentage in base points")]
-    pub commission_bps: u16,
+    #[arg(short = 'c', long = "block_reward_commission_bps", alias = "commission_bps", required = false, default_value_t = MAX_COMMISSION_BPS, value_parser = validate_commission, help = "Validator commission percentage on block rewards in base points (default: 10000 bps = 100%)")]
+    pub block_reward_commission_bps: u16,
 
     /// Validator vote account pubkey
     #[arg(short = 'v', long = "vote_pubkey", required = true, value_parser = parse_pubkey, help = "Validator vote account pubkey")]
@@ -158,8 +159,8 @@ pub struct SchedulerControlArgs {
 #[command(arg_required_else_help = true, color = clap::ColorChoice::Always)]
 pub struct UpdateCommissionArgs {
     /// New commission value in base points (0 to 10,000). If omitted, no change is made.
-    #[arg(short = 'c', long = "commission_bps", value_parser = validate_commission, help = "New commission value in base points")]
-    pub commission_bps: u16,
+    #[arg(short = 'c', long = "block_reward_commission_bps", value_parser = validate_commission, alias = "commission_bps", help = "Commission percentage on block rewards in base points (i.e: 100 bps = 1%)")]
+    pub block_reward_commission_bps: u16,
 
     /// Validator identity account pubkey
     #[arg(short = 'i', long = "identity_pubkey", required = true, value_parser = parse_pubkey, help = "Validator identity account pubkey")]
@@ -254,7 +255,7 @@ fn process_init_pda(
     args: InitArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let signer_pubkey = kp.pubkey();
-    let validator_commission_bps = args.commission_bps;
+    let validator_commission_bps = args.block_reward_commission_bps;
     let vote_pubkey = args.vote_pubkey;
 
     let vote_state = get_vote_account(rpc_client.clone(), vote_pubkey)?;
@@ -279,13 +280,27 @@ fn process_init_pda(
         activation_pubkey.to_string().bold().green()
     );
     println!(
-        "{} {}\n{} {}\n{} {}",
-        "🚀 Validator commission:".green(),
-        validator_commission_bps,
+        "\n{}\n  {} {} ({}%) -> {}\n  {} {}\n  {} {}",
+        "📝 Validator Configuration".bold().white(),
+        "💰 Commission:".green(),
+        format!("{} bps", validator_commission_bps),
+        (validator_commission_bps as f64 / 100.0),
+        if validator_commission_bps == MAX_COMMISSION_BPS {
+            "Validator will keep 100% of the block rewards. No rewards will be distributed to stakers."
+                .green()
+                .to_string()
+        } else {
+            format!(
+                "{} Validator will keep {}% of the block rewards. The remaining {}% will be distributed among stakers.",
+                "Note:".yellow().bold(),
+                (validator_commission_bps as f64 / 100.0),
+                ((MAX_COMMISSION_BPS - validator_commission_bps) as f64 / 100.0),
+            )
+        },
         "🏦 Vote Pubkey:".blue(),
         vote_pubkey,
         "🔗 Signer:".cyan(),
-        signer_pubkey
+        signer_pubkey,
     );
 
     let initialize_instruction = initialize_rakurai_activation_account_ix(
@@ -391,7 +406,7 @@ fn process_update_commission(
     args: UpdateCommissionArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let signer_pubkey = kp.pubkey();
-    let commission_bps = args.commission_bps;
+    let validator_commission_bps = args.block_reward_commission_bps;
     let identity_pubkey = args.identity_pubkey;
 
     let (activation_config_pubkey, _) = derive_config_account_address(&program_id);
@@ -410,9 +425,22 @@ fn process_update_commission(
         activation_pubkey.to_string().bold().green()
     );
     println!(
-        "{} {}\n{} {}\n{} {}",
-        "🚀 Commission BPS:".green(),
-        commission_bps,
+        "{} {} ({}%) -> {}\n{} {}\n{} {}",
+        "💰 Commission BPS:".green(),
+        format!("{} bps", validator_commission_bps),
+        (validator_commission_bps as f64 / 100.0),
+        if validator_commission_bps == MAX_COMMISSION_BPS {
+            "Validator will keep 100% of the block rewards. No rewards will be distributed to stakers."
+                .green()
+                .to_string()
+        } else {
+            format!(
+                "{} Validator will keep {}% of the block rewards. The remaining {}% will be distributed among stakers.",
+                "Note:".yellow().bold(),
+                (validator_commission_bps as f64 / 100.0),
+                ((MAX_COMMISSION_BPS - validator_commission_bps) as f64 / 100.0),
+            )
+        },
         "🏦 Identity Pubkey:".blue(),
         identity_pubkey,
         "🔗 Signer:".cyan(),
@@ -427,13 +455,15 @@ fn process_update_commission(
         )
         .into());
     }
-    if commission_bps == activation_account.validator_commission_bps {
+    if validator_commission_bps == activation_account.validator_commission_bps {
         return Err(format!("❌ No transaction required, commission value is unchanged.").into());
     }
 
     let update_commission_instruction = update_rakurai_activation_commission_ix(
         program_id,
-        UpdateRakuraiActivationCommissionArgs { commission_bps },
+        UpdateRakuraiActivationCommissionArgs {
+            commission_bps: validator_commission_bps,
+        },
         UpdateRakuraiActivationCommissionAccounts {
             config: activation_config_pubkey,
             validator_identity_account: identity_pubkey,
