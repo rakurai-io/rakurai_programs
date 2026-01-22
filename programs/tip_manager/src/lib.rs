@@ -4,7 +4,7 @@ use anchor_lang::prelude::*;
 #[cfg(not(feature = "no-entrypoint"))]
 use solana_security_txt::security_txt;
 
-use crate::TipManagerError::ArithmeticError;
+use crate::TipManagerError::{ArithmeticError, Unauthorized};
 
 #[cfg(not(feature = "no-entrypoint"))]
 security_txt! {
@@ -14,12 +14,14 @@ security_txt! {
     policy: "https://rakurai.io/faq"
 }
 
+pub mod sdk;
+
 declare_id!("RktiPddFAPzG7CbgRtzVk64VE2RPxeUu2PbbeYov2Ne");
 
 /// PDA Seeds
 
 /// Seed for the singleton configuration account
-pub const CONFIG_ACCOUNT_SEED: &[u8] = b"TIP_MANAGER_CONFIG_ACCOUNT";
+pub const TIP_MANAGER_CONFIG_ACCOUNT_SEED: &[u8] = b"TIP_MANAGER_CONFIG_ACCOUNT";
 /// Seeds for Rakurai tip accounts
 pub const RAKURAI_TIP_ACCOUNT_0_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_0";
 pub const RAKURAI_TIP_ACCOUNT_1_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_1";
@@ -63,6 +65,67 @@ pub mod tip_manager {
             rakurai_tip_account_7: ctx.bumps.rakurai_tip_account_7,
         };
 
+        Ok(())
+    }
+
+    /// Closes all Tip manager program accounts (8 tip accounts + config account) and reclaim rent.
+    /// Only the tip manager config authority can invoke this instruction.
+
+    pub fn close_tip_manager(ctx: Context<CloseTipManager>) -> Result<()> {
+        // Verify caller authority
+        CloseTipManager::auth(&ctx)?;
+
+        let authority = &mut ctx.accounts.signer;
+        let mut lamports_reclaimed = 0;
+
+        let config_account = &mut ctx.accounts.tip_manager_config;
+        // Transfer all lamports from config to authority
+        let lamports_to_reclaim = config_account.to_account_info().lamports();
+        **config_account.to_account_info().try_borrow_mut_lamports()? = 0;
+        **authority.try_borrow_mut_lamports()? = authority
+            .lamports()
+            .checked_add(lamports_to_reclaim)
+            .ok_or(ArithmeticError)?;
+        lamports_reclaimed += lamports_to_reclaim;
+
+        // Close All Tip Accounts
+        lamports_reclaimed += RakuraiTipAccount::close_account(
+            authority,
+            &ctx.accounts.rakurai_tip_account_0.to_account_info(),
+        )?;
+        lamports_reclaimed += RakuraiTipAccount::close_account(
+            authority,
+            &ctx.accounts.rakurai_tip_account_1.to_account_info(),
+        )?;
+        lamports_reclaimed += RakuraiTipAccount::close_account(
+            authority,
+            &ctx.accounts.rakurai_tip_account_2.to_account_info(),
+        )?;
+        lamports_reclaimed += RakuraiTipAccount::close_account(
+            authority,
+            &ctx.accounts.rakurai_tip_account_3.to_account_info(),
+        )?;
+        lamports_reclaimed += RakuraiTipAccount::close_account(
+            authority,
+            &ctx.accounts.rakurai_tip_account_4.to_account_info(),
+        )?;
+        lamports_reclaimed += RakuraiTipAccount::close_account(
+            authority,
+            &ctx.accounts.rakurai_tip_account_5.to_account_info(),
+        )?;
+        lamports_reclaimed += RakuraiTipAccount::close_account(
+            authority,
+            &ctx.accounts.rakurai_tip_account_6.to_account_info(),
+        )?;
+        lamports_reclaimed += RakuraiTipAccount::close_account(
+            authority,
+            &ctx.accounts.rakurai_tip_account_7.to_account_info(),
+        )?;
+
+        emit!(TipsManagerCloseEvent {
+            close_authority: authority.key(),
+            lamports_reclaimed,
+        });
         Ok(())
     }
 
@@ -207,6 +270,8 @@ pub mod tip_manager {
 pub enum TipManagerError {
     ArithmeticError,
     InvalidFee,
+    #[msg("Unauthorized signer.")]
+    Unauthorized,
 }
 
 /// PDA Bumps
@@ -233,7 +298,7 @@ pub struct InitializeTipManager<'info> {
     /// singleton account
     #[account(
         init,
-        seeds = [CONFIG_ACCOUNT_SEED],
+        seeds = [TIP_MANAGER_CONFIG_ACCOUNT_SEED],
         bump,
         payer = payer,
         space = TipManagerConfigAccount::SIZE,
@@ -319,10 +384,101 @@ pub struct InitializeTipManager<'info> {
 }
 
 #[derive(Accounts)]
+pub struct CloseTipManager<'info> {
+    /// singleton account
+    #[account(
+        mut,
+        close = signer,
+        seeds = [TIP_MANAGER_CONFIG_ACCOUNT_SEED],
+        bump,
+        rent_exempt = enforce
+    )]
+    pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
+    #[account(
+        mut,
+        close = signer,
+        seeds = [RAKURAI_TIP_ACCOUNT_0_SEED],
+        bump,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_0: Account<'info, RakuraiTipAccount>,
+    #[account(
+        mut,
+        close = signer,
+        seeds = [RAKURAI_TIP_ACCOUNT_1_SEED],
+        bump,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_1: Account<'info, RakuraiTipAccount>,
+    #[account(
+        mut,
+        close = signer,
+        seeds = [RAKURAI_TIP_ACCOUNT_2_SEED],
+        bump,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_2: Account<'info, RakuraiTipAccount>,
+    #[account(
+        mut,
+        close = signer,
+        seeds = [RAKURAI_TIP_ACCOUNT_3_SEED],
+        bump,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_3: Account<'info, RakuraiTipAccount>,
+    #[account(
+        mut,
+        close = signer,
+        seeds = [RAKURAI_TIP_ACCOUNT_4_SEED],
+        bump,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_4: Account<'info, RakuraiTipAccount>,
+    #[account(
+        mut,
+        close = signer,
+        seeds = [RAKURAI_TIP_ACCOUNT_5_SEED],
+        bump,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_5: Account<'info, RakuraiTipAccount>,
+    #[account(
+        mut,
+        close = signer,
+        seeds = [RAKURAI_TIP_ACCOUNT_6_SEED],
+        bump,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_6: Account<'info, RakuraiTipAccount>,
+    #[account(
+        mut,
+        close = signer,
+        seeds = [RAKURAI_TIP_ACCOUNT_7_SEED],
+        bump,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_7: Account<'info, RakuraiTipAccount>,
+
+    pub system_program: Program<'info, System>,
+    #[account(mut)]
+    pub signer: Signer<'info>,
+}
+
+impl CloseTipManager<'_> {
+    fn auth(ctx: &Context<CloseTipManager>) -> Result<()> {
+        if ctx.accounts.tip_manager_config.authority != ctx.accounts.signer.key() {
+            Err(Unauthorized.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[derive(Accounts)]
 pub struct ClaimTips<'info> {
     #[account(
         mut,
-        seeds = [CONFIG_ACCOUNT_SEED],
+        seeds = [TIP_MANAGER_CONFIG_ACCOUNT_SEED],
         bump = tip_manager_config.bumps.tip_manager_config,
         rent_exempt = enforce
     )]
@@ -624,6 +780,9 @@ impl<'info> ChangeBlockBuilder<'info> {
 #[account]
 #[derive(Default)]
 pub struct TipManagerConfigAccount {
+    /// Authorized updater of the config.
+    pub authority: Pubkey,
+
     /// Account receiving validator tips
     pub validator_tip_receiver_account: Pubkey,
 
@@ -638,7 +797,7 @@ pub struct TipManagerConfigAccount {
 }
 
 impl TipManagerConfigAccount {
-    pub const SIZE: usize = 8 + 32 + 32 + 8 + TipManagerBumps::SIZE;
+    pub const SIZE: usize = 8 + 32 + 32 + 32 + 8 + TipManagerBumps::SIZE;
 }
 
 /// Account that temporarily holds tips.
@@ -673,6 +832,17 @@ impl RakuraiTipAccount {
         **account.try_borrow_mut_lamports()? -= tips;
         Ok(tips)
     }
+
+    fn close_account(authority: &Signer, account: &AccountInfo) -> Result<u64> {
+        // Transfer all lamports from config to authority
+        let lamports_to_reclaim = account.to_account_info().lamports();
+        **account.to_account_info().try_borrow_mut_lamports()? = 0;
+        **authority.try_borrow_mut_lamports()? = authority
+            .lamports()
+            .checked_add(lamports_to_reclaim)
+            .ok_or(ArithmeticError)?;
+        Ok(lamports_to_reclaim)
+    }
 }
 
 /// Events
@@ -682,4 +852,10 @@ pub struct TipsClaimedEvent {
     pub tip_receiver_amount: u64,
     pub block_builder_commission_account: Pubkey,
     pub block_builder_amount: u64,
+}
+
+#[event]
+pub struct TipsManagerCloseEvent {
+    pub close_authority: Pubkey,
+    pub lamports_reclaimed: u64,
 }

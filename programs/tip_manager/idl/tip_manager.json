@@ -990,6 +990,349 @@
       "args": []
     },
     {
+      "name": "close_tip_manager",
+      "docs": [
+        "Closes all Tip manager program accounts (8 tip accounts + config account) and reclaim rent.",
+        "Only the tip manager config authority can invoke this instruction."
+      ],
+      "discriminator": [
+        60,
+        101,
+        1,
+        64,
+        164,
+        27,
+        19,
+        184
+      ],
+      "accounts": [
+        {
+          "name": "tip_manager_config",
+          "docs": [
+            "singleton account"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  84,
+                  73,
+                  80,
+                  95,
+                  77,
+                  65,
+                  78,
+                  65,
+                  71,
+                  69,
+                  82,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_tip_account_0",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  84,
+                  73,
+                  80,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84,
+                  95,
+                  48
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_tip_account_1",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  84,
+                  73,
+                  80,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84,
+                  95,
+                  49
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_tip_account_2",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  84,
+                  73,
+                  80,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84,
+                  95,
+                  50
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_tip_account_3",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  84,
+                  73,
+                  80,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84,
+                  95,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_tip_account_4",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  84,
+                  73,
+                  80,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84,
+                  95,
+                  52
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_tip_account_5",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  84,
+                  73,
+                  80,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84,
+                  95,
+                  53
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_tip_account_6",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  84,
+                  73,
+                  80,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84,
+                  95,
+                  54
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_tip_account_7",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  84,
+                  73,
+                  80,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84,
+                  95,
+                  55
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "initialize_tip_manager",
       "docs": [
         "Initializes the Rakurai Tip Manager by creating the singleton config PDA and eight Rakurai tip PDAs,",
@@ -1383,6 +1726,19 @@
         235,
         202
       ]
+    },
+    {
+      "name": "TipsManagerCloseEvent",
+      "discriminator": [
+        11,
+        216,
+        228,
+        20,
+        77,
+        114,
+        110,
+        53
+      ]
     }
   ],
   "errors": [
@@ -1393,6 +1749,11 @@
     {
       "code": 6001,
       "name": "InvalidFee"
+    },
+    {
+      "code": 6002,
+      "name": "Unauthorized",
+      "msg": "Unauthorized signer."
     }
   ],
   "types": [
@@ -1464,6 +1825,13 @@
         "kind": "struct",
         "fields": [
           {
+            "name": "authority",
+            "docs": [
+              "Authorized updater of the config."
+            ],
+            "type": "pubkey"
+          },
+          {
             "name": "validator_tip_receiver_account",
             "docs": [
               "Account receiving validator tips"
@@ -1520,6 +1888,22 @@
           },
           {
             "name": "block_builder_amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TipsManagerCloseEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "close_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "lamports_reclaimed",
             "type": "u64"
           }
         ]

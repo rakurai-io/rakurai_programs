@@ -1,5 +1,5 @@
 [package]
-name = "tip-manager"
+name = "tip_manager"
 version = "0.1.0"
 description = "Rakurai Tip Manager Program"
 edition = "2021"
