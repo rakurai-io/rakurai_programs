@@ -10,7 +10,7 @@ tip_manager = "RktiPddFAPzG7CbgRtzVk64VE2RPxeUu2PbbeYov2Ne"
 [programs.testnet]
 rakurai_activation = "pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt"
 reward_distribution = "A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB"
-tip_manager = "RktiPddFAPzG7CbgRtzVk64VE2RPxeUu2PbbeYov2Ne"
+tip_manager = "4qRZaFzf7MvgfBTCP9grb69cCST8UmKHPtkpGAgkJosD"
 
 [programs.localnet]
 rakurai_activation = "CuvTfdaxcDbvvtACkXrW2j69YeQbWuNnwg9FefYDrSug"
