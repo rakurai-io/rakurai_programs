@@ -51,7 +51,7 @@ pub mod tip_manager {
 
         cfg.validator_tip_receiver_account = ctx.accounts.payer.key();
         cfg.block_builder_commission_account = ctx.accounts.payer.key();
-        cfg.block_builder_commission_bps = 0;
+        cfg.block_builder_commission_bps = 10000;
         cfg.authority = ctx.accounts.payer.key();
 
         cfg.bumps = TipManagerBumps {
@@ -138,7 +138,7 @@ pub mod tip_manager {
         let block_builder_fee = total_tips
             .checked_mul(ctx.accounts.tip_manager_config.block_builder_commission_bps)
             .ok_or(ArithmeticError)?
-            .checked_div(100)
+            .checked_div(10000)
             .ok_or(ArithmeticError)?;
 
         let validator_fee = total_tips
@@ -182,7 +182,7 @@ pub mod tip_manager {
         let block_builder_fee = total_tips
             .checked_mul(ctx.accounts.tip_manager_config.block_builder_commission_bps)
             .ok_or(ArithmeticError)?
-            .checked_div(100)
+            .checked_div(10000)
             .ok_or(ArithmeticError)?;
 
         let validator_fee = total_tips
@@ -223,14 +223,19 @@ pub mod tip_manager {
     /// and old block builder) and then setting the new block builder and its commission.
     pub fn change_block_builder(
         ctx: Context<ChangeBlockBuilder>,
-        block_builder_commission: u64,
+        block_builder_commission_bps: u64,
     ) -> Result<()> {
+        require_gte!(
+            10000,
+            block_builder_commission_bps,
+            TipManagerError::InvalidFee
+        );
         let total_tips = RakuraiTipAccount::drain_accounts(ctx.accounts.get_tip_accounts())?;
 
         let block_builder_fee = total_tips
             .checked_mul(ctx.accounts.tip_manager_config.block_builder_commission_bps)
             .ok_or(ArithmeticError)?
-            .checked_div(100)
+            .checked_div(10000)
             .ok_or(ArithmeticError)?;
 
         let validator_fee = total_tips
@@ -260,7 +265,7 @@ pub mod tip_manager {
         ctx.accounts
             .tip_manager_config
             .block_builder_commission_account = ctx.accounts.new_block_builder.key();
-        ctx.accounts.tip_manager_config.block_builder_commission_bps = block_builder_commission;
+        ctx.accounts.tip_manager_config.block_builder_commission_bps = block_builder_commission_bps;
 
         Ok(())
     }

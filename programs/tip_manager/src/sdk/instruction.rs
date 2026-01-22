@@ -243,7 +243,7 @@ pub fn change_tip_receiver_ix(
 }
 
 pub struct ChangeBlockBuilderArgs {
-    pub block_builder_commission: u64,
+    pub block_builder_commission_bps: u64,
 }
 
 pub struct ChangeBlockBuilderAccounts {
@@ -269,7 +269,7 @@ pub fn change_block_builder_ix(
     accounts: ChangeBlockBuilderAccounts,
 ) -> Instruction {
     let ChangeBlockBuilderArgs {
-        block_builder_commission,
+        block_builder_commission_bps,
     } = args;
 
     let ChangeBlockBuilderAccounts {
@@ -291,7 +291,7 @@ pub fn change_block_builder_ix(
     Instruction {
         program_id,
         data: crate::instruction::ChangeBlockBuilder {
-            block_builder_commission,
+            block_builder_commission_bps,
         }
         .data(),
         accounts: crate::accounts::ChangeBlockBuilder {
