@@ -10,11 +10,12 @@ tip_manager = "RktiPddFAPzG7CbgRtzVk64VE2RPxeUu2PbbeYov2Ne"
 [programs.testnet]
 rakurai_activation = "pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt"
 reward_distribution = "A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB"
+tip_manager = "RktiPddFAPzG7CbgRtzVk64VE2RPxeUu2PbbeYov2Ne"
 
 [programs.localnet]
 rakurai_activation = "CuvTfdaxcDbvvtACkXrW2j69YeQbWuNnwg9FefYDrSug"
 reward_distribution = "CtVB7ze4Kz2iUHGrWLWY9EG5Au1erbRCMvKTWFuKv8wq"
-
+tip_manager = "RktiPddFAPzG7CbgRtzVk64VE2RPxeUu2PbbeYov2Ne"
 
 [registry]
 url = "https://api.apr.dev"
