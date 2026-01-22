@@ -1,0 +1,685 @@
+#![allow(unexpected_cfgs)]
+use anchor_lang::prelude::*;
+
+#[cfg(not(feature = "no-entrypoint"))]
+use solana_security_txt::security_txt;
+
+use crate::TipManagerError::ArithmeticError;
+
+#[cfg(not(feature = "no-entrypoint"))]
+security_txt! {
+    name: "Rakurai Tip Manager Program",
+    project_url: "https://github.com/rakurai-io/rakurai-validator",
+    contacts: "https://rakurai.io/company",
+    policy: "https://rakurai.io/faq"
+}
+
+declare_id!("RktiPddFAPzG7CbgRtzVk64VE2RPxeUu2PbbeYov2Ne");
+
+/// PDA Seeds
+
+/// Seed for the singleton configuration account
+pub const CONFIG_ACCOUNT_SEED: &[u8] = b"TIP_MANAGER_CONFIG_ACCOUNT";
+/// Seeds for Rakurai tip accounts
+pub const RAKURAI_TIP_ACCOUNT_0_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_0";
+pub const RAKURAI_TIP_ACCOUNT_1_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_1";
+pub const RAKURAI_TIP_ACCOUNT_2_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_2";
+pub const RAKURAI_TIP_ACCOUNT_3_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_3";
+pub const RAKURAI_TIP_ACCOUNT_4_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_4";
+pub const RAKURAI_TIP_ACCOUNT_5_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_5";
+pub const RAKURAI_TIP_ACCOUNT_6_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_6";
+pub const RAKURAI_TIP_ACCOUNT_7_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_7";
+
+/// Account discriminator size
+pub const HEADER: usize = 8;
+
+/// Rakurai Tip Manager Program: users send tips to one of eight tip accounts, validators periodically drain them
+/// and tips are split between the configured tip receiver and an block builder commission account.
+#[program]
+pub mod tip_manager {
+    use super::*;
+
+    /// Initializes the Rakurai Tip Manager by creating the singleton config PDA and eight Rakurai tip PDAs,
+    /// this instruction must be executed exactly once.
+    pub fn initialize_tip_manager(
+        ctx: Context<InitializeTipManager>,
+        _bumps: TipManagerBumps,
+    ) -> Result<()> {
+        let cfg = &mut ctx.accounts.tip_manager_config;
+
+        cfg.validator_tip_receiver_account = ctx.accounts.payer.key();
+        cfg.block_builder_commission_account = ctx.accounts.payer.key();
+        cfg.block_builder_commission_bps = 0;
+
+        cfg.bumps = TipManagerBumps {
+            tip_manager_config: ctx.bumps.tip_manager_config,
+            rakurai_tip_account_0: ctx.bumps.rakurai_tip_account_0,
+            rakurai_tip_account_1: ctx.bumps.rakurai_tip_account_1,
+            rakurai_tip_account_2: ctx.bumps.rakurai_tip_account_2,
+            rakurai_tip_account_3: ctx.bumps.rakurai_tip_account_3,
+            rakurai_tip_account_4: ctx.bumps.rakurai_tip_account_4,
+            rakurai_tip_account_5: ctx.bumps.rakurai_tip_account_5,
+            rakurai_tip_account_6: ctx.bumps.rakurai_tip_account_6,
+            rakurai_tip_account_7: ctx.bumps.rakurai_tip_account_7,
+        };
+
+        Ok(())
+    }
+
+    /// Claims all accumulated tips by draining all Rakurai tip accounts (preserving rent exemption) and splitting
+    /// the tips between the tip receiver and the block builder commission account.
+    pub fn claim_tips(ctx: Context<ClaimTips>) -> Result<()> {
+        let total_tips = RakuraiTipAccount::drain_accounts(ctx.accounts.get_tip_accounts())?;
+
+        let block_builder_fee = total_tips
+            .checked_mul(ctx.accounts.tip_manager_config.block_builder_commission_bps)
+            .ok_or(ArithmeticError)?
+            .checked_div(100)
+            .ok_or(ArithmeticError)?;
+
+        let validator_fee = total_tips
+            .checked_sub(block_builder_fee)
+            .ok_or(ArithmeticError)?;
+
+        if validator_fee > 0 {
+            **ctx
+                .accounts
+                .validator_tip_receiver_account
+                .try_borrow_mut_lamports()? += validator_fee;
+        }
+
+        if block_builder_fee > 0 {
+            **ctx
+                .accounts
+                .block_builder_commission_account
+                .try_borrow_mut_lamports()? += block_builder_fee;
+        }
+
+        if block_builder_fee > 0 || validator_fee > 0 {
+            emit!(TipsClaimedEvent {
+                validator_tip_receiver_account: ctx.accounts.validator_tip_receiver_account.key(),
+                tip_receiver_amount: validator_fee,
+                block_builder_commission_account: ctx
+                    .accounts
+                    .block_builder_commission_account
+                    .key(),
+                block_builder_amount: block_builder_fee,
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Changes the active tip receiver by first draining all pending tips (giving the old tip receiver and block builder
+    /// their respective shares) and then setting the new tip receiver for future tips.    
+    pub fn change_tip_receiver(ctx: Context<ChangeTipReceiver>) -> Result<()> {
+        let total_tips = RakuraiTipAccount::drain_accounts(ctx.accounts.get_tip_accounts())?;
+
+        let block_builder_fee = total_tips
+            .checked_mul(ctx.accounts.tip_manager_config.block_builder_commission_bps)
+            .ok_or(ArithmeticError)?
+            .checked_div(100)
+            .ok_or(ArithmeticError)?;
+
+        let validator_fee = total_tips
+            .checked_sub(block_builder_fee)
+            .ok_or(ArithmeticError)?;
+
+        if validator_fee > 0 {
+            **ctx.accounts.old_tip_receiver.try_borrow_mut_lamports()? += validator_fee;
+        }
+
+        if block_builder_fee > 0 {
+            **ctx
+                .accounts
+                .block_builder_commission_account
+                .try_borrow_mut_lamports()? += block_builder_fee;
+        }
+
+        if block_builder_fee > 0 || validator_fee > 0 {
+            emit!(TipsClaimedEvent {
+                validator_tip_receiver_account: ctx.accounts.old_tip_receiver.key(),
+                tip_receiver_amount: validator_fee,
+                block_builder_commission_account: ctx
+                    .accounts
+                    .block_builder_commission_account
+                    .key(),
+                block_builder_amount: block_builder_fee,
+            });
+        }
+
+        ctx.accounts
+            .tip_manager_config
+            .validator_tip_receiver_account = ctx.accounts.new_tip_receiver.key();
+
+        Ok(())
+    }
+
+    /// Changes the block builder and its commission by first draining all pending tips (distributing shares to the tip receiver
+    /// and old block builder) and then setting the new block builder and its commission.
+    pub fn change_block_builder(
+        ctx: Context<ChangeBlockBuilder>,
+        block_builder_commission: u64,
+    ) -> Result<()> {
+        let total_tips = RakuraiTipAccount::drain_accounts(ctx.accounts.get_tip_accounts())?;
+
+        let block_builder_fee = total_tips
+            .checked_mul(ctx.accounts.tip_manager_config.block_builder_commission_bps)
+            .ok_or(ArithmeticError)?
+            .checked_div(100)
+            .ok_or(ArithmeticError)?;
+
+        let validator_fee = total_tips
+            .checked_sub(block_builder_fee)
+            .ok_or(ArithmeticError)?;
+
+        if validator_fee > 0 {
+            **ctx
+                .accounts
+                .validator_tip_receiver_account
+                .try_borrow_mut_lamports()? += validator_fee;
+        }
+
+        if block_builder_fee > 0 {
+            **ctx.accounts.old_block_builder.try_borrow_mut_lamports()? += block_builder_fee;
+        }
+
+        if block_builder_fee > 0 || validator_fee > 0 {
+            emit!(TipsClaimedEvent {
+                validator_tip_receiver_account: ctx.accounts.validator_tip_receiver_account.key(),
+                tip_receiver_amount: validator_fee,
+                block_builder_commission_account: ctx.accounts.old_block_builder.key(),
+                block_builder_amount: block_builder_fee,
+            });
+        }
+
+        ctx.accounts
+            .tip_manager_config
+            .block_builder_commission_account = ctx.accounts.new_block_builder.key();
+        ctx.accounts.tip_manager_config.block_builder_commission_bps = block_builder_commission;
+
+        Ok(())
+    }
+}
+
+/// Errors
+#[error_code]
+pub enum TipManagerError {
+    ArithmeticError,
+    InvalidFee,
+}
+
+/// PDA Bumps
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
+pub struct TipManagerBumps {
+    pub tip_manager_config: u8,
+    pub rakurai_tip_account_0: u8,
+    pub rakurai_tip_account_1: u8,
+    pub rakurai_tip_account_2: u8,
+    pub rakurai_tip_account_3: u8,
+    pub rakurai_tip_account_4: u8,
+    pub rakurai_tip_account_5: u8,
+    pub rakurai_tip_account_6: u8,
+    pub rakurai_tip_account_7: u8,
+}
+
+impl TipManagerBumps {
+    pub const SIZE: usize = 9;
+}
+
+#[derive(Accounts)]
+#[instruction(tip_manager_bumps: TipManagerBumps)]
+pub struct InitializeTipManager<'info> {
+    /// singleton account
+    #[account(
+        init,
+        seeds = [CONFIG_ACCOUNT_SEED],
+        bump,
+        payer = payer,
+        space = TipManagerConfigAccount::SIZE,
+        rent_exempt = enforce
+    )]
+    pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
+    #[account(
+        init,
+        seeds = [RAKURAI_TIP_ACCOUNT_0_SEED],
+        bump,
+        payer = payer,
+        space = RakuraiTipAccount::SIZE,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_0: Account<'info, RakuraiTipAccount>,
+    #[account(
+        init,
+        seeds = [RAKURAI_TIP_ACCOUNT_1_SEED],
+        bump,
+        payer = payer,
+        space = RakuraiTipAccount::SIZE,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_1: Account<'info, RakuraiTipAccount>,
+    #[account(
+        init,
+        seeds = [RAKURAI_TIP_ACCOUNT_2_SEED],
+        bump,
+        payer = payer,
+        space = RakuraiTipAccount::SIZE,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_2: Account<'info, RakuraiTipAccount>,
+    #[account(
+        init,
+        seeds = [RAKURAI_TIP_ACCOUNT_3_SEED],
+        bump,
+        payer = payer,
+        space = RakuraiTipAccount::SIZE,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_3: Account<'info, RakuraiTipAccount>,
+    #[account(
+        init,
+        seeds = [RAKURAI_TIP_ACCOUNT_4_SEED],
+        bump,
+        payer = payer,
+        space = RakuraiTipAccount::SIZE,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_4: Account<'info, RakuraiTipAccount>,
+    #[account(
+        init,
+        seeds = [RAKURAI_TIP_ACCOUNT_5_SEED],
+        bump,
+        payer = payer,
+        space = RakuraiTipAccount::SIZE,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_5: Account<'info, RakuraiTipAccount>,
+    #[account(
+        init,
+        seeds = [RAKURAI_TIP_ACCOUNT_6_SEED],
+        bump,
+        payer = payer,
+        space = RakuraiTipAccount::SIZE,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_6: Account<'info, RakuraiTipAccount>,
+    #[account(
+        init,
+        seeds = [RAKURAI_TIP_ACCOUNT_7_SEED],
+        bump,
+        payer = payer,
+        space = RakuraiTipAccount::SIZE,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_7: Account<'info, RakuraiTipAccount>,
+
+    pub system_program: Program<'info, System>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimTips<'info> {
+    #[account(
+        mut,
+        seeds = [CONFIG_ACCOUNT_SEED],
+        bump = tip_manager_config.bumps.tip_manager_config,
+        rent_exempt = enforce
+    )]
+    pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_0_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_0,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_0: Account<'info, RakuraiTipAccount>,
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_1_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_1,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_1: Account<'info, RakuraiTipAccount>,
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_2_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_2,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_2: Account<'info, RakuraiTipAccount>,
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_3_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_3,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_3: Account<'info, RakuraiTipAccount>,
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_4_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_4,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_4: Account<'info, RakuraiTipAccount>,
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_5_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_5,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_5: Account<'info, RakuraiTipAccount>,
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_6_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_6,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_6: Account<'info, RakuraiTipAccount>,
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_7_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_7,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_7: Account<'info, RakuraiTipAccount>,
+
+    /// CHECK: this is the account that is configured to receive tips, which is constantly rotating and
+    /// can be an account with a private key to a PDA owned by some other program.
+    #[account(
+        mut,
+        constraint = tip_manager_config.validator_tip_receiver_account == validator_tip_receiver_account.key(),
+    )]
+    pub validator_tip_receiver_account: AccountInfo<'info>,
+
+    /// CHECK: only the current block builder can get tips
+    #[account(
+        mut,
+        constraint = tip_manager_config.block_builder_commission_account == block_builder_commission_account.key(),
+    )]
+    pub block_builder_commission_account: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub signer: Signer<'info>,
+}
+
+impl<'info> ClaimTips<'info> {
+    fn get_tip_accounts(&self) -> Vec<AccountInfo<'info>> {
+        vec![
+            self.rakurai_tip_account_0.to_account_info(),
+            self.rakurai_tip_account_1.to_account_info(),
+            self.rakurai_tip_account_2.to_account_info(),
+            self.rakurai_tip_account_3.to_account_info(),
+            self.rakurai_tip_account_4.to_account_info(),
+            self.rakurai_tip_account_5.to_account_info(),
+            self.rakurai_tip_account_6.to_account_info(),
+            self.rakurai_tip_account_7.to_account_info(),
+        ]
+    }
+}
+
+#[derive(Accounts)]
+pub struct ChangeTipReceiver<'info> {
+    #[account(mut)]
+    pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
+
+    /// CHECK: old_tip_receiver receives the funds in the RakuraiTipAccount accounts
+    #[account(mut, constraint = old_tip_receiver.key() == tip_manager_config.validator_tip_receiver_account)]
+    pub old_tip_receiver: AccountInfo<'info>,
+
+    /// CHECK: any new, writable account is allowed as a tip receiver.
+    #[account(mut)]
+    pub new_tip_receiver: AccountInfo<'info>,
+
+    /// CHECK: old_block_builder receives a % of funds in the RakuraiTipAccount accounts
+    #[account(mut, constraint = block_builder_commission_account.key() == tip_manager_config.block_builder_commission_account)]
+    pub block_builder_commission_account: AccountInfo<'info>,
+
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_0_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_0,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_0: Account<'info, RakuraiTipAccount>,
+
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_1_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_1,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_1: Account<'info, RakuraiTipAccount>,
+
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_2_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_2,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_2: Account<'info, RakuraiTipAccount>,
+
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_3_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_3,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_3: Account<'info, RakuraiTipAccount>,
+
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_4_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_4,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_4: Account<'info, RakuraiTipAccount>,
+
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_5_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_5,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_5: Account<'info, RakuraiTipAccount>,
+
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_6_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_6,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_6: Account<'info, RakuraiTipAccount>,
+
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_7_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_7,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_7: Account<'info, RakuraiTipAccount>,
+
+    #[account(mut)]
+    pub signer: Signer<'info>,
+}
+
+impl<'info> ChangeTipReceiver<'info> {
+    fn get_tip_accounts(&self) -> Vec<AccountInfo<'info>> {
+        vec![
+            self.rakurai_tip_account_0.to_account_info(),
+            self.rakurai_tip_account_1.to_account_info(),
+            self.rakurai_tip_account_2.to_account_info(),
+            self.rakurai_tip_account_3.to_account_info(),
+            self.rakurai_tip_account_4.to_account_info(),
+            self.rakurai_tip_account_5.to_account_info(),
+            self.rakurai_tip_account_6.to_account_info(),
+            self.rakurai_tip_account_7.to_account_info(),
+        ]
+    }
+}
+
+#[derive(Accounts)]
+pub struct ChangeBlockBuilder<'info> {
+    #[account(mut)]
+    pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
+
+    /// CHECK: old_tip_receiver receives the funds in the RakuraiTipAccount accounts
+    #[account(mut, constraint = validator_tip_receiver_account.key() == tip_manager_config.validator_tip_receiver_account)]
+    pub validator_tip_receiver_account: AccountInfo<'info>,
+
+    /// CHECK: old_block_builder receives a % of funds in the RakuraiTipAccount accounts
+    #[account(mut, constraint = old_block_builder.key() == tip_manager_config.block_builder_commission_account)]
+    pub old_block_builder: AccountInfo<'info>,
+
+    /// CHECK: any new, writable account is allowed as block builder
+    #[account(mut)]
+    pub new_block_builder: AccountInfo<'info>,
+
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_0_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_0,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_0: Account<'info, RakuraiTipAccount>,
+
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_1_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_1,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_1: Account<'info, RakuraiTipAccount>,
+
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_2_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_2,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_2: Account<'info, RakuraiTipAccount>,
+
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_3_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_3,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_3: Account<'info, RakuraiTipAccount>,
+
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_4_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_4,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_4: Account<'info, RakuraiTipAccount>,
+
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_5_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_5,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_5: Account<'info, RakuraiTipAccount>,
+
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_6_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_6,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_6: Account<'info, RakuraiTipAccount>,
+
+    #[account(
+        mut,
+        seeds = [RAKURAI_TIP_ACCOUNT_7_SEED],
+        bump = tip_manager_config.bumps.rakurai_tip_account_7,
+        rent_exempt = enforce
+    )]
+    pub rakurai_tip_account_7: Account<'info, RakuraiTipAccount>,
+
+    #[account(mut)]
+    pub signer: Signer<'info>,
+}
+
+impl<'info> ChangeBlockBuilder<'info> {
+    fn get_tip_accounts(&self) -> Vec<AccountInfo<'info>> {
+        vec![
+            self.rakurai_tip_account_0.to_account_info(),
+            self.rakurai_tip_account_1.to_account_info(),
+            self.rakurai_tip_account_2.to_account_info(),
+            self.rakurai_tip_account_3.to_account_info(),
+            self.rakurai_tip_account_4.to_account_info(),
+            self.rakurai_tip_account_5.to_account_info(),
+            self.rakurai_tip_account_6.to_account_info(),
+            self.rakurai_tip_account_7.to_account_info(),
+        ]
+    }
+}
+
+/// State Accounts
+
+/// Singleton configuration account for the Rakurai Tip Manager.
+#[account]
+#[derive(Default)]
+pub struct TipManagerConfigAccount {
+    /// Account receiving validator tips
+    pub validator_tip_receiver_account: Pubkey,
+
+    /// Block builder commission account
+    pub block_builder_commission_account: Pubkey,
+
+    /// Commission in basis points
+    pub block_builder_commission_bps: u64,
+
+    /// PDA bump seeds
+    pub bumps: TipManagerBumps,
+}
+
+impl TipManagerConfigAccount {
+    pub const SIZE: usize = 8 + 32 + 32 + 8 + TipManagerBumps::SIZE;
+}
+
+/// Account that temporarily holds tips.
+/// Eight accounts are maintained to reduce account write-lock contention.
+#[account]
+#[derive(Default)]
+pub struct RakuraiTipAccount {}
+
+impl RakuraiTipAccount {
+    pub const SIZE: usize = 8;
+
+    /// Drains all provided tip accounts while preserving rent exemption.
+    fn drain_accounts(accounts: Vec<AccountInfo>) -> Result<u64> {
+        let mut total = 0u64;
+        for account in accounts {
+            total = total
+                .checked_add(Self::drain_account(&account)?)
+                .ok_or(ArithmeticError)?;
+        }
+        Ok(total)
+    }
+
+    fn drain_account(account: &AccountInfo) -> Result<u64> {
+        let rent = Rent::get()?;
+        let min_rent = rent.minimum_balance(account.data_len());
+
+        let tips = account
+            .lamports()
+            .checked_sub(min_rent)
+            .ok_or(ArithmeticError)?;
+
+        **account.try_borrow_mut_lamports()? -= tips;
+        Ok(tips)
+    }
+}
+
+/// Events
+#[event]
+pub struct TipsClaimedEvent {
+    pub validator_tip_receiver_account: Pubkey,
+    pub tip_receiver_amount: u64,
+    pub block_builder_commission_account: Pubkey,
+    pub block_builder_amount: u64,
+}
