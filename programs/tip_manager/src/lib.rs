@@ -16,7 +16,7 @@ security_txt! {
 
 pub mod sdk;
 
-declare_id!("RktiPddFAPzG7CbgRtzVk64VE2RPxeUu2PbbeYov2Ne");
+declare_id!("4qRZaFzf7MvgfBTCP9grb69cCST8UmKHPtkpGAgkJosD");
 
 /// PDA Seeds
 
@@ -52,6 +52,7 @@ pub mod tip_manager {
         cfg.validator_tip_receiver_account = ctx.accounts.payer.key();
         cfg.block_builder_commission_account = ctx.accounts.payer.key();
         cfg.block_builder_commission_bps = 0;
+        cfg.authority = ctx.accounts.payer.key();
 
         cfg.bumps = TipManagerBumps {
             tip_manager_config: ctx.bumps.tip_manager_config,
