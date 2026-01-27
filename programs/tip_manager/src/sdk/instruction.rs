@@ -6,7 +6,7 @@ use anchor_lang::{
 use crate::TipManagerBumps;
 
 pub struct InitializeTipManagerArgs {
-    pub _bumps: TipManagerBumps,
+    pub bumps: TipManagerBumps,
 }
 
 pub struct InitializeTipManagerAccounts {
@@ -29,7 +29,7 @@ pub fn initialize_tip_manager_ix(
     args: InitializeTipManagerArgs,
     accounts: InitializeTipManagerAccounts,
 ) -> Instruction {
-    let InitializeTipManagerArgs { _bumps } = args;
+    let InitializeTipManagerArgs { bumps } = args;
 
     let InitializeTipManagerAccounts {
         tip_manager_config,
@@ -47,7 +47,7 @@ pub fn initialize_tip_manager_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::InitializeTipManager { _bumps }.data(),
+        data: crate::instruction::InitializeTipManager { bumps }.data(),
         accounts: crate::accounts::InitializeTipManager {
             tip_manager_config,
             rakurai_tip_account_0,

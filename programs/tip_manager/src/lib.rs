@@ -45,7 +45,7 @@ pub mod tip_manager {
     /// this instruction must be executed exactly once.
     pub fn initialize_tip_manager(
         ctx: Context<InitializeTipManager>,
-        _bumps: TipManagerBumps,
+        bumps: TipManagerBumps,
     ) -> Result<()> {
         let cfg = &mut ctx.accounts.tip_manager_config;
 
@@ -54,17 +54,7 @@ pub mod tip_manager {
         cfg.block_builder_commission_bps = 10000;
         cfg.authority = ctx.accounts.payer.key();
 
-        cfg.bumps = TipManagerBumps {
-            tip_manager_config: ctx.bumps.tip_manager_config,
-            rakurai_tip_account_0: ctx.bumps.rakurai_tip_account_0,
-            rakurai_tip_account_1: ctx.bumps.rakurai_tip_account_1,
-            rakurai_tip_account_2: ctx.bumps.rakurai_tip_account_2,
-            rakurai_tip_account_3: ctx.bumps.rakurai_tip_account_3,
-            rakurai_tip_account_4: ctx.bumps.rakurai_tip_account_4,
-            rakurai_tip_account_5: ctx.bumps.rakurai_tip_account_5,
-            rakurai_tip_account_6: ctx.bumps.rakurai_tip_account_6,
-            rakurai_tip_account_7: ctx.bumps.rakurai_tip_account_7,
-        };
+        cfg.bumps = bumps;
 
         Ok(())
     }
