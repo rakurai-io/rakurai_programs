@@ -15,9 +15,9 @@ use {
     },
     rakurai_cli::{
         display_activation_account, display_activation_config_account, get_activation_account,
-        get_activation_config_account, get_vote_account, normalize_to_url_if_moniker,
-        parse_keypair, parse_pubkey, sign_and_send_transaction, validate_commission,
-        MAX_COMMISSION_BPS,
+        get_activation_config_account, get_node_pubkey_from_vote_account,
+        normalize_to_url_if_moniker, parse_keypair, parse_pubkey, sign_and_send_transaction,
+        validate_commission, MAX_COMMISSION_BPS,
     },
     solana_rpc_client::rpc_client::RpcClient,
     solana_sdk::{
@@ -258,18 +258,17 @@ fn process_init_pda(
     let validator_commission_bps = args.block_reward_commission_bps;
     let vote_pubkey = args.vote_pubkey;
 
-    let vote_state = get_vote_account(rpc_client.clone(), vote_pubkey)?;
-    if vote_state.node_pubkey != signer_pubkey {
+    let node_pubkey = get_node_pubkey_from_vote_account(rpc_client.clone(), vote_pubkey)?;
+    if node_pubkey != signer_pubkey {
         return Err(format!(
             "❌ Unauthorized signer! Expected: {:?}, Found: {:?}",
-            vote_state.node_pubkey, signer_pubkey
+            node_pubkey, signer_pubkey
         )
         .into());
     }
 
     let (activation_config_pubkey, _) = derive_config_account_address(&program_id);
-    let (activation_pubkey, bump) =
-        derive_activation_account_address(&program_id, &vote_state.node_pubkey);
+    let (activation_pubkey, bump) = derive_activation_account_address(&program_id, &node_pubkey);
 
     println!(
         "📌 {}",
@@ -313,7 +312,7 @@ fn process_init_pda(
             config: activation_config_pubkey,
             system_program: system_program::id(),
             validator_vote_account: vote_pubkey,
-            validator_identity_account: vote_state.node_pubkey,
+            validator_identity_account: node_pubkey,
             activation_account: activation_pubkey,
             signer: signer_pubkey,
         },
