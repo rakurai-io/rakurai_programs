@@ -424,21 +424,25 @@ fn process_update_commission(
         activation_pubkey.to_string().bold().green()
     );
     println!(
-        "{} {} ({}%) -> {}\n{} {}\n{} {}",
+        "{} {} ({}%) {}\n{} {}\n{} {}",
         "💰 Commission BPS:".green(),
         format!("{} bps", validator_commission_bps),
         (validator_commission_bps as f64 / 100.0),
-        if validator_commission_bps == MAX_COMMISSION_BPS {
-            "Validator will keep 100% of the block rewards. No rewards will be distributed to stakers."
+        if signer_pubkey != activation_config_account.block_builder_authority {
+            if validator_commission_bps == MAX_COMMISSION_BPS {
+                "-> (Validator will keep 100% of the block rewards. No rewards will be distributed to stakers.)%"
                 .green()
                 .to_string()
-        } else {
-            format!(
-                "{} Validator will keep {}% of the block rewards. The remaining {}% will be distributed among stakers.",
+            } else {
+                format!(
+                "-> ({} Validator will keep {}% of the block rewards. The remaining {}% will be distributed among stakers.)%",
                 "Note:".yellow().bold(),
                 (validator_commission_bps as f64 / 100.0),
                 ((MAX_COMMISSION_BPS - validator_commission_bps) as f64 / 100.0),
             )
+            }
+        } else {
+            "".to_string()
         },
         "🏦 Identity Pubkey:".blue(),
         identity_pubkey,
