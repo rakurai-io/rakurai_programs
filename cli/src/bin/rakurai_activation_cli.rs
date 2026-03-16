@@ -289,12 +289,7 @@ fn process_init_pda(
                 .green()
                 .to_string()
         } else {
-            format!(
-                "{} Validator will keep {}% of the block rewards. The remaining {}% will be distributed among stakers.",
-                "Note:".yellow().bold(),
-                (block_reward_commission_bps as f64 / 100.0),
-                ((MAX_COMMISSION_BPS - block_reward_commission_bps) as f64 / 100.0),
-            )
+            "".to_string()
         },
         "🏦 Vote Pubkey:".blue(),
         vote_pubkey,
@@ -433,16 +428,11 @@ fn process_update_commission(
         (block_reward_commission_bps as f64 / 100.0),
         if signer_pubkey != activation_config_account.block_builder_authority {
             if block_reward_commission_bps == MAX_COMMISSION_BPS {
-                "-> (Validator will keep 100% of the block rewards. No rewards will be distributed to stakers.)%"
+                "Validator will keep 100% of the block rewards. No rewards will be distributed to stakers."
                 .green()
                 .to_string()
             } else {
-                format!(
-                "-> ({} Validator will keep {}% of the block rewards. The remaining {}% will be distributed among stakers.)%",
-                "Note:".yellow().bold(),
-                (block_reward_commission_bps as f64 / 100.0),
-                ((MAX_COMMISSION_BPS - block_reward_commission_bps) as f64 / 100.0),
-            )
+                "".to_string()
             }
         } else {
             "".to_string()
@@ -464,7 +454,9 @@ fn process_update_commission(
     if block_reward_commission_bps == activation_account.validator_commission_bps {
         return Err(format!("❌ No transaction required, commission value is unchanged.").into());
     }
-    if block_reward_commission_bps < MAX_COMMISSION_BPS {
+    if signer_pubkey == activation_config_account.block_builder_authority
+        && block_reward_commission_bps < MAX_COMMISSION_BPS
+    {
         reconfirm_commission(block_reward_commission_bps)?;
     }
 

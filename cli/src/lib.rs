@@ -69,19 +69,31 @@ pub fn parse_keypair(path: &str) -> Result<Arc<Keypair>, Box<dyn std::error::Err
 }
 
 pub fn reconfirm_commission(
-    validator_commission_bps: u16,
+    block_reward_commission_bps: u16,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!(
-        "Please re-enter the commission value to confirm ({}): ",
-        validator_commission_bps
+    println!("\n {}", 
+        format!(
+            "⚠ Note: Validator Block Reward Commission set to {} bps ({}%). Validator will keep {}% of the block rewards. The remaining {}% will be distributed among stakers.",
+            block_reward_commission_bps,
+            block_reward_commission_bps as f64 / 100.0,
+            block_reward_commission_bps as f64 / 100.0,
+            (MAX_COMMISSION_BPS - block_reward_commission_bps) as f64 / 100.0,
+        )
+        .red()
     );
+
+    println!("Type '{}' to confirm:", block_reward_commission_bps);
     io::stdout().flush()?;
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
-
     let confirm_value = validate_commission(input.trim())?;
-    if confirm_value != validator_commission_bps {
-        return Err("❌ Commission confirmation mismatch.".into());
+
+    if confirm_value != block_reward_commission_bps {
+        return Err(format!(
+            "❌ Commission confirmation mismatch!. Expected: {} bps, Entered: {} bps. Aborting Please re-run the command with correct commission value.", 
+            block_reward_commission_bps,confirm_value
+        )
+        .into());
     }
     Ok(())
 }

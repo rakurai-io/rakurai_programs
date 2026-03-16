@@ -19,17 +19,17 @@ The program maintains **eight separate tip accounts** (PDAs) to minimize account
 
 ## Mainnet Deployment
 
-**Tip Distribution Program ID:** `RktiPddFAPzG7CbgRtzVk64VE2RPxeUu2PbbeYov2Ne`
+**Tip Distribution Program ID:** `rKtiPTD7WuCdEEQ2JXWgAmZHHL9iZLc3niCXwtS7wSH`
 
 **Tip Accounts:**
-- `68HZJtXe2JZebJayzr3S1c4GvkToDsbPqV5kEUicFzj7`
-- `3GaWAjTUnnWawfjY9VAhdnFtRGS2mhEmPxLhp9Y1MiXU`
-- `4fKa2igaUM1eRVDruwdebYVoTsGiZnt6wiZMaV5DEUZY`
-- `fbmAcyyBK8nTFxMqrihznqB5F6C9Yd85oVbCQNVdX5F`
-- `28pXrSbnwAqeMofX3xK5grWfZfpaLSCA8ypvBwrRGHGH`
-- `Ec3HE4eZYig1vxQS2CWUvxKz5QPKdbceKdtzD3p8umQJ`
-- `u663r6C8NBzUNSbTJoqxoEY1nKq7qWV2ZZWTtWSFLGf`
-- `6mL1v8PBxnFGhEmf7j66NTsJZhNLUmU72aQFSMmzgQ5R`
+- `BjqjPHFmwr19YFmkH8CMNJFbj1wzX9k9ngr4am2nQEdq`
+- `9CNKnAqJgLA4pL6KByzhhdY4mKoQP5wcPdhJgnvvi5Ve`
+- `5wy4C2VMFhHE4i8PWKNS1K4SV275zjNwhLwfKBwajrro`
+- `AgMdA97pk2i2Ry4YQ4iVPNrRiFhcH3x3ARUCiQGt3vJG`
+- `4Qf8JFV5vmpADXNouoJriQ9KiniT5DENrz9JM2mKGH9m`
+- `AuFAFzbzE9dzMajy4RNdyJZBTskeiuJQqT2wd9xoGSRD`
+- `8aLaHz8595MAvgxKoBJEyZmDfqQp8CorezFGYnC7CPjy`
+- `H6hyJo6rpBmwHbvVuWCEHExJ2bE4rcn1hTPeiBtypus4`
 
 ---
 
@@ -66,8 +66,6 @@ These accounts are empty state accounts that hold SOL (lamports). When tips are 
 ## Integration with Reward Distribution
 
 When validators receive tips through the Tip Manager Program, these tips are credited to their epoch specific **[Reward Collection Account (RCA)](../reward_distribution/README.md)**. The [`Reward Distribution Program`](../reward_distribution/README.md) then handles the distribution of these tips, including any commission deductions for Rakurai if applicable.
-
-For more details on commission handling, see the [Reward Distribution Program documentation](../reward_distribution/README.md#rakurai-commission-on-mev-rewards).
 
 ---
 
