@@ -12,7 +12,12 @@ use {
         signer::{EncodableKey, Signer},
         transaction::Transaction,
     },
-    std::{path::Path, str::FromStr, sync::Arc},
+    std::{
+        io::{self, Write},
+        path::Path,
+        str::FromStr,
+        sync::Arc,
+    },
 };
 
 pub const MAX_COMMISSION_BPS: u16 = 10_000;
@@ -61,6 +66,24 @@ pub fn parse_keypair(path: &str) -> Result<Arc<Keypair>, Box<dyn std::error::Err
     Keypair::read_from_file(path)
         .map(Arc::new)
         .map_err(|e| format!("Failed to read keypair from file {}: {}", expanded_path, e).into())
+}
+
+pub fn reconfirm_commission(
+    validator_commission_bps: u16,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!(
+        "Please re-enter the commission value to confirm ({}): ",
+        validator_commission_bps
+    );
+    io::stdout().flush()?;
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+
+    let confirm_value = validate_commission(input.trim())?;
+    if confirm_value != validator_commission_bps {
+        return Err("❌ Commission confirmation mismatch.".into());
+    }
+    Ok(())
 }
 
 pub fn get_activation_account(

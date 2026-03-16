@@ -16,8 +16,8 @@ use {
     rakurai_cli::{
         display_activation_account, display_activation_config_account, get_activation_account,
         get_activation_config_account, get_node_pubkey_from_vote_account,
-        normalize_to_url_if_moniker, parse_keypair, parse_pubkey, sign_and_send_transaction,
-        validate_commission, MAX_COMMISSION_BPS,
+        normalize_to_url_if_moniker, parse_keypair, parse_pubkey, reconfirm_commission,
+        sign_and_send_transaction, validate_commission, MAX_COMMISSION_BPS,
     },
     solana_rpc_client::rpc_client::RpcClient,
     solana_sdk::{
@@ -301,6 +301,9 @@ fn process_init_pda(
         "🔗 Signer:".cyan(),
         signer_pubkey,
     );
+    if validator_commission_bps < MAX_COMMISSION_BPS {
+        reconfirm_commission(validator_commission_bps)?;
+    }
 
     let initialize_instruction = initialize_rakurai_activation_account_ix(
         program_id,
@@ -460,6 +463,9 @@ fn process_update_commission(
     }
     if validator_commission_bps == activation_account.validator_commission_bps {
         return Err(format!("❌ No transaction required, commission value is unchanged.").into());
+    }
+    if validator_commission_bps < MAX_COMMISSION_BPS {
+        reconfirm_commission(validator_commission_bps)?;
     }
 
     let update_commission_instruction = update_rakurai_activation_commission_ix(
