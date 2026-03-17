@@ -129,11 +129,11 @@ pub fn display_activation_account(activation_account: RakuraiActivationAccount) 
         "💰".green(),
         "Commission:",
         activation_account
-            .validator_commission_bps
+            .block_reward_commission_bps
             .to_string()
             .magenta(),
-        (activation_account.validator_commission_bps as f64 / 100.0),
-        if activation_account.validator_commission_bps == MAX_COMMISSION_BPS {
+        (activation_account.block_reward_commission_bps as f64 / 100.0),
+        if activation_account.block_reward_commission_bps == MAX_COMMISSION_BPS {
             "Validator will keep 100% of the block rewards. No rewards will be distributed to stakers."
                 .green()
                 .to_string()
@@ -141,8 +141,8 @@ pub fn display_activation_account(activation_account: RakuraiActivationAccount) 
             format!(
                 "{} Validator will keep {}% of the block rewards. The remaining {}% will be distributed among stakers.",
                 "Note:".yellow().bold(),
-                (activation_account.validator_commission_bps as f64 / 100.0),
-                ((MAX_COMMISSION_BPS - activation_account.validator_commission_bps) as f64 / 100.0),
+                (activation_account.block_reward_commission_bps as f64 / 100.0),
+                ((MAX_COMMISSION_BPS - activation_account.block_reward_commission_bps) as f64 / 100.0),
             )
         },
     );

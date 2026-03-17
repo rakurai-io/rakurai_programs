@@ -239,7 +239,7 @@
       ],
       "args": [
         {
-          "name": "validator_commission_bps",
+          "name": "block_reward_commission_bps",
           "type": "u16"
         },
         {
@@ -713,9 +713,9 @@
             "type": "pubkey"
           },
           {
-            "name": "validator_commission_bps",
+            "name": "block_reward_commission_bps",
             "docs": [
-              "Validator commission in basis points."
+              "Validator commission on Block Rewards in basis points."
             ],
             "type": "u16"
           },
