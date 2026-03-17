@@ -224,7 +224,7 @@
         {
           "name": "signer",
           "docs": [
-            "Payer for account creation; must sign the transaction. In this context, validator's identity account."
+            "Payer for account creation; must sign the transaction. In current context validator's identity account."
           ],
           "writable": true,
           "signer": true
