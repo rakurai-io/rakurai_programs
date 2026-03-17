@@ -256,8 +256,8 @@
                 "path": "validator_vote_account"
               },
               {
-                "kind": "const",
-                "value": "Clock.epoch"
+                "kind": "account",
+                "path": "Clock.epoch"
               }
             ]
           }
