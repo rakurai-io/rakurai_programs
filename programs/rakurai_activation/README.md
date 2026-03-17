@@ -1,8 +1,8 @@
 # Rakurai Activation Program
 
-A multisig-based Solana smart contract for enabling or disabling the Rakurai scheduler. It also governs the commission on block rewards for both the block builder (i.e., Rakurai) and the validator.
+A multisig-based Solana smart contract for enabling or disabling the Rakurai scheduler. It also governs the commission on block rewards for both the block builder (i.e., Rakurai), which is currently set to 0, and the validator.
 
-Note: The remaining block rewards after deducting the two commissions are distributed to stakers via the [`RewardDistributionProgram`](../reward_distribution/README.md).
+Note: The remaining block rewards after the deduction of commission are distributed to stakers via the [`RewardDistributionProgram`](../reward_distribution/README.md).
 
 ➤ For more details, refer to the [IDL File](./idl/rakurai_activation.json).
 
@@ -15,7 +15,7 @@ Each validator must create a **Rakurai Activation Account (RAA)** — a **PDA jo
 This account governs:
 - Whether the validator is **actively using the Rakurai Scheduler** to schedule their blocks or not.
 - The **commission percentage** the validator wants to retain from total block rewards.
-- Rakurai's commission from total block rewards (set during initialization, read from global config (**Rakurai Activation Config Account**)).
+- Rakurai's commission from total block rewards (set during initialization, read from global config (**Rakurai Activation Config Account**)). Rakurai plans to introduce a small commission in the future.
 
 ---
 
@@ -32,14 +32,14 @@ This program implements a 2-party asynchronous multisig:
 > Unlike traditional multisig, both parties do not sign the same transaction. Instead, actions are proposed and approved via separate transactions.
 ---
 
-## RakuraiActivationAccount Account Creation
+## Rakurai Activation Account Account Creation
 
 - The validator initializes their **RakuraiActivationAccount** PDA using:
   - Their **identity pubkey**.
   - A seed constant.
 - During creation, the validator specifies:
   - `validator_commission_bps` (0–10000) — validator wants to retain from total block rewards.
-  - Rakurai's commission is fetched from a global config account (**Rakurai Activation Config Account**), a PDA under the same program.
+  - Rakurai's commission is fetched from a global config account (**Rakurai Activation Config Account**), a PDA under the same program. This value is currently 0 bps, though Rakurai plans to charge a small commission on the block rewards in the future.
 
 Once created, this account:
 - Authorizes Rakurai reward logic on-chain.

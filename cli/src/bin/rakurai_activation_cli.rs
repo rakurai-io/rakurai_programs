@@ -442,7 +442,8 @@ fn process_update_commission(
         "🔗 Signer:".cyan(),
         signer_pubkey
     );
-    if !(signer_pubkey == identity_pubkey
+
+    if !(signer_pubkey == activation_account.validator_authority
         || signer_pubkey == activation_config_account.block_builder_authority)
     {
         return Err(format!(
@@ -451,10 +452,14 @@ fn process_update_commission(
         )
         .into());
     }
-    if block_reward_commission_bps == activation_account.validator_commission_bps {
+    if signer_pubkey == activation_account.validator_authority
+        && block_reward_commission_bps == activation_account.validator_commission_bps
+        || signer_pubkey == activation_config_account.block_builder_authority
+            && block_reward_commission_bps == activation_account.block_builder_commission_bps
+    {
         return Err(format!("❌ No transaction required, commission value is unchanged.").into());
     }
-    if signer_pubkey == activation_config_account.block_builder_authority
+    if signer_pubkey == activation_account.validator_authority
         && block_reward_commission_bps < MAX_COMMISSION_BPS
     {
         reconfirm_commission(block_reward_commission_bps)?;
