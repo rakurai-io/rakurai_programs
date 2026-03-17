@@ -17,8 +17,8 @@ cpi = ["no-entrypoint"]
 default = []
 
 [dependencies]
-anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "8b391aa278387b6f6ce3133453619a175544631e" }
+anchor-lang = { path = "../../../anchor/lang" }
 rakurai_activation = { path = "../rakurai_activation", features = ["no-entrypoint"] }
 reward_distribution = { path = "../reward_distribution", features = ["no-entrypoint"] }
 solana-security-txt = "1.1.1"
-solana-program = "2.1.21"
+solana-program = "2"
