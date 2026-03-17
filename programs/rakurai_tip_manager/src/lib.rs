@@ -59,6 +59,7 @@ pub const RAKURAI_REVENUE_NAME: [u8; 32] = {
 
 /// Rakurai Tip Manager Program: users send tips to one of eight tip accounts, validators periodically drain them
 /// and tips are split between the configured tip receiver and an client commission account.
+#[allow(deprecated)]
 #[program]
 pub mod rakurai_tip_manager {
     use super::*;
@@ -238,13 +239,14 @@ pub mod rakurai_tip_manager {
                     record_authority: ctx.accounts.record_authority.key(),
                 },
             );
+            let record_authority_bump = *ctx.bumps.get("record_authority").unwrap();
             invoke_signed(
                 &record_ix,
                 &[
                     ctx.accounts.old_tip_receiver.to_account_info(),
                     ctx.accounts.record_authority.to_account_info(),
                 ],
-                &[&[RECORD_AUTHORITY_SEED, &[ctx.bumps.record_authority]]],
+                &[&[RECORD_AUTHORITY_SEED, &[record_authority_bump]]],
             )?;
         }
 

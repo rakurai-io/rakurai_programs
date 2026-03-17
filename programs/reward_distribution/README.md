@@ -59,10 +59,10 @@ At the final slot of each epoch, the following process takes place:
 
 ## Reward Distribution — Free & Automated by Rakurai
 
-- Set this merkle root authority to [**Rakurai**](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/validators/readme) for fully automated reward distribution.
+- Set this merkle root authority to *Rakurai*(../../../validators/setup_and_build.md#4-add-additional-cli-args) for fully automated reward distribution.
 - Keep it yourself if you want to do the distribution yourself.
 
-When set to **Rakurai**, the rakurai will automatically:
+When set to **Rakurai**, Rakurai will automatically:
 1. **Create a snapshot**
 2. **Calculate the Merkle root**
 3. **Upload it on-chain**
@@ -77,7 +77,7 @@ When set to **Rakurai**, the rakurai will automatically:
 
 ### Client Commission on MEV Rewards
 
-client charges commission on MEV Rewards **only** if the following conditions are met:
+The client charges commission on MEV Rewards **only** if the following conditions are met:
 
 - The validator is actively running **Rakurai during that epoch**.  
 - The validator has set a non-zero **MEV commission** in their **Tip Distribution Account**.
@@ -105,13 +105,13 @@ Both are the same underlying `RevenueShareAccount`, parameterized by `share_kind
 
 ### Why a **Tips Collection Account** (TCA)
 
-By default, searchers tip Rakurai's [eight tip accounts](../rakurai_tip_manager/README.md) , and `rakurai_tip_manager` drains them automatically. But an external operator/searcher can [register their own custom tip account](https://docs.rakurai.io) and agree to share a commission (e.g. 30%) with Rakurai.
+By default, searchers tip Rakurai's [eight tip accounts](../rakurai_tip_manager/README.md), and `rakurai_tip_manager` drains them automatically. But an external operator/searcher can [register their own custom tip account](../../../transaction_inclusion/rakurai_tip_manager_faqs.md#4-can-i-use-my-own-tip-account-instead-of-rakurais-eight-accounts) and agree to share a commission (e.g. 30%) with Rakurai.
 
 In that case **the tip is received in the external account holder's own account**, not in a Rakurai tip account. So Rakurai can't just drain it — instead the validator **records** the attributed amount every leader turn, and after the epoch the external account holder **settles** their agreed share into the Tips Collection Account PDA, from which the commission is deducted.
 
 ### Why a **Mev Share Collection Account** (MCA)
 
-Same idea for [post-pack confirmations](https://docs.rakurai.io) used for MEV / arbitrage. The MEV-share revenue lands in the external account holder's own flow, so there's no account Rakurai can drain. We **trust the revenue source to share an agreed percentage** of MEV-share revenue; the validator records attribution per turn and the external account holder settles into the Mev Share Collection Account — exactly the same flow as tips, just a different `share_kind`.
+Same idea for [post-pack confirmations](../../../transaction_inclusion/post_pack_confirmations.md) used for MEV / arbitrage. The MEV-share revenue lands in the external account holder's own flow, so there's no account Rakurai can drain. We **trust the revenue source to share an agreed percentage** of MEV-share revenue; the validator records attribution per turn and the external account holder settles into the Mev Share Collection Account — exactly the same flow as tips, just a different `share_kind`.
 
 ### How Tip & MevShare are Distributed
 
@@ -132,8 +132,6 @@ The attributed amount is recorded in the account's ledger. After the epoch ends,
 | **Record** | `record_authority` | `record_revenue(amount)` each leader turn — ledger only, no lamport move |
 | **Settle** | searcher/trader | Post-epoch SOL transfer into the revenue-share PDA (≥ last epoch recorded amount) |
 | **Claim** | `manager_authority` | `claim_revenue(epoch)` after epoch ends — splits `commission_bps` → `commission_account`, rest → validator identity |
-| **Config** | `manager_authority` | `update_revenue_share_config` |
-| **Close** | `manager_authority` | `close_revenue_share_account` — rent to `initializer` |
 
 ### How to Check Status
 
