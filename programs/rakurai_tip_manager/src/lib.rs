@@ -38,6 +38,7 @@ const MAX_COMMISSION_BPS: u64 = 10_000;
 
 /// Rakurai Tip Manager Program: users send tips to one of eight tip accounts, validators periodically drain them
 /// and tips are split between the configured tip receiver and an block builder commission account.
+#[allow(deprecated)]
 #[program]
 pub mod rakurai_tip_manager {
     use super::*;
