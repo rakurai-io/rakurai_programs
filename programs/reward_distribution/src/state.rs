@@ -14,8 +14,8 @@ pub struct RewardDistributionConfigAccount {
     pub max_commission_bps: u16,
     /// PDA bump.
     pub bump: u8,
-    /// If enabled, Rakurai will also deduct its commission from the validator’s MEV commission.
-    pub rakurai_commission_on_mev_commission_enabled: Option<bool>,
+    /// If enabled, Block Builder will also deduct its commission from the validator’s MEV commission.
+    pub block_builder_commission_on_mev_commission_enabled: Option<bool>,
 }
 
 /// Stores validator reward collection account data for a given epoch.
@@ -30,20 +30,20 @@ pub struct RewardCollectionAccount {
     pub merkle_root: Option<MerkleRoot>,
     /// Epoch when account was initialized.
     pub creation_epoch: u64,
-    /// Commission taken by validator (bps).
-    pub validator_commission_bps: u16,
-    /// Commission taken by Rakurai (bps).
-    pub rakurai_commission_bps: u16,
-    /// Account receiving Rakurai commission.
-    pub rakurai_commission_account: Pubkey,
+    /// Commission on Block Rewards taken by validator specified in basis points.
+    pub block_reward_commission_bps: u16,
+    /// Commission on block rewards & MEV tips specified in basis points; deducted if enabled.
+    pub block_builder_commission_bps: u16,
+    /// Account receiving block builder commission.
+    pub block_builder_commission_account: Pubkey,
     /// Epoch when claims expire.
     pub expires_at: u64,
     /// Who initialized the account (validator identity).
     pub initializer: Pubkey,
     /// PDA bump.
     pub bump: u8,
-    /// Amount of MEV commission deducted by Rakurai.
-    pub rakurai_mev_commission_deducted: Option<u64>,
+    /// Amount of MEV commission deducted by Block Builder (if enabled).
+    pub block_builder_mev_commission_deducted: Option<u64>,
 }
 
 /// Metadata about the Merkle root used for claims.
@@ -72,18 +72,18 @@ impl RewardDistributionConfigAccount {
 
     /// Gets whether MEV commission is enabled, defaulting to false for old configs.
     pub fn is_mev_commission_enabled(&self) -> bool {
-        self.rakurai_commission_on_mev_commission_enabled
+        self.block_builder_commission_on_mev_commission_enabled
             .unwrap_or(false)
     }
 
     /// Sets MEV commission enabled status.
     pub fn set_mev_commission_enabled(&mut self, enabled: bool) {
-        self.rakurai_commission_on_mev_commission_enabled = Some(enabled);
+        self.block_builder_commission_on_mev_commission_enabled = Some(enabled);
     }
 
     /// Checks if MEV commission setting is configured.
     pub fn has_mev_commission_setting(&self) -> bool {
-        self.rakurai_commission_on_mev_commission_enabled.is_some()
+        self.block_builder_commission_on_mev_commission_enabled.is_some()
     }
 
     /// Validates config constraints.
@@ -114,7 +114,7 @@ impl RewardCollectionAccount {
         let default_pubkey = Pubkey::default();
         if self.validator_vote_account == default_pubkey
             || self.merkle_root_upload_authority == default_pubkey
-            || self.rakurai_commission_account == default_pubkey
+            || self.block_builder_commission_account == default_pubkey
         {
             return Err(AccountValidationFailure.into());
         }
