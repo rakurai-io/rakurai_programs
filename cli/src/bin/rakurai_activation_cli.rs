@@ -15,9 +15,9 @@ use {
     },
     rakurai_cli::{
         display_activation_account, display_activation_config_account, get_activation_account,
-        get_activation_config_account, get_vote_account, normalize_to_url_if_moniker,
-        parse_keypair, parse_pubkey, sign_and_send_transaction, validate_commission,
-        MAX_COMMISSION_BPS,
+        get_activation_config_account, get_node_pubkey_from_vote_account,
+        normalize_to_url_if_moniker, parse_keypair, parse_pubkey, reconfirm_commission,
+        sign_and_send_transaction, validate_commission, MAX_COMMISSION_BPS,
     },
     solana_rpc_client::rpc_client::RpcClient,
     solana_sdk::{
@@ -255,21 +255,20 @@ fn process_init_pda(
     args: InitArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let signer_pubkey = kp.pubkey();
-    let validator_commission_bps = args.block_reward_commission_bps;
+    let block_reward_commission_bps = args.block_reward_commission_bps;
     let vote_pubkey = args.vote_pubkey;
 
-    let vote_state = get_vote_account(rpc_client.clone(), vote_pubkey)?;
-    if vote_state.node_pubkey != signer_pubkey {
+    let node_pubkey = get_node_pubkey_from_vote_account(rpc_client.clone(), vote_pubkey)?;
+    if node_pubkey != signer_pubkey {
         return Err(format!(
             "❌ Unauthorized signer! Expected: {:?}, Found: {:?}",
-            vote_state.node_pubkey, signer_pubkey
+            node_pubkey, signer_pubkey
         )
         .into());
     }
 
     let (activation_config_pubkey, _) = derive_config_account_address(&program_id);
-    let (activation_pubkey, bump) =
-        derive_activation_account_address(&program_id, &vote_state.node_pubkey);
+    let (activation_pubkey, bump) = derive_activation_account_address(&program_id, &node_pubkey);
 
     println!(
         "📌 {}",
@@ -283,37 +282,35 @@ fn process_init_pda(
         "\n{}\n  {} {} ({}%) -> {}\n  {} {}\n  {} {}",
         "📝 Validator Configuration".bold().white(),
         "💰 Commission:".green(),
-        format!("{} bps", validator_commission_bps),
-        (validator_commission_bps as f64 / 100.0),
-        if validator_commission_bps == MAX_COMMISSION_BPS {
+        format!("{} bps", block_reward_commission_bps),
+        (block_reward_commission_bps as f64 / 100.0),
+        if block_reward_commission_bps == MAX_COMMISSION_BPS {
             "Validator will keep 100% of the block rewards. No rewards will be distributed to stakers."
                 .green()
                 .to_string()
         } else {
-            format!(
-                "{} Validator will keep {}% of the block rewards. The remaining {}% will be distributed among stakers.",
-                "Note:".yellow().bold(),
-                (validator_commission_bps as f64 / 100.0),
-                ((MAX_COMMISSION_BPS - validator_commission_bps) as f64 / 100.0),
-            )
+            "".to_string()
         },
         "🏦 Vote Pubkey:".blue(),
         vote_pubkey,
         "🔗 Signer:".cyan(),
         signer_pubkey,
     );
+    if block_reward_commission_bps < MAX_COMMISSION_BPS {
+        reconfirm_commission(block_reward_commission_bps)?;
+    }
 
     let initialize_instruction = initialize_rakurai_activation_account_ix(
         program_id,
         InitializeRakuraiActivationAccountArgs {
-            validator_commission_bps,
+            block_reward_commission_bps,
             bump,
         },
         InitializeRakuraiActivationAccountAccounts {
             config: activation_config_pubkey,
             system_program: system_program::id(),
             validator_vote_account: vote_pubkey,
-            validator_identity_account: vote_state.node_pubkey,
+            validator_identity_account: node_pubkey,
             activation_account: activation_pubkey,
             signer: signer_pubkey,
         },
@@ -406,7 +403,7 @@ fn process_update_commission(
     args: UpdateCommissionArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let signer_pubkey = kp.pubkey();
-    let validator_commission_bps = args.block_reward_commission_bps;
+    let block_reward_commission_bps = args.block_reward_commission_bps;
     let identity_pubkey = args.identity_pubkey;
 
     let (activation_config_pubkey, _) = derive_config_account_address(&program_id);
@@ -425,28 +422,28 @@ fn process_update_commission(
         activation_pubkey.to_string().bold().green()
     );
     println!(
-        "{} {} ({}%) -> {}\n{} {}\n{} {}",
+        "{} {} ({}%) {}\n{} {}\n{} {}",
         "💰 Commission BPS:".green(),
-        format!("{} bps", validator_commission_bps),
-        (validator_commission_bps as f64 / 100.0),
-        if validator_commission_bps == MAX_COMMISSION_BPS {
-            "Validator will keep 100% of the block rewards. No rewards will be distributed to stakers."
+        format!("{} bps", block_reward_commission_bps),
+        (block_reward_commission_bps as f64 / 100.0),
+        if signer_pubkey != activation_config_account.block_builder_authority {
+            if block_reward_commission_bps == MAX_COMMISSION_BPS {
+                "Validator will keep 100% of the block rewards. No rewards will be distributed to stakers."
                 .green()
                 .to_string()
+            } else {
+                "".to_string()
+            }
         } else {
-            format!(
-                "{} Validator will keep {}% of the block rewards. The remaining {}% will be distributed among stakers.",
-                "Note:".yellow().bold(),
-                (validator_commission_bps as f64 / 100.0),
-                ((MAX_COMMISSION_BPS - validator_commission_bps) as f64 / 100.0),
-            )
+            "".to_string()
         },
         "🏦 Identity Pubkey:".blue(),
         identity_pubkey,
         "🔗 Signer:".cyan(),
         signer_pubkey
     );
-    if !(signer_pubkey == identity_pubkey
+
+    if !(signer_pubkey == activation_account.validator_authority
         || signer_pubkey == activation_config_account.block_builder_authority)
     {
         return Err(format!(
@@ -455,14 +452,23 @@ fn process_update_commission(
         )
         .into());
     }
-    if validator_commission_bps == activation_account.validator_commission_bps {
+    if signer_pubkey == activation_account.validator_authority
+        && block_reward_commission_bps == activation_account.block_reward_commission_bps
+        || signer_pubkey == activation_config_account.block_builder_authority
+            && block_reward_commission_bps == activation_account.block_builder_commission_bps
+    {
         return Err(format!("❌ No transaction required, commission value is unchanged.").into());
+    }
+    if signer_pubkey == activation_account.validator_authority
+        && block_reward_commission_bps < MAX_COMMISSION_BPS
+    {
+        reconfirm_commission(block_reward_commission_bps)?;
     }
 
     let update_commission_instruction = update_rakurai_activation_commission_ix(
         program_id,
         UpdateRakuraiActivationCommissionArgs {
-            commission_bps: validator_commission_bps,
+            commission_bps: block_reward_commission_bps,
         },
         UpdateRakuraiActivationCommissionAccounts {
             config: activation_config_pubkey,

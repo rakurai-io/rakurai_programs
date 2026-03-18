@@ -1,3 +1,5 @@
+[toolchain]
+
 [features]
 resolution = true
 skip-lint = false
@@ -5,17 +7,18 @@ skip-lint = false
 [programs.mainnet]
 rakurai_activation = "rAKACC6Qw8HYa87ntGPRbfYEMnK2D9JVLsmZaKPpMmi"
 reward_distribution = "RAkd1EJg45QQHeuXy7JEWBhdNvsd64Z5PbZJWQT96iB"
-tip_manager = "RktiPddFAPzG7CbgRtzVk64VE2RPxeUu2PbbeYov2Ne"
+tip_manager = "rKtiPTD7WuCdEEQ2JXWgAmZHHL9iZLc3niCXwtS7wSH"
 
 [programs.testnet]
 rakurai_activation = "pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt"
 reward_distribution = "A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB"
 tip_manager = "4qRZaFzf7MvgfBTCP9grb69cCST8UmKHPtkpGAgkJosD"
 
+
 [programs.localnet]
 rakurai_activation = "CuvTfdaxcDbvvtACkXrW2j69YeQbWuNnwg9FefYDrSug"
 reward_distribution = "CtVB7ze4Kz2iUHGrWLWY9EG5Au1erbRCMvKTWFuKv8wq"
-tip_manager = "RktiPddFAPzG7CbgRtzVk64VE2RPxeUu2PbbeYov2Ne"
+tip_manager = "6z4rnNKVzSYBxqfshk1QZFgJv17KjZoirFhpWSjqQMfu"
 
 [registry]
 url = "https://api.apr.dev"
@@ -25,9 +28,5 @@ cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [workspace]
-members = [
-    "programs/reward_distribution",
-    "programs/tip_manager",
-    "programs/rakurai_activation",
-]
+members = ["programs/reward_distribution", "programs/tip_manager", "programs/rakurai_activation"]
 exclude = ["programs/vote_state"]

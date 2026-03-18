@@ -11,7 +11,7 @@ security_txt! {
     name: "Rakurai Tip Manager Program",
     project_url: "https://github.com/rakurai-io/rakurai-validator",
     contacts: "https://rakurai.io/company",
-    policy: "https://rakurai.io/faq"
+    policy: "https://rakurai.io/faqs"
 }
 
 pub mod sdk;
