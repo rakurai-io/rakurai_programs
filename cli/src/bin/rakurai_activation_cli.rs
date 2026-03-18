@@ -303,7 +303,7 @@ fn process_init_pda(
     let initialize_instruction = initialize_rakurai_activation_account_ix(
         program_id,
         InitializeRakuraiActivationAccountArgs {
-            validator_commission_bps: block_reward_commission_bps,
+            block_reward_commission_bps,
             bump,
         },
         InitializeRakuraiActivationAccountAccounts {
@@ -453,7 +453,7 @@ fn process_update_commission(
         .into());
     }
     if signer_pubkey == activation_account.validator_authority
-        && block_reward_commission_bps == activation_account.validator_commission_bps
+        && block_reward_commission_bps == activation_account.block_reward_commission_bps
         || signer_pubkey == activation_config_account.block_builder_authority
             && block_reward_commission_bps == activation_account.block_builder_commission_bps
     {

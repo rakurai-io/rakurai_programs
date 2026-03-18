@@ -224,7 +224,7 @@
         {
           "name": "signer",
           "docs": [
-            "Payer for account creation; must sign the transaction. In this context, validator's identity account."
+            "Payer for account creation; must sign the transaction. In current context validator's identity account."
           ],
           "writable": true,
           "signer": true
@@ -239,7 +239,7 @@
       ],
       "args": [
         {
-          "name": "validator_commission_bps",
+          "name": "block_reward_commission_bps",
           "type": "u16"
         },
         {
@@ -713,9 +713,9 @@
             "type": "pubkey"
           },
           {
-            "name": "validator_commission_bps",
+            "name": "block_reward_commission_bps",
             "docs": [
-              "Validator commission in basis points."
+              "Validator commission on Block Rewards in basis points."
             ],
             "type": "u16"
           },

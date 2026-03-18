@@ -39,7 +39,7 @@ This program implements a 2-party asynchronous multisig:
   - A seed constant.
 - During creation, the validator specifies:
   - `validator_commission_bps` (0–10000) — validator wants to retain from total block rewards.
-  - Rakurai's commission is fetched from a global config account (**Rakurai Activation Config Account**), a PDA under the same program. This value is currently 0 bps, though Rakurai plans to charge a small commission on the block rewards in the future.
+  - Block Builder's (i.e: Rakurai) commission is fetched from a global config account (**Rakurai Activation Config Account**), a PDA under the same program. This value is currently 0 bps, though Rakurai plans to charge a small commission on the block rewards in the future.
 
 Once created, this account:
 - Authorizes Rakurai reward logic on-chain.

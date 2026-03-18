@@ -89,7 +89,7 @@ pub fn update_config_ix(
 
 /// Arguments for initializing a validator’s Rakurai Activation Account (RAA).
 pub struct InitializeRakuraiActivationAccountArgs {
-    pub validator_commission_bps: u16,
+    pub block_reward_commission_bps: u16,
     pub bump: u8,
 }
 
@@ -110,7 +110,7 @@ pub fn initialize_rakurai_activation_account_ix(
     accounts: InitializeRakuraiActivationAccountAccounts,
 ) -> Instruction {
     let InitializeRakuraiActivationAccountArgs {
-        validator_commission_bps,
+        block_reward_commission_bps,
         bump,
     } = args;
 
@@ -126,7 +126,7 @@ pub fn initialize_rakurai_activation_account_ix(
     Instruction {
         program_id,
         data: crate::instruction::InitializeRakuraiActivationAccount {
-            validator_commission_bps,
+            block_reward_commission_bps,
             bump,
         }
         .data(),

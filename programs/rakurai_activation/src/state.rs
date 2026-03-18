@@ -35,8 +35,8 @@ pub struct RakuraiActivationAccount {
     /// Main validator's signing authority.
     pub validator_authority: Pubkey,
 
-    /// Validator commission in basis points.
-    pub validator_commission_bps: u16,
+    /// Validator commission on Block Rewards in basis points.
+    pub block_reward_commission_bps: u16,
 
     /// Block builder commission in basis points.
     pub block_builder_commission_bps: u16,
@@ -88,9 +88,7 @@ impl RakuraiActivationAccount {
             return Err(AccountValidationFailure.into());
         }
         if self.block_builder_commission_bps > MAX_COMMISSION_BPS
-            && self.validator_commission_bps > MAX_COMMISSION_BPS
-            && (self.validator_commission_bps + self.block_builder_commission_bps)
-                > MAX_COMMISSION_BPS
+            || self.block_reward_commission_bps > MAX_COMMISSION_BPS
         {
             return Err(MaxCommissionBpsExceeded.into());
         }
