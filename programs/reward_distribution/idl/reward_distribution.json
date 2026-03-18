@@ -7,7 +7,7 @@
     "description": "Solana program to distribute block rewards amongst Rakurai, validator, and stakers. Staker rewards accumulate in a collection account and are distributed post-epoch using a merkle root."
   },
   "instructions": [
-    {
+        {
       "name": "initialize",
       "docs": [
         "Sets up the singleton [RewardDistributionConfigAccount] to store global configuration settings for Rakurai."
@@ -26,7 +26,7 @@
         {
           "name": "config",
           "docs": [
-            "The global configuration account for Rakurai settings."
+            "The global configuration account for Reward Distribution settings."
           ],
           "writable": true,
           "pda": {
@@ -111,7 +111,7 @@
         {
           "name": "config",
           "docs": [
-            "The global configuration account for Rakurai settings."
+            "The global configuration account for Reward Distribution settings."
           ],
           "writable": true
         },
@@ -152,7 +152,7 @@
         {
           "name": "config",
           "docs": [
-            "The global configuration account for Rakurai settings to be closed."
+            "The global configuration account for Reward Distribution settings to be closed."
           ],
           "writable": true,
           "pda": {
@@ -213,7 +213,7 @@
         {
           "name": "config",
           "docs": [
-            "The global configuration account for Rakurai settings."
+            "The global configuration account for Reward Distribution settings."
           ]
         },
         {
@@ -400,7 +400,7 @@
         {
           "name": "config",
           "docs": [
-            "The global configuration account for Rakurai settings."
+            "The global configuration account for Reward Distribution settings."
           ]
         },
         {
@@ -504,7 +504,7 @@
         {
           "name": "config",
           "docs": [
-            "The global configuration account for Rakurai settings."
+            "The global configuration account for Reward Distribution settings."
           ],
           "pda": {
             "seeds": [
@@ -570,7 +570,7 @@
         {
           "name": "config",
           "docs": [
-            "The global configuration account for Rakurai settings."
+            "The global configuration account for Reward Distribution settings."
           ]
         },
         {
@@ -659,7 +659,7 @@
         {
           "name": "config",
           "docs": [
-            "The global configuration account for Rakurai settings."
+            "The global configuration account for Reward Distribution settings."
           ]
         },
         {

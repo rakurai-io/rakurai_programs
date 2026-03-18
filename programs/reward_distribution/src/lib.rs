@@ -13,7 +13,7 @@ security_txt! {
     name: "Rakurai Block Reward Distribution Program",
     project_url: "https://rakurai.io/",
     contacts: "https://rakurai.io/company",
-    policy: "https://rakurai.io/faq"
+    policy: "https://rakurai.io/faqs"
 }
 pub mod merkle_proof;
 pub mod sdk;
@@ -500,7 +500,7 @@ pub enum ErrorCode {
 /// Closes a `ClaimStatus` account and refunds lamports to the payer.
 #[derive(Accounts)]
 pub struct CloseClaimStatus<'info> {
-    /// The global configuration account for Rakurai settings.
+    /// The global configuration account for Reward Distribution settings.
     #[account(seeds = [RewardDistributionConfigAccount::SEED], bump)]
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
@@ -521,7 +521,7 @@ pub struct CloseClaimStatus<'info> {
 /// Initializes the reward distribution config with bump and payer.
 #[derive(Accounts)]
 pub struct Initialize<'info> {
-    /// The global configuration account for Rakurai settings.
+    /// The global configuration account for Reward Distribution settings.
     #[account(
         init,
         seeds = [RewardDistributionConfigAccount::SEED],
@@ -547,7 +547,7 @@ pub struct Initialize<'info> {
     _bump: u8
 )]
 pub struct InitializeRewardCollectionAccount<'info> {
-    /// The global configuration account for Rakurai settings.
+    /// The global configuration account for Reward Distribution settings.
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
     #[account(
@@ -578,7 +578,7 @@ pub struct InitializeRewardCollectionAccount<'info> {
 /// Requires the authority stored in the config to sign.
 #[derive(Accounts)]
 pub struct UpdateConfig<'info> {
-    /// The global configuration account for Rakurai settings.
+    /// The global configuration account for Reward Distribution settings.
     #[account(mut, rent_exempt = enforce)]
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
@@ -600,7 +600,7 @@ impl UpdateConfig<'_> {
 /// Only the config authority can invoke this instruction.
 #[derive(Accounts)]
 pub struct CloseConfig<'info> {
-    /// The global configuration account for Rakurai settings to be closed.
+    /// The global configuration account for Reward Distribution settings to be closed.
     #[account(
         mut,
         close = signer,
@@ -629,7 +629,7 @@ impl CloseConfig<'_> {
 #[derive(Accounts)]
 #[instruction(epoch: u64)]
 pub struct CloseRewardCollectionAccount<'info> {
-    /// The global configuration account for Rakurai settings.
+    /// The global configuration account for Reward Distribution settings.
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
     /// CHECK:
@@ -671,7 +671,7 @@ impl CloseRewardCollectionAccount<'_> {
 #[derive(Accounts)]
 #[instruction(_bump: u8, _amount: u64, _proof: Vec<[u8; 32]>)]
 pub struct Claim<'info> {
-    /// The global configuration account for Rakurai settings.
+    /// The global configuration account for Reward Distribution settings.
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
     #[account(mut, rent_exempt = enforce)]
@@ -707,7 +707,7 @@ pub struct Claim<'info> {
 /// Accounts required to upload a Merkle root for reward distribution.
 #[derive(Accounts)]
 pub struct UploadMerkleRoot<'info> {
-    /// The global configuration account for Rakurai settings.
+    /// The global configuration account for Reward Distribution settings.
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
     #[account(mut, rent_exempt = enforce)]

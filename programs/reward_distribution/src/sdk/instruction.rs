@@ -302,7 +302,7 @@ pub struct TransferBlockBuilderCommissionOnMevCommissionArgs {
     pub mev_rewards: u64,
 }
 
-/// Accounts required to transfer MEV commission to the Rakurai commission account.
+/// Accounts required to transfer MEV commission to the block builder commission account.
 pub struct TransferBlockBuilderCommissionOnMevCommissionAccounts {
     pub block_builder_commission_account: Pubkey,
     pub reward_collection_account: Pubkey,
@@ -310,7 +310,7 @@ pub struct TransferBlockBuilderCommissionOnMevCommissionAccounts {
     pub signer: Pubkey,
 }
 
-/// Builds the instruction to deduct Rakurai’s commission from the validator’s MEV rewards.
+/// Builds the instruction to deduct block builder commission from the validator’s MEV rewards.
 pub fn transfer_block_builder_commission_on_mev_commission_ix(
     program_id: Pubkey,
     args: TransferBlockBuilderCommissionOnMevCommissionArgs,
