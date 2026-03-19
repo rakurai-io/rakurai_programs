@@ -19,15 +19,22 @@ jobs:
         run: |
           git clone https://x-access-token:${{ secrets.DOCS_REPO_TOKEN }}@github.com/rakurai-io/rakurai-docs.git
 
-      # 3. Copy the doc file
-      - name: Copy doc
+      # 3. Create directory structure and copy files
+      - name: Copy docs into structured directories
         run: |
-          mkdir -p rakurai-docs/docs/services/
-          cp README.md rakurai-docs/docs/services/${{ github.event.repository.name }}.md
-          cp programs/rakurai_activation/README.md rakurai-docs/docs/services/${{ github.event.repository.name }}_rakurai_activation.md
-          cp programs/reward_distribution/README.md rakurai-docs/docs/services/${{ github.event.repository.name }}_reward_distribution.md
-          cp programs/tip_manager/README.md rakurai-docs/docs/services/${{ github.event.repository.name }}_tip_manager.md
-          cp programs/cli/README.md rakurai-docs/docs/services/${{ github.event.repository.name }}_activation_cli.md
+          REPO_NAME=${{ github.event.repository.name }}
+
+          # Create program subdirectories dynamically
+          mkdir -p rakurai-docs/docs/services/$REPO_NAME/programs/rakurai_activation
+          mkdir -p rakurai-docs/docs/services/$REPO_NAME/programs/reward_distribution
+          mkdir -p rakurai-docs/docs/services/$REPO_NAME/programs/tip_manager
+          mkdir -p rakurai-docs/docs/services/$REPO_NAME/cli
+
+          # Copy README.md files
+          cp programs/rakurai_activation/README.md rakurai-docs/docs/services/$REPO_NAME/programs/rakurai_activation/README.md
+          cp programs/reward_distribution/README.md rakurai-docs/docs/services/$REPO_NAME/programs/reward_distribution/README.md
+          cp programs/tip_manager/README.md rakurai-docs/docs/services/$REPO_NAME/programs/tip_manager/README.md
+          cp cli/README.md rakurai-docs/docs/services/$REPO_NAME/cli/README.md
 
       # 4. Commit & push
       - name: Commit and push
@@ -35,10 +42,6 @@ jobs:
           cd rakurai-docs
           git config user.name "saadkhan2495"
           git config user.email "saadkhan2495@gmail.com"
-          git add docs/services/${{ github.event.repository.name }}.md
-          git add docs/services/${{ github.event.repository.name }}_rakurai_activation.md
-          git add docs/services/${{ github.event.repository.name }}_reward_distribution.md
-          git add docs/services/${{ github.event.repository.name }}_tip_manager.md
-          git add docs/services/${{ github.event.repository.name }}_activation_cli.md
+          git add docs/services/${{ github.event.repository.name }}/ 2>/dev/null || true
           git diff --cached --quiet || git commit -m "Update ${{ github.event.repository.name }} doc"
           git push
