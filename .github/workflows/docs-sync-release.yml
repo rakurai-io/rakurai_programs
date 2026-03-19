@@ -1,0 +1,44 @@
+name: Docs Sync (Release Tag)
+
+on:
+  push:
+    tags:
+      - "v*"   # triggers on version tags like v1.0.0
+
+jobs:
+  push-doc:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout current repo
+      - name: Checkout this repo
+        uses: actions/checkout@v3
+
+      # 2. Clone central docs repo
+      - name: Clone central docs repo
+        run: |
+          git clone https://x-access-token:${{ secrets.DOCS_REPO_TOKEN }}@github.com/rakurai-io/rakurai-docs.git
+
+      # 3. Copy the doc file
+      - name: Copy doc
+        run: |
+          mkdir -p rakurai-docs/docs/services/
+          cp README.md rakurai-docs/docs/services/${{ github.event.repository.name }}.md
+          cp programs/rakurai_activation/README.md rakurai-docs/docs/services/${{ github.event.repository.name }}_rakurai_activation.md
+          cp programs/reward_distribution/README.md rakurai-docs/docs/services/${{ github.event.repository.name }}_reward_distribution.md
+          cp programs/tip_manager/README.md rakurai-docs/docs/services/${{ github.event.repository.name }}_tip_manager.md
+          cp programs/cli/README.md rakurai-docs/docs/services/${{ github.event.repository.name }}_activation_cli.md
+
+      # 4. Commit & push
+      - name: Commit and push
+        run: |
+          cd rakurai-docs
+          git config user.name "saadkhan2495"
+          git config user.email "saadkhan2495@gmail.com"
+          git add docs/services/${{ github.event.repository.name }}.md
+          git add docs/services/${{ github.event.repository.name }}_rakurai_activation.md
+          git add docs/services/${{ github.event.repository.name }}_reward_distribution.md
+          git add docs/services/${{ github.event.repository.name }}_tip_manager.md
+          git add docs/services/${{ github.event.repository.name }}_activation_cli.md
+          git diff --cached --quiet || git commit -m "Update ${{ github.event.repository.name }} doc"
+          git push
