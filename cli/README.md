@@ -26,9 +26,11 @@ echo "export PATH=\"$(pwd)/release/downloads:\$PATH\"" >> ~/.bashrc && source ~/
 
 ### Option 2: Build from Source
 ```sh
-# Build and install the CLI tool globally
-cargo install --path .
-export PATH="$HOME/.cargo/bin:$PATH"
+# Build the CLI tool
+cargo b --release -p rakurai_cli
+
+# Export the CLI path
+echo "export PATH=\"$(pwd)/target/release/:\$PATH\""
 ```
 
 ### Verify Installation
@@ -43,7 +45,7 @@ which rakurai-activation
 Run the CLI tool using:
 
 ```sh
-rakurai-activation [OPTIONS] <COMMAND>
+rakurai-activation [OPTIONS] --program-id <PROGRAM_ID> <COMMAND>
 ```
 
 ---
@@ -67,20 +69,23 @@ These options are **critical** and must be used with care:
 #### Description
 
 To create a Rakurai Activation Account (RAA), you must provide your validator's `vote_pubkey` along with its corresponding *node identity* `keypair` as the signer. This node identity will be used later to authorize or modify RAA parameters.
-You must also specify a `commission_bps` in basis points (BPS), which defines the validator’s share of the block rewards. This commission is **independent** of Solana’s voting commission and applies only to block rewards.
+You can also specify a Validator commission percentage on block rewards `block_reward_commission_bps` in basis points (BPS).The default is 100% (10,000 BPS), meaning the validator keeps the full block reward. If you set it below 100%, the remaining portion of the block reward is distributed to stakers, proportional to their stake, by the Reward Distribution program. This commission is **independent** of Solana’s voting commission and applies only to block rewards.
 Creating an RAA is a **mandatory step** for running a Rakurai-Solana validator
 
 
 #### Usage
 
 ```sh
-rakurai-activation -p <PROGRAM_ID> init --commission_bps <VALUE> --vote_pubkey <VOTE_PUBKEY> --keypair <IDENTITY_KEYPAIR> --url <RPC_URL>
+rakurai-activation -p <PROGRAM_ID> init --vote_pubkey <VOTE_PUBKEY> --keypair <IDENTITY_KEYPAIR> --url <RPC_URL>
 ```
 
-#### Options
+#### Arguments
 
-- `-c, --commission_bps <VALUE>`: Validator's commission on block rewards in basis points (e.g., `500` for `5%`).
 - `-v, --vote_pubkey <PUBKEY>`: Validator's vote account public key.
+
+### Optional Argument
+
+- `-c, --block_reward_commission_bps <VALUE>`: Validator's commission on block rewards in basis points (e.g., `500` for `5%`).
 
 ---
 
@@ -99,7 +104,7 @@ Controls the Rakurai scheduler by enabling or disabling it.
 rakurai-activation -p <PROGRAM_ID> scheduler-control --identity_pubkey <IDENTITY_PUBKEY> --keypair <IDENTITY_KEYPAIR> --url <RPC_URL> 
 ```
 
-#### Options
+#### Arguments
 
 - `-d, --disable_scheduler`: Flag to disable the scheduler (default: enable).
 - `-i, --identity_pubkey <PUBKEY>`: Validator identity account pubkey.
@@ -116,12 +121,12 @@ Validators can update their share of the block reward at any time, independent o
 #### Usage
 
 ```sh
-rakurai-activation -p <PROGRAM_ID> update-commission --commission_bps <VALUE> --identity_pubkey <IDENTITY_PUBKEY> --keypair <IDENTITY_KEYPAIR> --url <RPC_URL>
+rakurai-activation -p <PROGRAM_ID> update-commission --block_reward_commission_bps <VALUE> --identity_pubkey <IDENTITY_PUBKEY> --keypair <IDENTITY_KEYPAIR> --url <RPC_URL>
 ```
 
-#### Options
+#### Arguments
 
-- `-c, --commission_bps <VALUE>`: New commission value in base points (e.g., `500` means `5%`).
+- `-c, --block_reward_commission_bps <VALUE>`: Commission percentage on block rewards in base points (e.g., `500` means `5%`).
 - `-i, --identity_pubkey <PUBKEY>`: Validator identity account pubkey.
 
 ---
@@ -144,7 +149,7 @@ This command provides an overview of the RAA's current configuration and state.
 rakurai-activation -p <PROGRAM_ID> show --identity_pubkey <IDENTITY_PUBKEY> --url <RPC_URL>
 ```
 
-#### Options
+#### Arguments
 
 - `-i, --identity_pubkey <PUBKEY>`: Validator identity account pubkey.
 

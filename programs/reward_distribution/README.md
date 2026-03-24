@@ -14,11 +14,11 @@ Each **validator**, for each **epoch**, creates a unique PDA called `RewardColle
 - Only the validator's **authorized withdrawer** can initialize it.
 - When creating the account, the validator must specify:
   - `reward_merkle_root_authority` — Authority responsible for uploading the Merkle root post-epoch.
-  - `validator_commission_bps` — Commission (in basis points) that the validator retains from block rewards.
-  - `rakurai_commission_bps` — Commission (in basis points) for Rakurai from block rewards.
-  - `rakurai_commission_account` — Destination account for Rakurai's commission.
+  - `block_reward_commission_bps` — Commission (in basis points) that the validator retains from block rewards.
+  - `block_builder_commission_bps` — Commission (in basis points) for block builder (i.e: Rakurai) from block rewards.
+  - `block_builder_commission_account` — Destination account for block builder commission.
 
-> The values for `rakurai_commission_bps`, `validator_commission_bps`, and `rakurai_commission_account` are pulled from the [RakuraiActivationAccount](../rakurai_activation/README.md#rakuraiactivationaccount-account-creation), a validator-specific PDA (not epoch-specific), part of the [`rakurai_activation`](../rakurai_activation/README.md) program. This account controls whether the validator is running the Rakurai scheduler (and should be charged commission).
+> The values for `block_builder_commission_bps`, `block_reward_commission_bps`, and `block_builder_commission_account` are pulled from the [RakuraiActivationAccount](../rakurai_activation/README.md#rakuraiactivationaccount-account-creation), a validator-specific PDA (not epoch-specific), part of the [`rakurai_activation`](../rakurai_activation/README.md) program. This account controls whether the validator is running the Rakurai scheduler (and should be charged commission).
 
 ---
 
@@ -34,7 +34,7 @@ On the first turn of each epoch, the `RewardCollectionAccount` is automatically 
 ### 2. Per-Turn Transfers
 During every leader turn:
 - The **previous turn's block reward** is processed:
-  - **Rakurai commission** → transferred to Rakurai's account.
+  - **Block Builder commission** → transferred to block builder (i.e: Rakurai) account.
   - **Validator commission** → remains in the validator's identity account.
   - **Staker share** → accumulated into the `RewardCollectionAccount`.
 
@@ -64,15 +64,37 @@ When set to **Rakurai**, the rakurai will automatically:
 4. **Distribute rewards to stakers**
 
 <p style="font-size:14px;">
-    <span style="color:#66ff66;"><i><b>0% Rakurai commission</b></i></span>
+    <span style="color:#66ff66;"><i><b>0% distribution fees charged by Rakurai</b></i></span>
     — only standard Solana transaction fees apply.
 </p>
 
 ---
 
+### Block Builder Commission on MEV Rewards
+
+Block Builder charges commission on MEV Rewards **only** if the following conditions are met:
+
+- The validator is actively running **Rakurai during that epoch**.  
+- The validator has set a non-zero **MEV commission** in their **Tip Distribution Account**.
+
+*Note:* If the validator’s MEV commission is **0%**, Rakurai does **not** charge any commission on MEV tips.
+
+---
+
+### Deduction Flow
+
+1. The validator’s share of MEV tips is credited to their **vote account** by the Tip Distribution Program in the following epoch.  
+2. A `ClaimStatus` account is created to track that the validator has received MEV rewards.  
+3. Rakurai client monitors the `ClaimStatus` account; once it is created, then it is eligible to deduct commission.  
+4. Rakurai cannot deduct directly from the vote account, so the **same commission amount** is deducted from the validator’s **identity account** instead.  
+5. The deduction is performed by invoking the `transfer_block_builder_commission_on_mev_commission` instruction in the **Reward Distribution Program**.  
+6. The commission rate is defined in the **Reward Distribution Config account**.
+
+---
+
 ## Account Lifecycle
 
-- `RewardCollectionAccount` is valid for **10 epochs**.
+- `RewardCollectionAccount` is valid for **2 epochs**.
 - After that:
   - Any unclaimed funds are returned to the **validator's identity account**.
   - The account is closed to reclaim rent.

@@ -1,5 +1,6 @@
 use {
     anchor_lang::AccountDeserialize,
+    bincode::deserialize,
     colored::*,
     rakurai_activation::state::{RakuraiActivationAccount, RakuraiActivationConfigAccount},
     solana_rpc_client::rpc_client::RpcClient,
@@ -10,10 +11,16 @@ use {
         signature::Keypair,
         signer::{EncodableKey, Signer},
         transaction::Transaction,
-        vote::state::{VoteState, VoteStateVersions},
     },
-    std::{path::Path, str::FromStr, sync::Arc},
+    std::{
+        io::{self, Write},
+        path::Path,
+        str::FromStr,
+        sync::Arc,
+    },
 };
+
+pub const MAX_COMMISSION_BPS: u16 = 10_000;
 
 /// Parses and validates a Solana `Pubkey` from a string
 pub fn parse_pubkey(s: &str) -> Result<Pubkey, String> {
@@ -61,6 +68,36 @@ pub fn parse_keypair(path: &str) -> Result<Arc<Keypair>, Box<dyn std::error::Err
         .map_err(|e| format!("Failed to read keypair from file {}: {}", expanded_path, e).into())
 }
 
+pub fn reconfirm_commission(
+    block_reward_commission_bps: u16,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n {}", 
+        format!(
+            "⚠ Note: Validator Block Reward Commission set to {} bps ({}%). Validator will keep {}% of the block rewards. The remaining {}% will be distributed among stakers.",
+            block_reward_commission_bps,
+            block_reward_commission_bps as f64 / 100.0,
+            block_reward_commission_bps as f64 / 100.0,
+            (MAX_COMMISSION_BPS - block_reward_commission_bps) as f64 / 100.0,
+        )
+        .red()
+    );
+
+    println!("Type '{}' to confirm:", block_reward_commission_bps);
+    io::stdout().flush()?;
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let confirm_value = validate_commission(input.trim())?;
+
+    if confirm_value != block_reward_commission_bps {
+        return Err(format!(
+            "❌ Commission confirmation mismatch!. Expected: {} bps, Entered: {} bps. Aborting Please re-run the command with correct commission value.", 
+            block_reward_commission_bps,confirm_value
+        )
+        .into());
+    }
+    Ok(())
+}
+
 pub fn get_activation_account(
     rpc_client: Arc<RpcClient>,
     activation_pda: Pubkey,
@@ -88,13 +125,26 @@ pub fn display_activation_account(activation_account: RakuraiActivationAccount) 
         activation_account.is_enabled.to_string().blue()
     );
     println!(
-        "   {} {:<10} {}",
+        "   {} {:<10} {} ({}%) -> {}",
         "💰".green(),
         "Commission:",
         activation_account
-            .validator_commission_bps
+            .block_reward_commission_bps
             .to_string()
-            .magenta()
+            .magenta(),
+        (activation_account.block_reward_commission_bps as f64 / 100.0),
+        if activation_account.block_reward_commission_bps == MAX_COMMISSION_BPS {
+            "Validator will keep 100% of the block rewards. No rewards will be distributed to stakers."
+                .green()
+                .to_string()
+        } else {
+            format!(
+                "{} Validator will keep {}% of the block rewards. The remaining {}% will be distributed among stakers.",
+                "Note:".yellow().bold(),
+                (activation_account.block_reward_commission_bps as f64 / 100.0),
+                ((MAX_COMMISSION_BPS - activation_account.block_reward_commission_bps) as f64 / 100.0),
+            )
+        },
     );
     println!(
         "   {} {:<10} {}",
@@ -110,15 +160,6 @@ pub fn display_activation_account(activation_account: RakuraiActivationAccount) 
             "📝".cyan(),
             "Proposer:",
             proposer.to_string()
-        );
-    }
-    if let Some(array) = activation_account.hash {
-        println!("{}", "📝 Hash".bold().underline().blue());
-        println!(
-            "   {} {:<10} {}",
-            "📝".cyan(),
-            "Hash:",
-            bs58::encode(array).into_string()
         );
     }
 }
@@ -158,13 +199,13 @@ pub fn display_activation_config_account(
     );
 }
 
-pub fn get_vote_account(
+pub fn get_node_pubkey_from_vote_account(
     rpc_client: Arc<RpcClient>,
     vote_pubkey: Pubkey,
-) -> Result<VoteState, Box<dyn std::error::Error>> {
+) -> Result<Pubkey, Box<dyn std::error::Error>> {
     let account_info = rpc_client.get_account(&vote_pubkey)?;
-    let vote_state_versions: VoteStateVersions = bincode::deserialize(&account_info.data)?;
-    Ok(vote_state_versions.convert_to_current())
+    deserialize::<Pubkey>(&account_info.data[4..36])
+        .map_err(|e| format!("Failed to deserialize node pubkey from vote account: {}", e).into())
 }
 
 pub fn sign_and_send_transaction(
