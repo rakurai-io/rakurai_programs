@@ -13,7 +13,7 @@ security_txt! {
     name: "Rakurai Multisig Based Activation Program",
     project_url: "https://rakurai.io/",
     contacts: "https://rakurai.io/company",
-    policy: "https://rakurai.io/faq"
+    policy: "https://rakurai.io/faqs"
 }
 pub mod sdk;
 pub mod state;
@@ -70,16 +70,16 @@ pub mod rakurai_activation {
     /// Initialize a new [RakuraiActivationAccount] associated with the given validator identity account key and a seed.
     pub fn initialize_rakurai_activation_account(
         ctx: Context<InitializeRakuraiActivationAccount>,
-        validator_commission_bps: u16,
+        block_reward_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
         if ctx.accounts.validator_vote_account.owner != &solana_program::vote::program::id() {
             return Err(Unauthorized.into());
         }
 
-        let validator_vote_state =
-            VoteState::deserialize(&ctx.accounts.validator_vote_account).unwrap();
-        if validator_vote_state.node_pubkey != ctx.accounts.signer.key() {
+        let node_pubkey =
+            VoteState::deserialize_node_pubkey(&ctx.accounts.validator_vote_account).unwrap();
+        if node_pubkey != ctx.accounts.signer.key() {
             return Err(Unauthorized.into());
         }
 
@@ -87,7 +87,7 @@ pub mod rakurai_activation {
         activation_account.is_enabled = false;
         activation_account.hash = None;
         activation_account.proposer = Some(ctx.accounts.signer.key());
-        activation_account.validator_commission_bps = validator_commission_bps;
+        activation_account.block_reward_commission_bps = block_reward_commission_bps;
         activation_account.block_builder_commission_bps =
             ctx.accounts.config.block_builder_commission_bps;
         activation_account.validator_authority = ctx.accounts.signer.key();
@@ -177,15 +177,16 @@ pub mod rakurai_activation {
         }
 
         if ctx.accounts.signer.key() == activation_account.validator_authority.key() {
-            activation_account.validator_commission_bps = commission_bps;
+            activation_account.block_reward_commission_bps = commission_bps;
         } else if ctx.accounts.signer.key() == ctx.accounts.config.block_builder_authority.key() {
             activation_account.block_builder_commission_bps = commission_bps;
         } else {
             return Err(Unauthorized.into());
         }
+        activation_account.validate()?;
         emit!(UpdateRakuraiActivationCommissionEvent {
             activation_account: activation_account.key(),
-            operator_commission: activation_account.validator_commission_bps,
+            operator_commission: activation_account.block_reward_commission_bps,
         });
 
         Ok(())
@@ -279,7 +280,7 @@ impl UpdateConfig<'_> {
 /// Initializes a new Rakurai Activation Account(RAA) for a specific validator.
 #[derive(Accounts)]
 #[instruction(
-    _validator_commission_bps: u16,
+    _block_reward_commission_bps: u16,
     _bump: u8
 )]
 pub struct InitializeRakuraiActivationAccount<'info> {

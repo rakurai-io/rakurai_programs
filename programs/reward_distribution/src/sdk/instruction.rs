@@ -10,6 +10,7 @@ pub struct InitializeArgs {
     pub authority: Pubkey,
     pub num_epochs_valid: u64,
     pub max_commission_bps: u16,
+    pub block_builder_commission_on_mev_commission_enabled: bool,
     pub bump: u8,
 }
 
@@ -30,6 +31,7 @@ pub fn initialize_ix(
         authority,
         num_epochs_valid,
         max_commission_bps,
+        block_builder_commission_on_mev_commission_enabled,
         bump,
     } = args;
 
@@ -45,6 +47,7 @@ pub fn initialize_ix(
             authority,
             num_epochs_valid,
             max_commission_bps,
+            block_builder_commission_on_mev_commission_enabled,
             bump,
         }
         .data(),
@@ -60,9 +63,9 @@ pub fn initialize_ix(
 /// Arguments for initializing the reward collection account.
 pub struct InitializeRewardCollectionAccountArgs {
     pub merkle_root_upload_authority: Pubkey,
-    pub validator_commission_bps: u16,
-    pub rakurai_commission_account: Pubkey,
-    pub rakurai_commission_bps: u16,
+    pub block_reward_commission_bps: u16,
+    pub block_builder_commission_account: Pubkey,
+    pub block_builder_commission_bps: u16,
     pub bump: u8,
 }
 
@@ -83,9 +86,9 @@ pub fn initialize_reward_collection_account_ix(
 ) -> Instruction {
     let InitializeRewardCollectionAccountArgs {
         merkle_root_upload_authority,
-        validator_commission_bps,
-        rakurai_commission_account,
-        rakurai_commission_bps,
+        block_reward_commission_bps,
+        block_builder_commission_account,
+        block_builder_commission_bps,
         bump,
     } = args;
 
@@ -101,9 +104,9 @@ pub fn initialize_reward_collection_account_ix(
         program_id,
         data: crate::instruction::InitializeRewardCollectionAccount {
             merkle_root_upload_authority,
-            validator_commission_bps,
-            rakurai_commission_account,
-            rakurai_commission_bps,
+            block_reward_commission_bps,
+            block_builder_commission_account,
+            block_builder_commission_bps,
             bump,
         }
         .data(),
@@ -154,7 +157,7 @@ pub fn close_claim_status_ix(
 
 /// Arguments to update the reward config account.
 pub struct UpdateConfigArgs {
-    new_config: RewardDistributionConfigAccount,
+    pub new_config: RewardDistributionConfigAccount,
 }
 
 /// Accounts needed to update the config.
@@ -177,6 +180,30 @@ pub fn update_config_ix(
         program_id,
         data: crate::instruction::UpdateConfig { new_config }.data(),
         accounts: crate::accounts::UpdateConfig { config, authority }.to_account_metas(None),
+    }
+}
+
+/// Arguments for closing the reward distribution config account.
+pub struct CloseConfigArgs;
+
+/// Accounts required to close the reward distribution config account.
+pub struct CloseConfigAccounts {
+    pub config: Pubkey,
+    pub signer: Pubkey,
+}
+
+/// Builds the instruction to close the reward distribution config account.
+pub fn close_config_ix(
+    program_id: Pubkey,
+    _args: CloseConfigArgs,
+    accounts: CloseConfigAccounts,
+) -> Instruction {
+    let CloseConfigAccounts { config, signer } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::CloseConfig {}.data(),
+        accounts: crate::accounts::CloseConfig { config, signer }.to_account_metas(None),
     }
 }
 
@@ -236,7 +263,7 @@ pub struct TransferStakerRewardsArgs {
 
 /// Accounts required to transfer rewards to stakers.
 pub struct TransferStakerRewardsAccounts {
-    pub rakurai_commission_account: Pubkey,
+    pub block_builder_commission_account: Pubkey,
     pub reward_collection_account: Pubkey,
     pub system_program: Pubkey,
     pub signer: Pubkey,
@@ -251,7 +278,7 @@ pub fn transfer_staker_rewards_ix(
     let TransferStakerRewardsArgs { total_rewards } = args;
 
     let TransferStakerRewardsAccounts {
-        rakurai_commission_account,
+        block_builder_commission_account,
         reward_collection_account,
         system_program,
         signer,
@@ -261,7 +288,49 @@ pub fn transfer_staker_rewards_ix(
         program_id,
         data: crate::instruction::TransferStakerRewards { total_rewards }.data(),
         accounts: crate::accounts::TransferStakerRewards {
-            rakurai_commission_account,
+            block_builder_commission_account,
+            reward_collection_account,
+            system_program,
+            signer,
+        }
+        .to_account_metas(None),
+    }
+}
+
+/// Total MEV rewards earned by the validator in the epoch (if MEV commission is set by validator in TipDistributionAccount).
+pub struct TransferBlockBuilderCommissionOnMevCommissionArgs {
+    pub mev_rewards: u64,
+}
+
+/// Accounts required to transfer MEV commission to the block builder commission account.
+pub struct TransferBlockBuilderCommissionOnMevCommissionAccounts {
+    pub block_builder_commission_account: Pubkey,
+    pub reward_collection_account: Pubkey,
+    pub system_program: Pubkey,
+    pub signer: Pubkey,
+}
+
+/// Builds the instruction to deduct block builder commission from the validator’s MEV rewards.
+pub fn transfer_block_builder_commission_on_mev_commission_ix(
+    program_id: Pubkey,
+    args: TransferBlockBuilderCommissionOnMevCommissionArgs,
+    accounts: TransferBlockBuilderCommissionOnMevCommissionAccounts,
+) -> Instruction {
+    let TransferBlockBuilderCommissionOnMevCommissionArgs { mev_rewards } = args;
+
+    let TransferBlockBuilderCommissionOnMevCommissionAccounts {
+        block_builder_commission_account,
+        reward_collection_account,
+        system_program,
+        signer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::TransferBlockBuilderCommissionOnMevCommission { mev_rewards }
+            .data(),
+        accounts: crate::accounts::TransferBlockBuilderCommissionOnMevCommission {
+            block_builder_commission_account,
             reward_collection_account,
             system_program,
             signer,
