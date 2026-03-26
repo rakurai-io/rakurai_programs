@@ -1,9 +1,12 @@
-name: Docs Sync (Release Tag)
+name: Docs Sync
 
 on:
   push:
     tags:
-      - "v*"   # triggers on version tags like v1.0.0
+      - "v*"              # release tags (e.g., v1.0.0)
+    branches:
+      - development       # dev branch pushes
+  workflow_dispatch:      # manual trigger
 
 jobs:
   push-doc:
@@ -26,14 +29,20 @@ jobs:
 
           # Create program subdirectories dynamically
           mkdir -p rakurai-docs/docs/services/$REPO_NAME/programs/rakurai_activation
+          mkdir -p rakurai-docs/docs/services/$REPO_NAME/programs/rakurai_activation/idl
           mkdir -p rakurai-docs/docs/services/$REPO_NAME/programs/reward_distribution
+          mkdir -p rakurai-docs/docs/services/$REPO_NAME/programs/reward_distribution/idl
           mkdir -p rakurai-docs/docs/services/$REPO_NAME/programs/tip_manager
+          mkdir -p rakurai-docs/docs/services/$REPO_NAME/programs/tip_manager/idl
           mkdir -p rakurai-docs/docs/services/$REPO_NAME/cli
 
           # Copy README.md files
           cp programs/rakurai_activation/README.md rakurai-docs/docs/services/$REPO_NAME/programs/rakurai_activation/README.md
+          cp programs/rakurai_activation/idl/rakurai_activation.json rakurai-docs/docs/services/$REPO_NAME/programs/rakurai_activation/idl/rakurai_activation.json
           cp programs/reward_distribution/README.md rakurai-docs/docs/services/$REPO_NAME/programs/reward_distribution/README.md
+          cp programs/reward_distribution/idl/reward_distribution.json rakurai-docs/docs/services/$REPO_NAME/programs/reward_distribution/idl/reward_distribution.json
           cp programs/tip_manager/README.md rakurai-docs/docs/services/$REPO_NAME/programs/tip_manager/README.md
+          cp programs/tip_manager/idl/tip_manager.json rakurai-docs/docs/services/$REPO_NAME/programs/tip_manager/idl/tip_manager.json
           cp cli/README.md rakurai-docs/docs/services/$REPO_NAME/cli/README.md
 
       # 4. Commit & push

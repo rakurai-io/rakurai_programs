@@ -5,6 +5,30 @@ A Solana smart contract for managing tips sent to validators. The program mainta
 ➤ For more details, refer to the [IDL File](./idl/tip_manager.json).
 
 ---
+### Deployed Program ID
+- **Mainnet**: [rKtiPTD7WuCdEEQ2JXWgAmZHHL9iZLc3niCXwtS7wSH](https://solscan.io/account/rKtiPTD7WuCdEEQ2JXWgAmZHHL9iZLc3niCXwtS7wSH)
+  - Mainnet Tip Accounts:
+    - `BjqjPHFmwr19YFmkH8CMNJFbj1wzX9k9ngr4am2nQEdq`
+    - `9CNKnAqJgLA4pL6KByzhhdY4mKoQP5wcPdhJgnvvi5Ve`
+    - `5wy4C2VMFhHE4i8PWKNS1K4SV275zjNwhLwfKBwajrro`
+    - `AgMdA97pk2i2Ry4YQ4iVPNrRiFhcH3x3ARUCiQGt3vJG`
+    - `4Qf8JFV5vmpADXNouoJriQ9KiniT5DENrz9JM2mKGH9m`
+    - `AuFAFzbzE9dzMajy4RNdyJZBTskeiuJQqT2wd9xoGSRD`
+    - `8aLaHz8595MAvgxKoBJEyZmDfqQp8CorezFGYnC7CPjy`
+    - `H6hyJo6rpBmwHbvVuWCEHExJ2bE4rcn1hTPeiBtypus4`
+
+- **Testnet**: [4qRZaFzf7MvgfBTCP9grb69cCST8UmKHPtkpGAgkJosD](https://solscan.io/account/4qRZaFzf7MvgfBTCP9grb69cCST8UmKHPtkpGAgkJosD?cluster=testnet)
+  - Testnet Tip Accounts:
+    - `3ahyXyni1jLj8kJ13VgGEFDJzB374dgQW273nJSg8cdm`
+    - `3aebD4TAn1somZfiaKRrMypUfmbDzT7XMVWRM5TFHuKW`
+    - `Hm4LFyTAbrgH4eejYmNXQJ9oejQyq8frD2qeJbmkCAWR`
+    - `AffPqNJ8jSrFGgfiouVfXcra1Vd6gHUjNhpoL8uW8dY5`
+    - `9Z4pSxRZzE1T2e6587yzMWtvo8RHKW3R5Rb2FcprUPz`
+    - `J2JdwcRrxWyCHKrgi2ipwCFXK2oRSgzPN4P7Q6Kz9XZ9`
+    - `DscP7KHpAvfnboSKEQ5KEcwuFuRWn6MTjKYYTftuqY6z`
+    - `Ur14r1oNyLvYeFLngGoEwYV4zwFVcui72vJqAavDXhZ`
+
+---
 
 ## How It Works
 
@@ -14,22 +38,6 @@ The Tip Manager Program uses a **singleton configuration account** (`TipManagerC
 - The **block builder commission rate** (in basis points, 0–10000)
 
 The program maintains **eight separate tip accounts** (PDAs) to minimize account write-lock contention when multiple transactions send tips simultaneously. Users can send tips to any of these eight accounts.
-
----
-
-## Mainnet Deployment
-
-**Tip Distribution Program ID:** `rKtiPTD7WuCdEEQ2JXWgAmZHHL9iZLc3niCXwtS7wSH`
-
-**Tip Accounts:**
-- `BjqjPHFmwr19YFmkH8CMNJFbj1wzX9k9ngr4am2nQEdq`
-- `9CNKnAqJgLA4pL6KByzhhdY4mKoQP5wcPdhJgnvvi5Ve`
-- `5wy4C2VMFhHE4i8PWKNS1K4SV275zjNwhLwfKBwajrro`
-- `AgMdA97pk2i2Ry4YQ4iVPNrRiFhcH3x3ARUCiQGt3vJG`
-- `4Qf8JFV5vmpADXNouoJriQ9KiniT5DENrz9JM2mKGH9m`
-- `AuFAFzbzE9dzMajy4RNdyJZBTskeiuJQqT2wd9xoGSRD`
-- `8aLaHz8595MAvgxKoBJEyZmDfqQp8CorezFGYnC7CPjy`
-- `H6hyJo6rpBmwHbvVuWCEHExJ2bE4rcn1hTPeiBtypus4`
 
 ---
 

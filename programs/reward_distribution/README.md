@@ -5,6 +5,11 @@ A Solana smart contract for distributing block rewards among **Rakurai**, **vali
 ➤ For more details, refer to the [IDL File](./idl/reward_distribution.json).
 
 ---
+### Deployed Program ID
+- **Mainnet**: [RAkd1EJg45QQHeuXy7JEWBhdNvsd64Z5PbZJWQT96iB](https://solscan.io/account/RAkd1EJg45QQHeuXy7JEWBhdNvsd64Z5PbZJWQT96iB)
+- **Testnet**: [A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB](https://solscan.io/account/A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB?cluster=testnet)
+
+---
 
 ## How It Works
 

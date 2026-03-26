@@ -7,6 +7,11 @@ Note: The remaining block rewards after the deduction of commission are distribu
 ➤ For more details, refer to the [IDL File](./idl/rakurai_activation.json).
 
 ---
+### Deployed Program ID
+- **Mainnet**: [rAKACC6Qw8HYa87ntGPRbfYEMnK2D9JVLsmZaKPpMmi](https://solscan.io/account/rAKACC6Qw8HYa87ntGPRbfYEMnK2D9JVLsmZaKPpMmi)
+- **Testnet**: [pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt](https://solscan.io/account/pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt?cluster=testnet)
+
+---
 
 ## Purpose
 
