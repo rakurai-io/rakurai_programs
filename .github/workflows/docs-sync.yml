@@ -1,9 +1,12 @@
-name: Docs Sync (Release Tag)
+name: Docs Sync
 
 on:
   push:
     tags:
-      - "v*"   # triggers on version tags like v1.0.0
+      - "v*"              # release tags (e.g., v1.0.0)
+    branches:
+      - development       # dev branch pushes
+  workflow_dispatch:      # manual trigger
 
 jobs:
   push-doc:
