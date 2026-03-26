@@ -41,22 +41,6 @@ The program maintains **eight separate tip accounts** (PDAs) to minimize account
 
 ---
 
-## Mainnet Deployment
-
-**Tip Distribution Program ID:** `rKtiPTD7WuCdEEQ2JXWgAmZHHL9iZLc3niCXwtS7wSH`
-
-**Tip Accounts:**
-- `BjqjPHFmwr19YFmkH8CMNJFbj1wzX9k9ngr4am2nQEdq`
-- `9CNKnAqJgLA4pL6KByzhhdY4mKoQP5wcPdhJgnvvi5Ve`
-- `5wy4C2VMFhHE4i8PWKNS1K4SV275zjNwhLwfKBwajrro`
-- `AgMdA97pk2i2Ry4YQ4iVPNrRiFhcH3x3ARUCiQGt3vJG`
-- `4Qf8JFV5vmpADXNouoJriQ9KiniT5DENrz9JM2mKGH9m`
-- `AuFAFzbzE9dzMajy4RNdyJZBTskeiuJQqT2wd9xoGSRD`
-- `8aLaHz8595MAvgxKoBJEyZmDfqQp8CorezFGYnC7CPjy`
-- `H6hyJo6rpBmwHbvVuWCEHExJ2bE4rcn1hTPeiBtypus4`
-
----
-
 ## Account Structure
 
 ### TipManagerConfigAccount
