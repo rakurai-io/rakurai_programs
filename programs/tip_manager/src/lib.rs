@@ -34,6 +34,7 @@ pub const RAKURAI_TIP_ACCOUNT_7_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_7";
 
 /// Account discriminator size
 pub const HEADER: usize = 8;
+const MAX_COMMISSION_BPS: u64 = 10_000;
 
 /// Rakurai Tip Manager Program: users send tips to one of eight tip accounts, validators periodically drain them
 /// and tips are split between the configured tip receiver and an block builder commission account.
@@ -51,7 +52,7 @@ pub mod tip_manager {
 
         cfg.validator_tip_receiver_account = ctx.accounts.payer.key();
         cfg.block_builder_commission_account = ctx.accounts.payer.key();
-        cfg.block_builder_commission_bps = 10000;
+        cfg.block_builder_commission_bps = MAX_COMMISSION_BPS;
         cfg.authority = ctx.accounts.payer.key();
 
         cfg.bumps = bumps;
@@ -128,7 +129,7 @@ pub mod tip_manager {
         let block_builder_fee = total_tips
             .checked_mul(ctx.accounts.tip_manager_config.block_builder_commission_bps)
             .ok_or(ArithmeticError)?
-            .checked_div(10000)
+            .checked_div(MAX_COMMISSION_BPS)
             .ok_or(ArithmeticError)?;
 
         let validator_fee = total_tips
@@ -172,7 +173,7 @@ pub mod tip_manager {
         let block_builder_fee = total_tips
             .checked_mul(ctx.accounts.tip_manager_config.block_builder_commission_bps)
             .ok_or(ArithmeticError)?
-            .checked_div(10000)
+            .checked_div(MAX_COMMISSION_BPS)
             .ok_or(ArithmeticError)?;
 
         let validator_fee = total_tips
@@ -215,8 +216,9 @@ pub mod tip_manager {
         ctx: Context<ChangeBlockBuilder>,
         block_builder_commission_bps: u64,
     ) -> Result<()> {
+        ChangeBlockBuilder::auth(&ctx)?;
         require_gte!(
-            10000,
+            MAX_COMMISSION_BPS,
             block_builder_commission_bps,
             TipManagerError::InvalidFee
         );
@@ -225,7 +227,7 @@ pub mod tip_manager {
         let block_builder_fee = total_tips
             .checked_mul(ctx.accounts.tip_manager_config.block_builder_commission_bps)
             .ok_or(ArithmeticError)?
-            .checked_div(10000)
+            .checked_div(MAX_COMMISSION_BPS)
             .ok_or(ArithmeticError)?;
 
         let validator_fee = total_tips
@@ -572,7 +574,12 @@ impl<'info> ClaimTips<'info> {
 
 #[derive(Accounts)]
 pub struct ChangeTipReceiver<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [TIP_MANAGER_CONFIG_ACCOUNT_SEED],
+        bump = tip_manager_config.bumps.tip_manager_config,
+        rent_exempt = enforce
+    )]
     pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
 
     /// CHECK: old_tip_receiver receives the funds in the RakuraiTipAccount accounts
@@ -672,7 +679,12 @@ impl<'info> ChangeTipReceiver<'info> {
 
 #[derive(Accounts)]
 pub struct ChangeBlockBuilder<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [TIP_MANAGER_CONFIG_ACCOUNT_SEED],
+        bump = tip_manager_config.bumps.tip_manager_config,
+        rent_exempt = enforce
+    )]
     pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
 
     /// CHECK: old_tip_receiver receives the funds in the RakuraiTipAccount accounts
@@ -755,6 +767,15 @@ pub struct ChangeBlockBuilder<'info> {
     pub signer: Signer<'info>,
 }
 
+impl ChangeBlockBuilder<'_> {
+    fn auth(ctx: &Context<ChangeBlockBuilder>) -> Result<()> {
+        if ctx.accounts.tip_manager_config.authority != ctx.accounts.signer.key() {
+            Err(Unauthorized.into())
+        } else {
+            Ok(())
+        }
+    }
+}
 impl<'info> ChangeBlockBuilder<'info> {
     fn get_tip_accounts(&self) -> Vec<AccountInfo<'info>> {
         vec![
