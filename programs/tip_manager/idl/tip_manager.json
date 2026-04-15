@@ -1,5 +1,5 @@
 {
-  "address": "RktiPddFAPzG7CbgRtzVk64VE2RPxeUu2PbbeYov2Ne",
+  "address": "4qRZaFzf7MvgfBTCP9grb69cCST8UmKHPtkpGAgkJosD",
   "metadata": {
     "name": "tip_manager",
     "version": "0.1.0",
@@ -30,7 +30,42 @@
       "accounts": [
         {
           "name": "tip_manager_config",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  84,
+                  73,
+                  80,
+                  95,
+                  77,
+                  65,
+                  78,
+                  65,
+                  71,
+                  69,
+                  82,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "validator_tip_receiver_account",
@@ -324,7 +359,7 @@
       ],
       "args": [
         {
-          "name": "block_builder_commission",
+          "name": "block_builder_commission_bps",
           "type": "u64"
         }
       ]
@@ -348,7 +383,42 @@
       "accounts": [
         {
           "name": "tip_manager_config",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  84,
+                  73,
+                  80,
+                  95,
+                  77,
+                  65,
+                  78,
+                  65,
+                  71,
+                  69,
+                  82,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "old_tip_receiver",
@@ -1675,7 +1745,7 @@
       ],
       "args": [
         {
-          "name": "_bumps",
+          "name": "bumps",
           "type": {
             "defined": {
               "name": "TipManagerBumps"
@@ -1744,11 +1814,13 @@
   "errors": [
     {
       "code": 6000,
-      "name": "ArithmeticError"
+      "name": "ArithmeticError",
+      "msg": "Encountered an arithmetic under/overflow error."
     },
     {
       "code": 6001,
-      "name": "InvalidFee"
+      "name": "MaxCommissionBpsExceeded",
+      "msg": "Block Builder commission basis points must be less than or equal to 10_000"
     },
     {
       "code": 6002,
