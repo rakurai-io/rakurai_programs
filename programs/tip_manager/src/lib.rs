@@ -220,7 +220,7 @@ pub mod tip_manager {
         require_gte!(
             MAX_COMMISSION_BPS,
             block_builder_commission_bps,
-            TipManagerError::InvalidFee
+            TipManagerError::MaxCommissionBpsExceeded
         );
         let total_tips = RakuraiTipAccount::drain_accounts(ctx.accounts.get_tip_accounts())?;
 
@@ -266,8 +266,12 @@ pub mod tip_manager {
 /// Errors
 #[error_code]
 pub enum TipManagerError {
+    #[msg("Encountered an arithmetic under/overflow error.")]
     ArithmeticError,
-    InvalidFee,
+
+    #[msg("Block Builder commission basis points must be less than or equal to 10_000")]
+    MaxCommissionBpsExceeded,
+
     #[msg("Unauthorized signer.")]
     Unauthorized,
 }
