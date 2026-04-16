@@ -24,7 +24,7 @@ pub struct InitializeRakuraiTipManagerAccounts {
 }
 
 /// Builds the instruction to initialize tip manager program accounts.
-pub fn initializerakurai_tip_manager_ix(
+pub fn initialize_rakurai_tip_manager_ix(
     program_id: Pubkey,
     args: InitializeRakuraiTipManagerArgs,
     accounts: InitializeRakuraiTipManagerAccounts,

@@ -1770,16 +1770,16 @@
       ]
     },
     {
-      "name": "RakuraiTipManagerConfigAccount",
+      "name": "TipManagerConfigAccount",
       "discriminator": [
-        28,
-        242,
-        84,
-        167,
-        64,
-        146,
-        219,
-        212
+        66,
+        133,
+        96,
+        181,
+        73,
+        183,
+        2,
+        102
       ]
     }
   ],
@@ -1888,7 +1888,7 @@
       }
     },
     {
-      "name": "RakuraiTipManagerConfigAccount",
+      "name": "TipManagerConfigAccount",
       "docs": [
         "State Accounts",
         "Singleton configuration account for the Rakurai Tip Manager."

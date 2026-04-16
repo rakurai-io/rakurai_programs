@@ -304,10 +304,10 @@ pub struct InitializeRakuraiTipManager<'info> {
         seeds = [TIP_MANAGER_CONFIG_ACCOUNT_SEED],
         bump,
         payer = payer,
-        space = RakuraiTipManagerConfigAccount::SIZE,
+        space = TipManagerConfigAccount::SIZE,
         rent_exempt = enforce
     )]
-    pub tip_manager_config: Account<'info, RakuraiTipManagerConfigAccount>,
+    pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
     #[account(
         init,
         seeds = [RAKURAI_TIP_ACCOUNT_0_SEED],
@@ -396,7 +396,7 @@ pub struct CloseRakuraiTipManager<'info> {
         bump,
         rent_exempt = enforce
     )]
-    pub tip_manager_config: Account<'info, RakuraiTipManagerConfigAccount>,
+    pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
     #[account(
         mut,
         close = signer,
@@ -485,7 +485,7 @@ pub struct ClaimTips<'info> {
         bump = tip_manager_config.bumps.tip_manager_config,
         rent_exempt = enforce
     )]
-    pub tip_manager_config: Account<'info, RakuraiTipManagerConfigAccount>,
+    pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
     #[account(
         mut,
         seeds = [RAKURAI_TIP_ACCOUNT_0_SEED],
@@ -595,7 +595,7 @@ pub struct ChangeTipReceiver<'info> {
         bump = tip_manager_config.bumps.tip_manager_config,
         rent_exempt = enforce
     )]
-    pub tip_manager_config: Account<'info, RakuraiTipManagerConfigAccount>,
+    pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
 
     /// CHECK: old_tip_receiver receives the funds in the RakuraiTipAccount accounts
     #[account(mut, constraint = old_tip_receiver.key() == tip_manager_config.validator_tip_receiver_account)]
@@ -700,7 +700,7 @@ pub struct ChangeBlockBuilder<'info> {
         bump = tip_manager_config.bumps.tip_manager_config,
         rent_exempt = enforce
     )]
-    pub tip_manager_config: Account<'info, RakuraiTipManagerConfigAccount>,
+    pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
 
     /// CHECK: old_tip_receiver receives the funds in the RakuraiTipAccount accounts
     #[account(mut, constraint = validator_tip_receiver_account.key() == tip_manager_config.validator_tip_receiver_account)]
@@ -811,7 +811,7 @@ impl<'info> ChangeBlockBuilder<'info> {
 /// Singleton configuration account for the Rakurai Tip Manager.
 #[account]
 #[derive(Default)]
-pub struct RakuraiTipManagerConfigAccount {
+pub struct TipManagerConfigAccount {
     /// Authorized updater of the config.
     pub authority: Pubkey,
 
@@ -828,7 +828,7 @@ pub struct RakuraiTipManagerConfigAccount {
     pub bumps: RakuraiTipManagerBumps,
 }
 
-impl RakuraiTipManagerConfigAccount {
+impl TipManagerConfigAccount {
     pub const SIZE: usize = 8 + 32 + 32 + 32 + 8 + RakuraiTipManagerBumps::SIZE;
 }
 
