@@ -32,7 +32,7 @@ A Solana smart contract for managing tips sent to validators. The program mainta
 
 ## How It Works
 
-The Tip Manager Program uses a **singleton configuration account** (`TipManagerConfigAccount`) that controls:
+The Rakurai Tip Manager Program uses a **singleton configuration account** (`TipManagerConfigAccount`) that controls:
 - The **validator tip receiver account** — where validator tips are sent
 - The **block builder commission account** — where block builder commission is sent
 - The **block builder commission rate** (in basis points, 0–10000)

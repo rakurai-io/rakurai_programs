@@ -4,7 +4,7 @@ use anchor_lang::prelude::*;
 #[cfg(not(feature = "no-entrypoint"))]
 use solana_security_txt::security_txt;
 
-use crate::TipManagerError::{ArithmeticError, Unauthorized};
+use crate::RakuraiTipManagerError::{ArithmeticError, Unauthorized};
 
 #[cfg(not(feature = "no-entrypoint"))]
 security_txt! {
@@ -39,14 +39,14 @@ const MAX_COMMISSION_BPS: u64 = 10_000;
 /// Rakurai Tip Manager Program: users send tips to one of eight tip accounts, validators periodically drain them
 /// and tips are split between the configured tip receiver and an block builder commission account.
 #[program]
-pub mod tip_manager {
+pub mod rakurai_tip_manager {
     use super::*;
 
     /// Initializes the Rakurai Tip Manager by creating the singleton config PDA and eight Rakurai tip PDAs,
     /// this instruction must be executed exactly once.
-    pub fn initialize_tip_manager(
-        ctx: Context<InitializeTipManager>,
-        bumps: TipManagerBumps,
+    pub fn initialize_rakurai_tip_manager(
+        ctx: Context<InitializeRakuraiTipManager>,
+        bumps: RakuraiTipManagerBumps,
     ) -> Result<()> {
         let cfg = &mut ctx.accounts.tip_manager_config;
 
@@ -63,9 +63,9 @@ pub mod tip_manager {
     /// Closes all Tip manager program accounts (8 tip accounts + config account) and reclaim rent.
     /// Only the tip manager config authority can invoke this instruction.
 
-    pub fn close_tip_manager(ctx: Context<CloseTipManager>) -> Result<()> {
+    pub fn close_rakurai_tip_manager(ctx: Context<CloseRakuraiTipManager>) -> Result<()> {
         // Verify caller authority
-        CloseTipManager::auth(&ctx)?;
+        CloseRakuraiTipManager::auth(&ctx)?;
 
         let authority = &mut ctx.accounts.signer;
         let mut lamports_reclaimed = 0;
@@ -124,6 +124,7 @@ pub mod tip_manager {
     /// Claims all accumulated tips by draining all Rakurai tip accounts (preserving rent exemption) and splitting
     /// the tips between the tip receiver and the block builder commission account.
     pub fn claim_tips(ctx: Context<ClaimTips>) -> Result<()> {
+        ClaimTips::auth(&ctx)?;
         let total_tips = RakuraiTipAccount::drain_accounts(ctx.accounts.get_tip_accounts())?;
 
         let block_builder_fee = total_tips
@@ -220,7 +221,7 @@ pub mod tip_manager {
         require_gte!(
             MAX_COMMISSION_BPS,
             block_builder_commission_bps,
-            TipManagerError::MaxCommissionBpsExceeded
+            RakuraiTipManagerError::MaxCommissionBpsExceeded
         );
         let total_tips = RakuraiTipAccount::drain_accounts(ctx.accounts.get_tip_accounts())?;
 
@@ -265,7 +266,7 @@ pub mod tip_manager {
 
 /// Errors
 #[error_code]
-pub enum TipManagerError {
+pub enum RakuraiTipManagerError {
     #[msg("Encountered an arithmetic under/overflow error.")]
     ArithmeticError,
 
@@ -278,7 +279,7 @@ pub enum TipManagerError {
 
 /// PDA Bumps
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
-pub struct TipManagerBumps {
+pub struct RakuraiTipManagerBumps {
     pub tip_manager_config: u8,
     pub rakurai_tip_account_0: u8,
     pub rakurai_tip_account_1: u8,
@@ -290,23 +291,23 @@ pub struct TipManagerBumps {
     pub rakurai_tip_account_7: u8,
 }
 
-impl TipManagerBumps {
+impl RakuraiTipManagerBumps {
     pub const SIZE: usize = 9;
 }
 
 #[derive(Accounts)]
-#[instruction(tip_manager_bumps: TipManagerBumps)]
-pub struct InitializeTipManager<'info> {
+#[instruction(tip_manager_bumps: RakuraiTipManagerBumps)]
+pub struct InitializeRakuraiTipManager<'info> {
     /// singleton account
     #[account(
         init,
         seeds = [TIP_MANAGER_CONFIG_ACCOUNT_SEED],
         bump,
         payer = payer,
-        space = TipManagerConfigAccount::SIZE,
+        space = RakuraiTipManagerConfigAccount::SIZE,
         rent_exempt = enforce
     )]
-    pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
+    pub tip_manager_config: Account<'info, RakuraiTipManagerConfigAccount>,
     #[account(
         init,
         seeds = [RAKURAI_TIP_ACCOUNT_0_SEED],
@@ -386,7 +387,7 @@ pub struct InitializeTipManager<'info> {
 }
 
 #[derive(Accounts)]
-pub struct CloseTipManager<'info> {
+pub struct CloseRakuraiTipManager<'info> {
     /// singleton account
     #[account(
         mut,
@@ -395,7 +396,7 @@ pub struct CloseTipManager<'info> {
         bump,
         rent_exempt = enforce
     )]
-    pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
+    pub tip_manager_config: Account<'info, RakuraiTipManagerConfigAccount>,
     #[account(
         mut,
         close = signer,
@@ -466,8 +467,8 @@ pub struct CloseTipManager<'info> {
     pub signer: Signer<'info>,
 }
 
-impl CloseTipManager<'_> {
-    fn auth(ctx: &Context<CloseTipManager>) -> Result<()> {
+impl CloseRakuraiTipManager<'_> {
+    fn auth(ctx: &Context<CloseRakuraiTipManager>) -> Result<()> {
         if ctx.accounts.tip_manager_config.authority != ctx.accounts.signer.key() {
             Err(Unauthorized.into())
         } else {
@@ -484,7 +485,7 @@ pub struct ClaimTips<'info> {
         bump = tip_manager_config.bumps.tip_manager_config,
         rent_exempt = enforce
     )]
-    pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
+    pub tip_manager_config: Account<'info, RakuraiTipManagerConfigAccount>,
     #[account(
         mut,
         seeds = [RAKURAI_TIP_ACCOUNT_0_SEED],
@@ -576,6 +577,16 @@ impl<'info> ClaimTips<'info> {
     }
 }
 
+impl ClaimTips<'_> {
+    fn auth(ctx: &Context<ClaimTips>) -> Result<()> {
+        if ctx.accounts.tip_manager_config.authority != ctx.accounts.signer.key() {
+            Err(Unauthorized.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
 #[derive(Accounts)]
 pub struct ChangeTipReceiver<'info> {
     #[account(
@@ -584,7 +595,7 @@ pub struct ChangeTipReceiver<'info> {
         bump = tip_manager_config.bumps.tip_manager_config,
         rent_exempt = enforce
     )]
-    pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
+    pub tip_manager_config: Account<'info, RakuraiTipManagerConfigAccount>,
 
     /// CHECK: old_tip_receiver receives the funds in the RakuraiTipAccount accounts
     #[account(mut, constraint = old_tip_receiver.key() == tip_manager_config.validator_tip_receiver_account)]
@@ -689,7 +700,7 @@ pub struct ChangeBlockBuilder<'info> {
         bump = tip_manager_config.bumps.tip_manager_config,
         rent_exempt = enforce
     )]
-    pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
+    pub tip_manager_config: Account<'info, RakuraiTipManagerConfigAccount>,
 
     /// CHECK: old_tip_receiver receives the funds in the RakuraiTipAccount accounts
     #[account(mut, constraint = validator_tip_receiver_account.key() == tip_manager_config.validator_tip_receiver_account)]
@@ -800,7 +811,7 @@ impl<'info> ChangeBlockBuilder<'info> {
 /// Singleton configuration account for the Rakurai Tip Manager.
 #[account]
 #[derive(Default)]
-pub struct TipManagerConfigAccount {
+pub struct RakuraiTipManagerConfigAccount {
     /// Authorized updater of the config.
     pub authority: Pubkey,
 
@@ -814,11 +825,11 @@ pub struct TipManagerConfigAccount {
     pub block_builder_commission_bps: u64,
 
     /// PDA bump seeds
-    pub bumps: TipManagerBumps,
+    pub bumps: RakuraiTipManagerBumps,
 }
 
-impl TipManagerConfigAccount {
-    pub const SIZE: usize = 8 + 32 + 32 + 32 + 8 + TipManagerBumps::SIZE;
+impl RakuraiTipManagerConfigAccount {
+    pub const SIZE: usize = 8 + 32 + 32 + 32 + 8 + RakuraiTipManagerBumps::SIZE;
 }
 
 /// Account that temporarily holds tips.

@@ -1,7 +1,7 @@
 {
   "address": "4qRZaFzf7MvgfBTCP9grb69cCST8UmKHPtkpGAgkJosD",
   "metadata": {
-    "name": "tip_manager",
+    "name": "rakurai_tip_manager",
     "version": "0.1.0",
     "spec": "0.1.0",
     "description": "Rakurai Tip Manager Program"
@@ -1060,20 +1060,20 @@
       "args": []
     },
     {
-      "name": "close_tip_manager",
+      "name": "close_rakurai_tip_manager",
       "docs": [
         "Closes all Tip manager program accounts (8 tip accounts + config account) and reclaim rent.",
         "Only the tip manager config authority can invoke this instruction."
       ],
       "discriminator": [
-        60,
-        101,
-        1,
-        64,
-        164,
-        27,
-        19,
-        184
+        117,
+        176,
+        52,
+        4,
+        255,
+        168,
+        25,
+        115
       ],
       "accounts": [
         {
@@ -1403,20 +1403,20 @@
       "args": []
     },
     {
-      "name": "initialize_tip_manager",
+      "name": "initialize_rakurai_tip_manager",
       "docs": [
         "Initializes the Rakurai Tip Manager by creating the singleton config PDA and eight Rakurai tip PDAs,",
         "this instruction must be executed exactly once."
       ],
       "discriminator": [
+        237,
+        168,
+        211,
+        26,
         250,
-        101,
-        105,
-        238,
-        73,
-        185,
-        64,
-        119
+        104,
+        17,
+        182
       ],
       "accounts": [
         {
@@ -1748,7 +1748,7 @@
           "name": "bumps",
           "type": {
             "defined": {
-              "name": "TipManagerBumps"
+              "name": "RakuraiTipManagerBumps"
             }
           }
         }
@@ -1770,16 +1770,16 @@
       ]
     },
     {
-      "name": "TipManagerConfigAccount",
+      "name": "RakuraiTipManagerConfigAccount",
       "discriminator": [
-        66,
-        133,
-        96,
-        181,
-        73,
-        183,
-        2,
-        102
+        28,
+        242,
+        84,
+        167,
+        64,
+        146,
+        219,
+        212
       ]
     }
   ],
@@ -1841,7 +1841,7 @@
       }
     },
     {
-      "name": "TipManagerBumps",
+      "name": "RakuraiTipManagerBumps",
       "docs": [
         "PDA Bumps"
       ],
@@ -1888,7 +1888,7 @@
       }
     },
     {
-      "name": "TipManagerConfigAccount",
+      "name": "RakuraiTipManagerConfigAccount",
       "docs": [
         "State Accounts",
         "Singleton configuration account for the Rakurai Tip Manager."
@@ -1931,7 +1931,7 @@
             ],
             "type": {
               "defined": {
-                "name": "TipManagerBumps"
+                "name": "RakuraiTipManagerBumps"
               }
             }
           }

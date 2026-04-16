@@ -8,7 +8,7 @@ A collection of Solana smart contracts and tools required for **Rakurai’s vali
 **Reward Distribution**  
 - Smart contract for distributing block rewards to stakers using a permissionless, Merkle-root-based verification model. [Details](./programs/reward_distribution/README.md)
 
-**Tip Manager**  
+**Rakurai Tip Manager**  
 - Smart contract for managing tips sent to validators. Maintains eight tip accounts to reduce write-lock contention and automatically splits tips between the validator's tip receiver account and the block builder commission account. [Details](./programs/tip_manager/README.md)
 
 **Rakurai Activation CLI**  
