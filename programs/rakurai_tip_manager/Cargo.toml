@@ -1,5 +1,5 @@
 [package]
-name = "tip_manager"
+name = "rakurai_tip_manager"
 version = "0.1.0"
 description = "Rakurai Tip Manager Program"
 edition = "2021"
@@ -7,7 +7,7 @@ license = "Apache-2.0"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "tip_manager"
+name = "rakurai_tip_manager"
 
 [features]
 no-entrypoint = []
