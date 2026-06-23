@@ -1,5 +1,5 @@
 [package]
-name = "tip_manager"
+name = "rakurai_tip_manager"
 version = "0.1.0"
 description = "Rakurai Tip Manager Program"
 edition = "2021"
@@ -7,7 +7,7 @@ license = "Apache-2.0"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "tip_manager"
+name = "rakurai_tip_manager"
 
 [features]
 no-entrypoint = []
@@ -15,6 +15,7 @@ no-idl = []
 no-log-ix-name = []
 cpi = ["no-entrypoint"]
 default = []
+idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
 anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "8b391aa278387b6f6ce3133453619a175544631e" }

@@ -1,7 +1,7 @@
 {
-  "address": "RktiPddFAPzG7CbgRtzVk64VE2RPxeUu2PbbeYov2Ne",
+  "address": "4qRZaFzf7MvgfBTCP9grb69cCST8UmKHPtkpGAgkJosD",
   "metadata": {
-    "name": "tip_manager",
+    "name": "rakurai_tip_manager",
     "version": "0.1.0",
     "spec": "0.1.0",
     "description": "Rakurai Tip Manager Program"
@@ -30,7 +30,42 @@
       "accounts": [
         {
           "name": "tip_manager_config",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  84,
+                  73,
+                  80,
+                  95,
+                  77,
+                  65,
+                  78,
+                  65,
+                  71,
+                  69,
+                  82,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "validator_tip_receiver_account",
@@ -324,7 +359,7 @@
       ],
       "args": [
         {
-          "name": "block_builder_commission",
+          "name": "block_builder_commission_bps",
           "type": "u64"
         }
       ]
@@ -348,7 +383,42 @@
       "accounts": [
         {
           "name": "tip_manager_config",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  84,
+                  73,
+                  80,
+                  95,
+                  77,
+                  65,
+                  78,
+                  65,
+                  71,
+                  69,
+                  82,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "old_tip_receiver",
@@ -990,20 +1060,20 @@
       "args": []
     },
     {
-      "name": "close_tip_manager",
+      "name": "close_rakurai_tip_manager",
       "docs": [
         "Closes all Tip manager program accounts (8 tip accounts + config account) and reclaim rent.",
         "Only the tip manager config authority can invoke this instruction."
       ],
       "discriminator": [
-        60,
-        101,
-        1,
-        64,
-        164,
-        27,
-        19,
-        184
+        117,
+        176,
+        52,
+        4,
+        255,
+        168,
+        25,
+        115
       ],
       "accounts": [
         {
@@ -1333,20 +1403,20 @@
       "args": []
     },
     {
-      "name": "initialize_tip_manager",
+      "name": "initialize_rakurai_tip_manager",
       "docs": [
         "Initializes the Rakurai Tip Manager by creating the singleton config PDA and eight Rakurai tip PDAs,",
         "this instruction must be executed exactly once."
       ],
       "discriminator": [
+        237,
+        168,
+        211,
+        26,
         250,
-        101,
-        105,
-        238,
-        73,
-        185,
-        64,
-        119
+        104,
+        17,
+        182
       ],
       "accounts": [
         {
@@ -1675,10 +1745,10 @@
       ],
       "args": [
         {
-          "name": "_bumps",
+          "name": "bumps",
           "type": {
             "defined": {
-              "name": "TipManagerBumps"
+              "name": "RakuraiTipManagerBumps"
             }
           }
         }
@@ -1744,11 +1814,13 @@
   "errors": [
     {
       "code": 6000,
-      "name": "ArithmeticError"
+      "name": "ArithmeticError",
+      "msg": "Encountered an arithmetic under/overflow error."
     },
     {
       "code": 6001,
-      "name": "InvalidFee"
+      "name": "MaxCommissionBpsExceeded",
+      "msg": "Block Builder commission basis points must be less than or equal to 10_000"
     },
     {
       "code": 6002,
@@ -1769,7 +1841,7 @@
       }
     },
     {
-      "name": "TipManagerBumps",
+      "name": "RakuraiTipManagerBumps",
       "docs": [
         "PDA Bumps"
       ],
@@ -1859,7 +1931,7 @@
             ],
             "type": {
               "defined": {
-                "name": "TipManagerBumps"
+                "name": "RakuraiTipManagerBumps"
               }
             }
           }

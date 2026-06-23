@@ -3,13 +3,13 @@ use anchor_lang::{
     prelude::Pubkey, solana_program::instruction::Instruction, InstructionData, ToAccountMetas,
 };
 
-use crate::TipManagerBumps;
+use crate::RakuraiTipManagerBumps;
 
-pub struct InitializeTipManagerArgs {
-    pub bumps: TipManagerBumps,
+pub struct InitializeRakuraiTipManagerArgs {
+    pub bumps: RakuraiTipManagerBumps,
 }
 
-pub struct InitializeTipManagerAccounts {
+pub struct InitializeRakuraiTipManagerAccounts {
     pub tip_manager_config: Pubkey,
     pub rakurai_tip_account_0: Pubkey,
     pub rakurai_tip_account_1: Pubkey,
@@ -24,14 +24,14 @@ pub struct InitializeTipManagerAccounts {
 }
 
 /// Builds the instruction to initialize tip manager program accounts.
-pub fn initialize_tip_manager_ix(
+pub fn initialize_rakurai_tip_manager_ix(
     program_id: Pubkey,
-    args: InitializeTipManagerArgs,
-    accounts: InitializeTipManagerAccounts,
+    args: InitializeRakuraiTipManagerArgs,
+    accounts: InitializeRakuraiTipManagerAccounts,
 ) -> Instruction {
-    let InitializeTipManagerArgs { bumps } = args;
+    let InitializeRakuraiTipManagerArgs { bumps } = args;
 
-    let InitializeTipManagerAccounts {
+    let InitializeRakuraiTipManagerAccounts {
         tip_manager_config,
         rakurai_tip_account_0,
         rakurai_tip_account_1,
@@ -47,8 +47,8 @@ pub fn initialize_tip_manager_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::InitializeTipManager { bumps }.data(),
-        accounts: crate::accounts::InitializeTipManager {
+        data: crate::instruction::InitializeRakuraiTipManager { bumps }.data(),
+        accounts: crate::accounts::InitializeRakuraiTipManager {
             tip_manager_config,
             rakurai_tip_account_0,
             rakurai_tip_account_1,
@@ -65,9 +65,9 @@ pub fn initialize_tip_manager_ix(
     }
 }
 
-pub struct CloseTipManagerArgs;
+pub struct CloseRakuraiTipManagerArgs;
 
-pub struct CloseTipManagerAccounts {
+pub struct CloseRakuraiTipManagerAccounts {
     pub tip_manager_config: Pubkey,
     pub rakurai_tip_account_0: Pubkey,
     pub rakurai_tip_account_1: Pubkey,
@@ -82,12 +82,12 @@ pub struct CloseTipManagerAccounts {
 }
 
 /// Builds the instruction to close tip manager program accounts.
-pub fn close_tip_manager_ix(
+pub fn close_rakurai_tip_manager_ix(
     program_id: Pubkey,
-    _args: CloseTipManagerArgs,
-    accounts: CloseTipManagerAccounts,
+    _args: CloseRakuraiTipManagerArgs,
+    accounts: CloseRakuraiTipManagerAccounts,
 ) -> Instruction {
-    let CloseTipManagerAccounts {
+    let CloseRakuraiTipManagerAccounts {
         tip_manager_config,
         rakurai_tip_account_0,
         rakurai_tip_account_1,
@@ -103,8 +103,8 @@ pub fn close_tip_manager_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::CloseTipManager {}.data(),
-        accounts: crate::accounts::CloseTipManager {
+        data: crate::instruction::CloseRakuraiTipManager {}.data(),
+        accounts: crate::accounts::CloseRakuraiTipManager {
             tip_manager_config,
             rakurai_tip_account_0,
             rakurai_tip_account_1,

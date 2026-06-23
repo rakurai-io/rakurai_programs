@@ -21,6 +21,6 @@ pub fn derive_rakurai_tip_payment_account_pdas(program_id: &Pubkey) -> Vec<(Pubk
     ]
 }
 
-pub fn derive_tip_manager_config_account_address(program_id: &Pubkey) -> (Pubkey, u8) {
+pub fn derive_rakurai_tip_manager_config_account_address(program_id: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[TIP_MANAGER_CONFIG_ACCOUNT_SEED], program_id)
 }
