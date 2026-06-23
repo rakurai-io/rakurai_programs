@@ -2,7 +2,7 @@
 
 A Solana smart contract for managing tips sent to validators. The program maintains **eight tip accounts** to reduce write-lock contention and automatically splits tips between the validator's tip receiver account and the block builder commission account.
 
-➤ For more details, refer to the [IDL File](./idl/tip_manager.json).
+➤ For more details, refer to the [IDL File](./idl/rakurai_tip_manager.json).
 
 ---
 ### Deployed Program ID
