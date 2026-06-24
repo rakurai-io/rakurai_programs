@@ -48,19 +48,30 @@ Space: `PartnerTipShareAccount::space_for(max_epoch_entries)` (same for backrun)
 
 ---
 
-## Signers
+## Signers & vote auth
 
-| Instruction | Signer |
-|-------------|--------|
-| initialize_reward_collection_account | validator identity |
-| upload_merkle_root | merkle_root_upload_authority |
-| claim_partner_*_share | manager_authority |
-| transfer_staker_rewards / MEV ix | initializer |
-| initialize_partner_*_share_account | `config.tip_backrun_manager_authority` (payer) |
-| record_partner_*_share | record_authority |
-| close_partner_*_share_account | manager_authority |
-| claim | payer |
-| close_claim_status | — (permissionless after expiry) |
+Vote binding (where applicable): vote account owned by vote program; `VoteState` node pubkey == signer (validator identity).
+
+| Instruction | Signer | Vote account | Extra auth |
+|-------------|--------|--------------|------------|
+| initialize_reward_collection_account | validator identity | required | Enabled RAA PDA; vote node == signer |
+| upload_merkle_root | merkle_root_upload_authority | — | — |
+| claim_partner_*_share | manager_authority | — | — |
+| transfer_staker_rewards | initializer | required | vote == `RCA.validator_vote_account`; vote node == signer |
+| transfer_block_builder_commission_on_mev_commission | initializer | — | — |
+| initialize_partner_*_share_account | `config.tip_backrun_manager_authority` (payer) | — | — |
+| record_partner_*_share | record_authority | — | — |
+| close_partner_*_share_account | manager_authority | — | — |
+| claim | payer | — | — |
+| close_claim_status | — | — | permissionless after expiry |
+
+---
+
+## Instruction Accounts (RCA)
+
+**initialize_reward_collection_account**: config, reward_collection_account (init), rakurai_activation_account, validator_vote_account, signer, system_program.
+
+**transfer_staker_rewards**: validator_vote_account, block_builder_commission_account (mut), reward_collection_account (mut), system_program, signer (mut).
 
 ---
 
@@ -85,6 +96,8 @@ Proof siblings use `[1u8]` prefix (`merkle_proof.rs`).
 | PrematurePartnerShareClaim | `current_epoch <= epoch` |
 | RewardsTooLow | Zero amount or vault under-funded |
 | TipBackrunManagerNotConfigured | `tip_backrun_manager_authority` is `None` on config |
+| RakuraiSchedulerNotEnabled | RAA exists but `is_enabled == false` (RCA init) |
+| Unauthorized | Signer / vote / RAA mismatch |
 
 ---
 

@@ -21,7 +21,7 @@ SDK: `derive_rakurai_tip_manager_config_account_address`, `derive_rakurai_tip_pa
 
 | Field | Type | Notes |
 |-------|------|-------|
-| authority | Pubkey | `close`, `claim_tips`, `change_block_builder` |
+| authority | Pubkey | `close`, `change_block_builder` |
 | validator_tip_receiver_account | Pubkey | Updated on `change_tip_receiver` |
 | block_builder_commission_account | Pubkey | Commission destination |
 | block_builder_commission_bps | u64 | 0–10000 |
@@ -43,13 +43,11 @@ tip_manager_config (init), rakurai_tip_account_0..7 (init), system_program, paye
 
 tip_manager_config (mut, close→signer), rakurai_tip_account_0..7 (mut, close→signer), system_program, signer (mut, signer)
 
-### ClaimTips
-
-tip_manager_config (mut), rakurai_tip_account_0..7 (mut), validator_tip_receiver_account (mut), block_builder_commission_account (mut), signer (mut, signer)
-
 ### ChangeTipReceiver
 
-tip_manager_config (mut), old_tip_receiver (mut), new_tip_receiver (mut), block_builder_commission_account (mut), rakurai_tip_account_0..7 (mut), signer (mut, signer)
+tip_manager_config (mut), rakurai_activation_account (RAA PDA for signer), validator_vote_account, old_tip_receiver (mut), new_tip_receiver (mut), block_builder_commission_account (mut), rakurai_tip_account_0..7 (mut), signer (mut, signer)
+
+Auth: RAA `is_enabled` + `validator_authority == signer`; vote program owner; vote node pubkey == signer.
 
 ### ChangeBlockBuilder
 
@@ -104,6 +102,7 @@ Prefer SDK `derive_rakurai_tip_payment_account_pdas` for localnet/redeploy.
 |-------|------|
 | ArithmeticError | Overflow in split/drain/close |
 | MaxCommissionBpsExceeded | bps > 10_000 |
-| Unauthorized | Wrong authority on `claim_tips` / `change_block_builder` / `close` |
+| Unauthorized | Wrong authority on `change_block_builder` / `close`; vote mismatch on `change_tip_receiver` |
+| RakuraiSchedulerNotEnabled | RAA exists but `is_enabled == false` on `change_tip_receiver` |
 
 Events: `TipsClaimedEvent` (drain ixs), `TipsManagerCloseEvent` (close).

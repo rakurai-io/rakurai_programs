@@ -54,8 +54,8 @@ PartnerTipShareAccount / PartnerBackrunShareAccount ── per (partner label, v
 
 ## Epoch Flow
 
-1. **Init RCA** (epoch E): validator identity signs; `expires_at = E + num_epochs_valid`; BRCA/RTCA = `Some(0)`.
-2. **During E**: `transfer_staker_rewards`; tips to RCA (off-chain lamports); `record_partner_*_share`; optional MEV commission ix.
+1. **Init RCA** (epoch E): validator identity signs; pass `validator_vote_account` + enabled RAA; `expires_at = E + num_epochs_valid`; BRCA/RTCA = `Some(0)`.
+2. **During E**: `transfer_staker_rewards` (pass same vote account; must match RCA); tips to RCA (off-chain lamports); `record_partner_*_share`; optional MEV commission ix.
 3. **After E**: `upload_merkle_root`; staker `claim`; partner share claim with `epoch = RCA.creation_epoch` and `current_epoch > epoch`.
 4. **Cleanup**: close RCA after expiry; `close_claim_status` permissionless after expiry.
 

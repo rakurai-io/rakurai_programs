@@ -115,10 +115,10 @@ Anchor ix → Solana ix: map `ix.accounts` to `AccountMeta` with `Pubkey::new_fr
 
 ---
 
-## Tip Manager CLI Accounts (reference)
+## Tip Manager & RCA CLI Accounts (reference)
 
-**claim_tips**: config, validator_tip_receiver, block_builder_commission_account, 8 tip PDAs, authority signer.
+**change_tip_receiver**: config, rakurai_activation_account (PDA `[RAA_SEED, signer]`), validator_vote_account, old_tip_receiver, new_tip_receiver, block_builder_commission_account, 8 tip PDAs, validator identity signer.
 
-**change_tip_receiver**: config, old_tip_receiver, new_tip_receiver, block_builder_commission_account, 8 tip PDAs, signer.
+**transfer_staker_rewards** (RD): validator_vote_account, block_builder_commission_account, reward_collection_account, system_program, validator identity signer.
 
 RCA credit after drain: separate off-chain lamport transfer using `derive_reward_collection_account_address(rd_id, vote, epoch)`.
