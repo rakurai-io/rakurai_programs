@@ -5,11 +5,12 @@ use solana_security_txt::security_txt;
 
 use crate::{
     state::{
-        PartnerBackrunShareAccount, ClaimStatus, PartnerShareLedger, MerkleRoot,
-        RewardCollectionAccount, RewardDistributionConfigAccount, PartnerTipShareAccount,
+        ClaimStatus, MerkleRoot, PartnerBackrunShareAccount, PartnerShareLedger,
+        PartnerTipShareAccount, RewardCollectionAccount, RewardDistributionConfigAccount,
     },
-    ErrorCode::{InvalidBlockBuilderCommissionAccount, Unauthorized},
+    ErrorCode::{InvalidBlockBuilderCommissionAccount, RakuraiSchedulerNotEnabled, Unauthorized},
 };
+use rakurai_activation::state::RakuraiActivationAccount;
 
 #[cfg(not(feature = "no-entrypoint"))]
 security_txt! {
@@ -179,7 +180,8 @@ pub mod reward_distribution {
 
         let account_info = reward_collection_acc.to_account_info();
         let min_rent = Rent::get()?.minimum_balance(account_info.data_len());
-        let spendable = RewardCollectionAccount::spendable_lamports(account_info.lamports(), min_rent)?;
+        let spendable =
+            RewardCollectionAccount::spendable_lamports(account_info.lamports(), min_rent)?;
         if max_total_claim > spendable {
             return Err(ExceedsMaxClaim.into());
         }
@@ -397,7 +399,7 @@ pub mod reward_distribution {
         if clock.epoch > reward_collection_account.expires_at {
             return Err(ExpiredRewardCollectionAccount.into());
         }
-        
+
         if claim_status.is_claimed {
             return Err(FundsAlreadyClaimed.into());
         }
@@ -480,7 +482,10 @@ pub mod reward_distribution {
     ) -> Result<()> {
         InitializePartnerTipShareAccount::auth(&ctx, name, record_authority, max_epoch_entries)?;
 
-        let manager_authority = ctx.accounts.config.require_tip_backrun_manager_authority()?;
+        let manager_authority = ctx
+            .accounts
+            .config
+            .require_tip_backrun_manager_authority()?;
         let partner_tip_share_account = &mut ctx.accounts.partner_tip_share_account;
         partner_tip_share_account.name = name;
         partner_tip_share_account.validator_vote = ctx.accounts.validator_vote_account.key();
@@ -511,9 +516,17 @@ pub mod reward_distribution {
         max_epoch_entries: u8,
         bump: u8,
     ) -> Result<()> {
-        InitializePartnerBackrunShareAccount::auth(&ctx, name, record_authority, max_epoch_entries)?;
+        InitializePartnerBackrunShareAccount::auth(
+            &ctx,
+            name,
+            record_authority,
+            max_epoch_entries,
+        )?;
 
-        let manager_authority = ctx.accounts.config.require_tip_backrun_manager_authority()?;
+        let manager_authority = ctx
+            .accounts
+            .config
+            .require_tip_backrun_manager_authority()?;
         let partner_backrun_share_account = &mut ctx.accounts.partner_backrun_share_account;
         partner_backrun_share_account.name = name;
         partner_backrun_share_account.validator_vote = ctx.accounts.validator_vote_account.key();
@@ -537,7 +550,10 @@ pub mod reward_distribution {
     }
 
     /// Records partner tip share for the current epoch (accounting only).
-    pub fn record_partner_tip_share(ctx: Context<RecordPartnerTipShare>, amount: u64) -> Result<()> {
+    pub fn record_partner_tip_share(
+        ctx: Context<RecordPartnerTipShare>,
+        amount: u64,
+    ) -> Result<()> {
         RecordPartnerTipShare::auth(&ctx)?;
 
         let epoch = Clock::get()?.epoch;
@@ -580,10 +596,7 @@ pub mod reward_distribution {
     }
 
     /// Claims partner tip share for a completed epoch.
-    pub fn claim_partner_tip_share(
-        ctx: Context<ClaimPartnerTipShare>,
-        epoch: u64,
-    ) -> Result<()> {
+    pub fn claim_partner_tip_share(ctx: Context<ClaimPartnerTipShare>, epoch: u64) -> Result<()> {
         ClaimPartnerTipShare::auth(&ctx)?;
 
         let partner_share_account_info = ctx.accounts.partner_tip_share_account.to_account_info();
@@ -633,7 +646,9 @@ pub mod reward_distribution {
     }
 
     /// Closes a partner tip-share account and returns remaining lamports to the manager authority.
-    pub fn close_partner_tip_share_account(ctx: Context<ClosePartnerTipShareAccount>) -> Result<()> {
+    pub fn close_partner_tip_share_account(
+        ctx: Context<ClosePartnerTipShareAccount>,
+    ) -> Result<()> {
         ClosePartnerTipShareAccount::auth(&ctx)?;
         Ok(())
     }
@@ -764,8 +779,13 @@ pub enum ErrorCode {
     #[msg("Partner share can only be claimed after the epoch has ended.")]
     PrematurePartnerShareClaim,
 
-    #[msg("Tip/backrun partner share manager is not configured on the reward distribution config.")]
+    #[msg(
+        "Tip/backrun partner share manager is not configured on the reward distribution config."
+    )]
     TipBackrunManagerNotConfigured,
+
+    #[msg("Rakurai scheduler is not enabled for this validator.")]
+    RakuraiSchedulerNotEnabled,
 }
 
 /// Closes a `ClaimStatus` account and refunds lamports to the payer.
@@ -834,6 +854,15 @@ pub struct InitializeRewardCollectionAccount<'info> {
         rent_exempt = enforce
     )]
     pub reward_collection_account: Account<'info, RewardCollectionAccount>,
+
+    #[account(
+        seeds = [RakuraiActivationAccount::SEED, signer.key().as_ref()],
+        bump = rakurai_activation_account.bump,
+        seeds::program = rakurai_activation::ID,
+        constraint = rakurai_activation_account.validator_authority == signer.key(),
+        constraint = rakurai_activation_account.is_enabled @ RakuraiSchedulerNotEnabled,
+    )]
+    pub rakurai_activation_account: Account<'info, RakuraiActivationAccount>,
 
     /// CHECK: The validator's vote account (used for metadata and on-chain validation).
     pub validator_vote_account: AccountInfo<'info>,
@@ -1106,7 +1135,10 @@ impl InitializePartnerTipShareAccount<'_> {
         record_authority: Pubkey,
         max_epoch_entries: u8,
     ) -> Result<()> {
-        let manager = ctx.accounts.config.require_tip_backrun_manager_authority()?;
+        let manager = ctx
+            .accounts
+            .config
+            .require_tip_backrun_manager_authority()?;
         if ctx.accounts.payer.key() != manager {
             return Err(Unauthorized.into());
         }
@@ -1154,7 +1186,10 @@ impl InitializePartnerBackrunShareAccount<'_> {
         record_authority: Pubkey,
         max_epoch_entries: u8,
     ) -> Result<()> {
-        let manager = ctx.accounts.config.require_tip_backrun_manager_authority()?;
+        let manager = ctx
+            .accounts
+            .config
+            .require_tip_backrun_manager_authority()?;
         if ctx.accounts.payer.key() != manager {
             return Err(Unauthorized.into());
         }

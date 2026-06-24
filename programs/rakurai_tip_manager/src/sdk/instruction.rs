@@ -121,69 +121,11 @@ pub fn close_rakurai_tip_manager_ix(
     }
 }
 
-pub struct ClaimTipsArgs;
-
-pub struct ClaimTipsAccounts {
-    pub tip_manager_config: Pubkey,
-    pub rakurai_tip_account_0: Pubkey,
-    pub rakurai_tip_account_1: Pubkey,
-    pub rakurai_tip_account_2: Pubkey,
-    pub rakurai_tip_account_3: Pubkey,
-    pub rakurai_tip_account_4: Pubkey,
-    pub rakurai_tip_account_5: Pubkey,
-    pub rakurai_tip_account_6: Pubkey,
-    pub rakurai_tip_account_7: Pubkey,
-    pub validator_tip_receiver_account: Pubkey,
-    pub block_builder_commission_account: Pubkey,
-    pub signer: Pubkey,
-}
-
-/// Builds the instruction to initialize tip manager program.
-pub fn claim_tips_ix(
-    program_id: Pubkey,
-    _args: ClaimTipsArgs,
-    accounts: ClaimTipsAccounts,
-) -> Instruction {
-    let ClaimTipsAccounts {
-        tip_manager_config,
-        rakurai_tip_account_0,
-        rakurai_tip_account_1,
-        rakurai_tip_account_2,
-        rakurai_tip_account_3,
-        rakurai_tip_account_4,
-        rakurai_tip_account_5,
-        rakurai_tip_account_6,
-        rakurai_tip_account_7,
-        validator_tip_receiver_account,
-        block_builder_commission_account,
-        signer,
-    } = accounts;
-
-    Instruction {
-        program_id,
-        data: crate::instruction::ClaimTips {}.data(),
-        accounts: crate::accounts::ClaimTips {
-            tip_manager_config,
-            rakurai_tip_account_0,
-            rakurai_tip_account_1,
-            rakurai_tip_account_2,
-            rakurai_tip_account_3,
-            rakurai_tip_account_4,
-            rakurai_tip_account_5,
-            rakurai_tip_account_6,
-            rakurai_tip_account_7,
-            validator_tip_receiver_account,
-            block_builder_commission_account,
-            signer,
-        }
-        .to_account_metas(None),
-    }
-}
-
 pub struct ChangeTipReceiverArgs;
 
 pub struct ChangeTipReceiverAccounts {
     pub tip_manager_config: Pubkey,
+    pub rakurai_activation_account: Pubkey,
     pub old_tip_receiver: Pubkey,
     pub new_tip_receiver: Pubkey,
     pub block_builder_commission_account: Pubkey,
@@ -198,7 +140,7 @@ pub struct ChangeTipReceiverAccounts {
     pub signer: Pubkey,
 }
 
-/// Builds the instruction to initialize tip manager program.
+/// Builds the instruction to drain pending tips and rotate the tip receiver.
 pub fn change_tip_receiver_ix(
     program_id: Pubkey,
     _args: ChangeTipReceiverArgs,
@@ -206,6 +148,7 @@ pub fn change_tip_receiver_ix(
 ) -> Instruction {
     let ChangeTipReceiverAccounts {
         tip_manager_config,
+        rakurai_activation_account,
         old_tip_receiver,
         new_tip_receiver,
         block_builder_commission_account,
@@ -225,6 +168,7 @@ pub fn change_tip_receiver_ix(
         data: crate::instruction::ChangeTipReceiver {}.data(),
         accounts: crate::accounts::ChangeTipReceiver {
             tip_manager_config,
+            rakurai_activation_account,
             old_tip_receiver,
             new_tip_receiver,
             block_builder_commission_account,

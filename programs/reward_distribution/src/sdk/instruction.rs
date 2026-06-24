@@ -75,6 +75,7 @@ pub struct InitializeRewardCollectionAccountAccounts {
     pub signer: Pubkey,
     pub system_program: Pubkey,
     pub reward_collection_account: Pubkey,
+    pub rakurai_activation_account: Pubkey,
     pub validator_vote_account: Pubkey,
 }
 
@@ -95,6 +96,7 @@ pub fn initialize_reward_collection_account_ix(
     let InitializeRewardCollectionAccountAccounts {
         config,
         reward_collection_account,
+        rakurai_activation_account,
         system_program,
         validator_vote_account,
         signer,
@@ -115,6 +117,7 @@ pub fn initialize_reward_collection_account_ix(
             signer,
             system_program,
             reward_collection_account,
+            rakurai_activation_account,
             validator_vote_account,
         }
         .to_account_metas(None),
