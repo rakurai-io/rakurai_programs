@@ -1,6 +1,7 @@
 #![allow(unexpected_cfgs)]
 use anchor_lang::prelude::*;
 use rakurai_activation::state::RakuraiActivationAccount;
+use rakurai_vote_state::VoteState;
 
 #[cfg(not(feature = "no-entrypoint"))]
 use solana_security_txt::security_txt;
@@ -126,6 +127,8 @@ pub mod rakurai_tip_manager {
     /// their respective shares) and then setting the new tip receiver for future tips.
     /// Only a Rakurai-enabled validator (identity signer + enabled RAA) may invoke this.
     pub fn change_tip_receiver(ctx: Context<ChangeTipReceiver>) -> Result<()> {
+        ChangeTipReceiver::auth(&ctx)?;
+
         let total_tips = RakuraiTipAccount::drain_accounts(ctx.accounts.get_tip_accounts())?;
 
         let block_builder_fee = total_tips
@@ -456,6 +459,9 @@ pub struct ChangeTipReceiver<'info> {
     )]
     pub rakurai_activation_account: Account<'info, RakuraiActivationAccount>,
 
+    /// CHECK: validator vote account; node pubkey must match signer.
+    pub validator_vote_account: AccountInfo<'info>,
+
     /// CHECK: old_tip_receiver receives the funds in the RakuraiTipAccount accounts
     #[account(mut, constraint = old_tip_receiver.key() == tip_manager_config.validator_tip_receiver_account)]
     pub old_tip_receiver: AccountInfo<'info>,
@@ -534,6 +540,23 @@ pub struct ChangeTipReceiver<'info> {
 
     #[account(mut)]
     pub signer: Signer<'info>,
+}
+
+impl ChangeTipReceiver<'_> {
+    fn auth(ctx: &Context<ChangeTipReceiver>) -> Result<()> {
+        if ctx.accounts.validator_vote_account.owner != &solana_program::vote::program::id() {
+            return Err(Unauthorized.into());
+        }
+
+        let node_pubkey = VoteState::deserialize_node_pubkey(&ctx.accounts.validator_vote_account)
+            .map_err(|_| Unauthorized)?;
+
+        if node_pubkey != *ctx.accounts.signer.key {
+            return Err(Unauthorized.into());
+        }
+
+        Ok(())
+    }
 }
 
 impl<'info> ChangeTipReceiver<'info> {

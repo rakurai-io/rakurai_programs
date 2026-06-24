@@ -126,6 +126,7 @@ pub struct ChangeTipReceiverArgs;
 pub struct ChangeTipReceiverAccounts {
     pub tip_manager_config: Pubkey,
     pub rakurai_activation_account: Pubkey,
+    pub validator_vote_account: Pubkey,
     pub old_tip_receiver: Pubkey,
     pub new_tip_receiver: Pubkey,
     pub block_builder_commission_account: Pubkey,
@@ -149,6 +150,7 @@ pub fn change_tip_receiver_ix(
     let ChangeTipReceiverAccounts {
         tip_manager_config,
         rakurai_activation_account,
+        validator_vote_account,
         old_tip_receiver,
         new_tip_receiver,
         block_builder_commission_account,
@@ -169,6 +171,7 @@ pub fn change_tip_receiver_ix(
         accounts: crate::accounts::ChangeTipReceiver {
             tip_manager_config,
             rakurai_activation_account,
+            validator_vote_account,
             old_tip_receiver,
             new_tip_receiver,
             block_builder_commission_account,
