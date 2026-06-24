@@ -1,4 +1,7 @@
-use crate::ErrorCode::{AccountValidationFailure, ArithmeticError};
+use crate::ErrorCode::{
+    AccountValidationFailure, ArithmeticError, EpochAlreadyClaimed, EpochEntryNotFound,
+    InvalidPartnerName, InvalidPartnerShareEpochCapacity,
+};
 use anchor_lang::prelude::*;
 use std::mem::size_of;
 
@@ -44,6 +47,10 @@ pub struct RewardCollectionAccount {
     pub bump: u8,
     /// Amount of MEV commission deducted by Block Builder (if enabled).
     pub block_builder_mev_commission_deducted: Option<u64>,
+    /// Cumulative block-reward earned this epoch.
+    pub block_reward_accumulated: Option<u64>,
+    /// Cumulative rakurai tips earned this epoch.
+    pub rakurai_tips_accumulated: Option<u64>,
 }
 
 /// Metadata about the Merkle root used for claims.
@@ -59,6 +66,54 @@ pub struct MerkleRoot {
     pub total_funds_claimed: u64,
     /// Number of nodes that have claimed.
     pub num_nodes_claimed: u64,
+}
+
+pub const MAX_PARTNER_SHARE_EPOCH_ENTRIES_CAP: usize = 32;
+
+/// Per-epoch attributed amount.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct EpochAmountEntry {
+    pub epoch: u64,
+    pub amount: u64,
+    pub claimed: bool,
+}
+
+/// Per-partner epoch share ledger; grows until `max_epoch_entries` then overrides oldest epoch.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default, Debug, PartialEq, Eq)]
+pub struct PartnerShareLedger {
+    pub entries: Vec<EpochAmountEntry>,
+}
+
+/// Partner tip-share vault per validator (accounting + lamport vault).
+#[account]
+pub struct PartnerTipShareAccount {
+    /// UTF-8 padded partner label (used in PDA seeds).
+    pub name: [u8; 32],
+    pub validator_vote: Pubkey,
+    /// Claims revenue and closes the account.
+    pub manager_authority: Pubkey,
+    /// Signs `record_partner_tip_share`.
+    pub record_authority: Pubkey,
+    /// Max distinct epochs in `ledger` (used in PDA seeds).
+    pub max_epoch_entries: u8,
+    pub ledger: PartnerShareLedger,
+    pub bump: u8,
+}
+
+/// Partner backrun-share vault per validator (accounting + lamport vault).
+#[account]
+pub struct PartnerBackrunShareAccount {
+    /// UTF-8 padded partner label (used in PDA seeds).
+    pub name: [u8; 32],
+    pub validator_vote: Pubkey,
+    /// Claims revenue and closes the account.
+    pub manager_authority: Pubkey,
+    /// Signs `record_partner_backrun_share`.
+    pub record_authority: Pubkey,
+    /// Max distinct epochs in `ledger` (used in PDA seeds).
+    pub max_epoch_entries: u8,
+    pub ledger: PartnerShareLedger,
+    pub bump: u8,
 }
 
 const HEADER_SIZE: usize = 8;
@@ -83,7 +138,8 @@ impl RewardDistributionConfigAccount {
 
     /// Checks if MEV commission setting is configured.
     pub fn has_mev_commission_setting(&self) -> bool {
-        self.block_builder_commission_on_mev_commission_enabled.is_some()
+        self.block_builder_commission_on_mev_commission_enabled
+            .is_some()
     }
 
     /// Validates config constraints.
@@ -108,6 +164,37 @@ impl RewardCollectionAccount {
 
     /// Account size for rent-exemption.
     pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
+
+    /// Block reward accumulator (BRCA), defaulting to 0 for legacy accounts.
+    pub fn block_reward_accumulated(&self) -> u64 {
+        self.block_reward_accumulated.unwrap_or(0)
+    }
+
+    /// Rakurai tips split (RTCA), defaulting to 0 for legacy accounts.
+    pub fn rakurai_tips_accumulated(&self) -> u64 {
+        self.rakurai_tips_accumulated.unwrap_or(0)
+    }
+
+    /// RTCA = lamports above rent minus BRCA. Tips arrive as raw lamports to the RCA;
+    /// refreshed when BRCA or balance changes.
+    pub fn compute_rakurai_tips_accumulated(&self, lamports: u64, rent: u64) -> u64 {
+        lamports
+            .saturating_sub(rent)
+            .saturating_sub(self.block_reward_accumulated())
+    }
+
+    /// Updates stored RTCA from current account balance when tracking is enabled.
+    pub fn refresh_rakurai_tips_accumulated(&mut self, lamports: u64, rent: u64) {
+        if self.rakurai_tips_accumulated.is_some() {
+            self.rakurai_tips_accumulated =
+                Some(self.compute_rakurai_tips_accumulated(lamports, rent));
+        }
+    }
+
+    /// Whether accumulator tracking fields are persisted on this account.
+    pub fn has_accumulator_tracking(&self) -> bool {
+        self.block_reward_accumulated.is_some() || self.rakurai_tips_accumulated.is_some()
+    }
 
     /// Validates that required fields are not default.
     pub fn validate(&self) -> Result<()> {
@@ -146,13 +233,178 @@ impl RewardCollectionAccount {
     }
 
     /// Internal helper to safely transfer lamports.
-    fn transfer_lamports(from: AccountInfo, to: AccountInfo, amount: u64) -> Result<()> {
+    pub fn transfer_lamports(from: AccountInfo, to: AccountInfo, amount: u64) -> Result<()> {
         // debit lamports
         **from.try_borrow_mut_lamports()? =
             from.lamports().checked_sub(amount).ok_or(ArithmeticError)?;
         // credit lamports
         **to.try_borrow_mut_lamports()? =
             to.lamports().checked_add(amount).ok_or(ArithmeticError)?;
+
+        Ok(())
+    }
+}
+
+impl PartnerShareLedger {
+    pub fn get_mut(&mut self, epoch: u64) -> Result<&mut EpochAmountEntry> {
+        self.entries
+            .iter_mut()
+            .find(|e| e.epoch == epoch)
+            .ok_or(EpochEntryNotFound.into())
+    }
+
+    pub fn add(&mut self, epoch: u64, amount: u64, capacity: usize) -> Result<()> {
+        if amount == 0 {
+            return Ok(());
+        }
+
+        for entry in &mut self.entries {
+            if entry.epoch == epoch {
+                entry.amount = entry.amount.checked_add(amount).ok_or(ArithmeticError)?;
+                return Ok(());
+            }
+        }
+
+        let new_entry = EpochAmountEntry {
+            epoch,
+            amount,
+            claimed: false,
+        };
+
+        if self.entries.len() < capacity {
+            self.entries.push(new_entry);
+            return Ok(());
+        }
+
+        let len = self.entries.len();
+        let mut oldest_idx = 0usize;
+        let mut oldest_epoch = self.entries[0].epoch;
+        for i in 1..len {
+            if self.entries[i].epoch < oldest_epoch {
+                oldest_epoch = self.entries[i].epoch;
+                oldest_idx = i;
+            }
+        }
+
+        self.entries[oldest_idx] = new_entry;
+        Ok(())
+    }
+
+    pub fn mark_claimed(&mut self, epoch: u64) -> Result<()> {
+        let entry = self.get_mut(epoch)?;
+        if entry.claimed {
+            return Err(EpochAlreadyClaimed.into());
+        }
+        entry.claimed = true;
+        Ok(())
+    }
+}
+
+impl PartnerTipShareAccount {
+    pub const SEED: &'static [u8] = b"PARTNER_TIP_SHARE";
+
+    pub fn space_for(max_epoch_entries: usize) -> usize {
+        HEADER_SIZE
+            + 32
+            + 32
+            + 32
+            + 32
+            + 1
+            + 4
+            + max_epoch_entries * size_of::<EpochAmountEntry>()
+            + 1
+    }
+
+    /// Validates init instruction args before the account is populated.
+    pub fn auth(
+        name: [u8; 32],
+        manager_authority: Pubkey,
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+    ) -> Result<()> {
+        if name == [0u8; 32] {
+            return Err(InvalidPartnerName.into());
+        }
+
+        if manager_authority == Pubkey::default() || record_authority == Pubkey::default() {
+            return Err(AccountValidationFailure.into());
+        }
+
+        if max_epoch_entries == 0 || max_epoch_entries as usize > MAX_PARTNER_SHARE_EPOCH_ENTRIES_CAP
+        {
+            return Err(InvalidPartnerShareEpochCapacity.into());
+        }
+
+        Ok(())
+    }
+
+    /// Validates persisted account fields.
+    pub fn validate(&self) -> Result<()> {
+        Self::auth(
+            self.name,
+            self.manager_authority,
+            self.record_authority,
+            self.max_epoch_entries,
+        )?;
+
+        if self.validator_vote == Pubkey::default() {
+            return Err(AccountValidationFailure.into());
+        }
+
+        Ok(())
+    }
+}
+
+impl PartnerBackrunShareAccount {
+    pub const SEED: &'static [u8] = b"PARTNER_BACKRUN_SHARE";
+
+    pub fn space_for(max_epoch_entries: usize) -> usize {
+        HEADER_SIZE
+            + 32
+            + 32
+            + 32
+            + 32
+            + 1
+            + 4
+            + max_epoch_entries * size_of::<EpochAmountEntry>()
+            + 1
+    }
+
+    /// Validates init instruction args before the account is populated.
+    pub fn auth(
+        name: [u8; 32],
+        manager_authority: Pubkey,
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+    ) -> Result<()> {
+        if name == [0u8; 32] {
+            return Err(InvalidPartnerName.into());
+        }
+
+        if manager_authority == Pubkey::default() || record_authority == Pubkey::default() {
+            return Err(AccountValidationFailure.into());
+        }
+
+        if max_epoch_entries == 0 || max_epoch_entries as usize > MAX_PARTNER_SHARE_EPOCH_ENTRIES_CAP
+        {
+            return Err(InvalidPartnerShareEpochCapacity.into());
+        }
+
+        Ok(())
+    }
+
+    /// Validates persisted account fields.
+    pub fn validate(&self) -> Result<()> {
+        Self::auth(
+            self.name,
+            self.manager_authority,
+            self.record_authority,
+            self.max_epoch_entries,
+        )?;
+
+        if self.validator_vote == Pubkey::default() {
+            return Err(AccountValidationFailure.into());
+        }
 
         Ok(())
     }

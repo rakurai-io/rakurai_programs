@@ -3,7 +3,10 @@ use anchor_lang::prelude::*;
 use solana_security_txt::security_txt;
 
 use crate::{
-    state::{ClaimStatus, MerkleRoot, RewardCollectionAccount, RewardDistributionConfigAccount},
+    state::{
+        PartnerBackrunShareAccount, ClaimStatus, PartnerShareLedger, MerkleRoot,
+        RewardCollectionAccount, RewardDistributionConfigAccount, PartnerTipShareAccount,
+    },
     ErrorCode::{InvalidBlockBuilderCommissionAccount, Unauthorized},
 };
 
@@ -97,6 +100,9 @@ pub mod reward_distribution {
         } else {
             reward_collection_acc.block_builder_mev_commission_deducted = None;
         }
+
+        reward_collection_acc.block_reward_accumulated = Some(0);
+        reward_collection_acc.rakurai_tips_accumulated = Some(0);
 
         reward_collection_acc.validate()?;
 
@@ -208,7 +214,7 @@ pub mod reward_distribution {
             return Err(RewardsTooLow.into());
         }
 
-        let reward_collection_acc = &ctx.accounts.reward_collection_account;
+        let reward_collection_acc = &mut ctx.accounts.reward_collection_account;
 
         // Calculate block builder commission (basis points)
         let block_builder_commission_amount = total_rewards
@@ -253,6 +259,20 @@ pub mod reward_distribution {
                     ctx.accounts.system_program.to_account_info(),
                 ],
             )?;
+        }
+
+        if let Some(block_reward_accumulated) = &mut reward_collection_acc.block_reward_accumulated
+        {
+            *block_reward_accumulated = block_reward_accumulated
+                .checked_add(staker_rewards)
+                .ok_or(ArithmeticError)?;
+        }
+
+        if reward_collection_acc.rakurai_tips_accumulated.is_some() {
+            let account_info = reward_collection_acc.to_account_info();
+            let lamports = account_info.lamports();
+            let min_rent = Rent::get()?.minimum_balance(account_info.data_len());
+            reward_collection_acc.refresh_rakurai_tips_accumulated(lamports, min_rent);
         }
 
         emit!(StakerRewardsTransferredEvent {
@@ -439,10 +459,254 @@ pub mod reward_distribution {
             amount
         });
 
+        if reward_collection_account.rakurai_tips_accumulated.is_some() {
+            let account_info = reward_collection_account.to_account_info();
+            let lamports = account_info.lamports();
+            let min_rent = Rent::get()?.minimum_balance(account_info.data_len());
+            reward_collection_account.refresh_rakurai_tips_accumulated(lamports, min_rent);
+        }
+
         reward_collection_account.validate()?;
 
         Ok(())
     }
+
+    /// Initializes a partner tip-share vault for a validator.
+    pub fn initialize_partner_tip_share_account(
+        ctx: Context<InitializePartnerTipShareAccount>,
+        name: [u8; 32],
+        manager_authority: Pubkey,
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+        bump: u8,
+    ) -> Result<()> {
+        InitializePartnerTipShareAccount::auth(
+            name,
+            manager_authority,
+            record_authority,
+            max_epoch_entries,
+        )?;
+
+        let partner_tip_share_account = &mut ctx.accounts.partner_tip_share_account;
+        partner_tip_share_account.name = name;
+        partner_tip_share_account.validator_vote = ctx.accounts.validator_vote_account.key();
+        partner_tip_share_account.manager_authority = manager_authority;
+        partner_tip_share_account.record_authority = record_authority;
+        partner_tip_share_account.max_epoch_entries = max_epoch_entries;
+        partner_tip_share_account.ledger = PartnerShareLedger::default();
+        partner_tip_share_account.bump = bump;
+        partner_tip_share_account.validate()?;
+
+        emit!(PartnerTipShareAccountInitializedEvent {
+            partner_tip_share_account: partner_tip_share_account.key(),
+            name,
+            validator_vote: partner_tip_share_account.validator_vote,
+            manager_authority,
+            record_authority,
+            max_epoch_entries,
+        });
+
+        Ok(())
+    }
+
+    /// Initializes a partner backrun-share vault for a validator.
+    pub fn initialize_partner_backrun_share_account(
+        ctx: Context<InitializePartnerBackrunShareAccount>,
+        name: [u8; 32],
+        manager_authority: Pubkey,
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+        bump: u8,
+    ) -> Result<()> {
+        InitializePartnerBackrunShareAccount::auth(
+            name,
+            manager_authority,
+            record_authority,
+            max_epoch_entries,
+        )?;
+
+        let partner_backrun_share_account = &mut ctx.accounts.partner_backrun_share_account;
+        partner_backrun_share_account.name = name;
+        partner_backrun_share_account.validator_vote = ctx.accounts.validator_vote_account.key();
+        partner_backrun_share_account.manager_authority = manager_authority;
+        partner_backrun_share_account.record_authority = record_authority;
+        partner_backrun_share_account.max_epoch_entries = max_epoch_entries;
+        partner_backrun_share_account.ledger = PartnerShareLedger::default();
+        partner_backrun_share_account.bump = bump;
+        partner_backrun_share_account.validate()?;
+
+        emit!(PartnerBackrunShareAccountInitializedEvent {
+            partner_backrun_share_account: partner_backrun_share_account.key(),
+            name,
+            validator_vote: partner_backrun_share_account.validator_vote,
+            manager_authority,
+            record_authority,
+            max_epoch_entries,
+        });
+
+        Ok(())
+    }
+
+    /// Records partner tip share for the current epoch (accounting only).
+    pub fn record_partner_tip_share(ctx: Context<RecordPartnerTipShare>, amount: u64) -> Result<()> {
+        RecordPartnerTipShare::auth(&ctx)?;
+
+        let epoch = Clock::get()?.epoch;
+        let partner_tip_share_account = &mut ctx.accounts.partner_tip_share_account;
+        let capacity = partner_tip_share_account.max_epoch_entries as usize;
+        partner_tip_share_account
+            .ledger
+            .add(epoch, amount, capacity)?;
+
+        emit!(PartnerTipShareRecordedEvent {
+            partner_tip_share_account: partner_tip_share_account.key(),
+            epoch,
+            amount,
+        });
+
+        Ok(())
+    }
+
+    /// Records partner backrun share for the current epoch (accounting only).
+    pub fn record_partner_backrun_share(
+        ctx: Context<RecordPartnerBackrunShare>,
+        amount: u64,
+    ) -> Result<()> {
+        RecordPartnerBackrunShare::auth(&ctx)?;
+
+        let epoch = Clock::get()?.epoch;
+        let partner_backrun_share_account = &mut ctx.accounts.partner_backrun_share_account;
+        let capacity = partner_backrun_share_account.max_epoch_entries as usize;
+        partner_backrun_share_account
+            .ledger
+            .add(epoch, amount, capacity)?;
+
+        emit!(PartnerBackrunShareRecordedEvent {
+            partner_backrun_share_account: partner_backrun_share_account.key(),
+            epoch,
+            amount,
+        });
+
+        Ok(())
+    }
+
+    /// Claims partner tip share for a completed epoch.
+    pub fn claim_partner_tip_share(
+        ctx: Context<ClaimPartnerTipShare>,
+        epoch: u64,
+    ) -> Result<()> {
+        ClaimPartnerTipShare::auth(&ctx)?;
+
+        let partner_share_account_info = ctx.accounts.partner_tip_share_account.to_account_info();
+        let amount = claim_partner_share_revenue(
+            &ctx.accounts.reward_collection_account,
+            &mut ctx.accounts.partner_tip_share_account.ledger,
+            partner_share_account_info,
+            ctx.accounts.validator_identity.to_account_info(),
+            epoch,
+        )?;
+
+        emit!(PartnerTipShareClaimedEvent {
+            partner_tip_share_account: ctx.accounts.partner_tip_share_account.key(),
+            validator_identity: ctx.accounts.validator_identity.key(),
+            epoch,
+            amount,
+        });
+
+        Ok(())
+    }
+
+    /// Claims partner backrun share for a completed epoch.
+    pub fn claim_partner_backrun_share(
+        ctx: Context<ClaimPartnerBackrunShare>,
+        epoch: u64,
+    ) -> Result<()> {
+        ClaimPartnerBackrunShare::auth(&ctx)?;
+
+        let partner_share_account_info =
+            ctx.accounts.partner_backrun_share_account.to_account_info();
+        let amount = claim_partner_share_revenue(
+            &ctx.accounts.reward_collection_account,
+            &mut ctx.accounts.partner_backrun_share_account.ledger,
+            partner_share_account_info,
+            ctx.accounts.validator_identity.to_account_info(),
+            epoch,
+        )?;
+
+        emit!(PartnerBackrunShareClaimedEvent {
+            partner_backrun_share_account: ctx.accounts.partner_backrun_share_account.key(),
+            validator_identity: ctx.accounts.validator_identity.key(),
+            epoch,
+            amount,
+        });
+
+        Ok(())
+    }
+
+    /// Closes a partner tip-share account and returns remaining lamports to the manager authority.
+    pub fn close_partner_tip_share_account(ctx: Context<ClosePartnerTipShareAccount>) -> Result<()> {
+        ClosePartnerTipShareAccount::auth(&ctx)?;
+        Ok(())
+    }
+
+    /// Closes a partner backrun-share account and returns remaining lamports to the manager authority.
+    pub fn close_partner_backrun_share_account(
+        ctx: Context<ClosePartnerBackrunShareAccount>,
+    ) -> Result<()> {
+        ClosePartnerBackrunShareAccount::auth(&ctx)?;
+        Ok(())
+    }
+}
+
+fn claim_partner_share_revenue(
+    reward_collection_account: &RewardCollectionAccount,
+    ledger: &mut PartnerShareLedger,
+    partner_share_account: AccountInfo,
+    validator_identity: AccountInfo,
+    epoch: u64,
+) -> Result<u64> {
+    use crate::ErrorCode::*;
+
+    let current_epoch = Clock::get()?.epoch;
+    if current_epoch <= epoch {
+        return Err(PrematurePartnerShareClaim.into());
+    }
+    if current_epoch > reward_collection_account.expires_at {
+        return Err(ExpiredRewardCollectionAccount.into());
+    }
+
+    let entry_amount = {
+        let entry = ledger
+            .entries
+            .iter()
+            .find(|e| e.epoch == epoch)
+            .ok_or(EpochEntryNotFound)?;
+        if entry.claimed {
+            return Err(EpochAlreadyClaimed.into());
+        }
+        if entry.amount == 0 {
+            return Err(RewardsTooLow.into());
+        }
+        entry.amount
+    };
+
+    let rent = Rent::get()?;
+    let min_rent = rent.minimum_balance(partner_share_account.data_len());
+    let available = partner_share_account.lamports().saturating_sub(min_rent);
+    let transfer_amount = entry_amount.min(available);
+    if transfer_amount < entry_amount {
+        return Err(RewardsTooLow.into());
+    }
+
+    RewardCollectionAccount::transfer_lamports(
+        partner_share_account,
+        validator_identity,
+        transfer_amount,
+    )?;
+
+    ledger.mark_claimed(epoch)?;
+
+    Ok(transfer_amount)
 }
 
 /// Custom errors for Reward Distribution Program instructions.
@@ -495,6 +759,21 @@ pub enum ErrorCode {
 
     #[msg("MEV commission has already been deducted for this epoch")]
     MevCommissionAlreadyDeducted,
+
+    #[msg("Partner label must be non-empty.")]
+    InvalidPartnerName,
+
+    #[msg("Partner share ledger capacity must be between 1 and the program cap.")]
+    InvalidPartnerShareEpochCapacity,
+
+    #[msg("Epoch entry not found in partner share ledger.")]
+    EpochEntryNotFound,
+
+    #[msg("Partner share for this epoch has already been claimed.")]
+    EpochAlreadyClaimed,
+
+    #[msg("Partner share can only be claimed after the epoch has ended.")]
+    PrematurePartnerShareClaim,
 }
 
 /// Closes a `ClaimStatus` account and refunds lamports to the payer.
@@ -798,6 +1077,271 @@ impl TransferBlockBuilderCommissionOnMevCommission<'_> {
     }
 }
 
+/// Initializes a partner tip-share vault PDA.
+#[derive(Accounts)]
+#[instruction(name: [u8; 32], manager_authority: Pubkey, record_authority: Pubkey, max_epoch_entries: u8, bump: u8)]
+pub struct InitializePartnerTipShareAccount<'info> {
+    #[account(
+        init,
+        payer = payer,
+        space = PartnerTipShareAccount::space_for(max_epoch_entries as usize),
+        seeds = [
+            PartnerTipShareAccount::SEED,
+            name.as_ref(),
+            validator_vote_account.key().as_ref(),
+            &[max_epoch_entries],
+        ],
+        bump,
+    )]
+    pub partner_tip_share_account: Account<'info, PartnerTipShareAccount>,
+
+    /// CHECK: validator vote account used in PDA seeds.
+    pub validator_vote_account: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+impl InitializePartnerTipShareAccount<'_> {
+    fn auth(
+        name: [u8; 32],
+        manager_authority: Pubkey,
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+    ) -> Result<()> {
+        PartnerTipShareAccount::auth(name, manager_authority, record_authority, max_epoch_entries)
+    }
+}
+
+/// Initializes a partner backrun-share vault PDA.
+#[derive(Accounts)]
+#[instruction(name: [u8; 32], manager_authority: Pubkey, record_authority: Pubkey, max_epoch_entries: u8, bump: u8)]
+pub struct InitializePartnerBackrunShareAccount<'info> {
+    #[account(
+        init,
+        payer = payer,
+        space = PartnerBackrunShareAccount::space_for(max_epoch_entries as usize),
+        seeds = [
+            PartnerBackrunShareAccount::SEED,
+            name.as_ref(),
+            validator_vote_account.key().as_ref(),
+            &[max_epoch_entries],
+        ],
+        bump,
+    )]
+    pub partner_backrun_share_account: Account<'info, PartnerBackrunShareAccount>,
+
+    /// CHECK: validator vote account used in PDA seeds.
+    pub validator_vote_account: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+impl InitializePartnerBackrunShareAccount<'_> {
+    fn auth(
+        name: [u8; 32],
+        manager_authority: Pubkey,
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+    ) -> Result<()> {
+        PartnerBackrunShareAccount::auth(
+            name,
+            manager_authority,
+            record_authority,
+            max_epoch_entries,
+        )
+    }
+}
+
+/// Records partner tip share for the current epoch.
+#[derive(Accounts)]
+pub struct RecordPartnerTipShare<'info> {
+    #[account(mut)]
+    pub partner_tip_share_account: Account<'info, PartnerTipShareAccount>,
+
+    pub record_authority: Signer<'info>,
+}
+
+impl RecordPartnerTipShare<'_> {
+    fn auth(ctx: &Context<RecordPartnerTipShare>) -> Result<()> {
+        if ctx.accounts.record_authority.key()
+            != ctx.accounts.partner_tip_share_account.record_authority
+        {
+            Err(Unauthorized.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Records partner backrun share for the current epoch.
+#[derive(Accounts)]
+pub struct RecordPartnerBackrunShare<'info> {
+    #[account(mut)]
+    pub partner_backrun_share_account: Account<'info, PartnerBackrunShareAccount>,
+
+    pub record_authority: Signer<'info>,
+}
+
+impl RecordPartnerBackrunShare<'_> {
+    fn auth(ctx: &Context<RecordPartnerBackrunShare>) -> Result<()> {
+        if ctx.accounts.record_authority.key()
+            != ctx.accounts.partner_backrun_share_account.record_authority
+        {
+            Err(Unauthorized.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Claims partner tip share for a completed epoch.
+#[derive(Accounts)]
+#[instruction(epoch: u64)]
+pub struct ClaimPartnerTipShare<'info> {
+    #[account(
+        constraint = reward_collection_account.creation_epoch == epoch,
+        constraint = reward_collection_account.validator_vote_account == partner_tip_share_account.validator_vote,
+    )]
+    pub reward_collection_account: Account<'info, RewardCollectionAccount>,
+
+    #[account(mut)]
+    pub partner_tip_share_account: Account<'info, PartnerTipShareAccount>,
+
+    /// CHECK: must match RCA initializer
+    #[account(
+        mut,
+        constraint = validator_identity.key() == reward_collection_account.initializer,
+    )]
+    pub validator_identity: UncheckedAccount<'info>,
+
+    pub manager_authority: Signer<'info>,
+}
+
+impl ClaimPartnerTipShare<'_> {
+    fn auth(ctx: &Context<ClaimPartnerTipShare>) -> Result<()> {
+        if ctx.accounts.manager_authority.key()
+            != ctx.accounts.partner_tip_share_account.manager_authority
+        {
+            Err(Unauthorized.into())
+        } else if ctx.accounts.validator_identity.key()
+            != ctx.accounts.reward_collection_account.initializer
+        {
+            Err(Unauthorized.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Claims partner backrun share for a completed epoch.
+#[derive(Accounts)]
+#[instruction(epoch: u64)]
+pub struct ClaimPartnerBackrunShare<'info> {
+    #[account(
+        constraint = reward_collection_account.creation_epoch == epoch,
+        constraint = reward_collection_account.validator_vote_account == partner_backrun_share_account.validator_vote,
+    )]
+    pub reward_collection_account: Account<'info, RewardCollectionAccount>,
+
+    #[account(mut)]
+    pub partner_backrun_share_account: Account<'info, PartnerBackrunShareAccount>,
+
+    /// CHECK: must match RCA initializer
+    #[account(
+        mut,
+        constraint = validator_identity.key() == reward_collection_account.initializer,
+    )]
+    pub validator_identity: UncheckedAccount<'info>,
+
+    pub manager_authority: Signer<'info>,
+}
+
+impl ClaimPartnerBackrunShare<'_> {
+    fn auth(ctx: &Context<ClaimPartnerBackrunShare>) -> Result<()> {
+        if ctx.accounts.manager_authority.key()
+            != ctx.accounts.partner_backrun_share_account.manager_authority
+        {
+            Err(Unauthorized.into())
+        } else if ctx.accounts.validator_identity.key()
+            != ctx.accounts.reward_collection_account.initializer
+        {
+            Err(Unauthorized.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Closes a partner tip-share account.
+#[derive(Accounts)]
+pub struct ClosePartnerTipShareAccount<'info> {
+    #[account(
+        mut,
+        close = manager_authority,
+        seeds = [
+            PartnerTipShareAccount::SEED,
+            partner_tip_share_account.name.as_ref(),
+            partner_tip_share_account.validator_vote.as_ref(),
+            &[partner_tip_share_account.max_epoch_entries],
+        ],
+        bump = partner_tip_share_account.bump,
+    )]
+    pub partner_tip_share_account: Account<'info, PartnerTipShareAccount>,
+
+    #[account(mut)]
+    pub manager_authority: Signer<'info>,
+}
+
+impl ClosePartnerTipShareAccount<'_> {
+    fn auth(ctx: &Context<ClosePartnerTipShareAccount>) -> Result<()> {
+        if ctx.accounts.manager_authority.key()
+            != ctx.accounts.partner_tip_share_account.manager_authority
+        {
+            Err(Unauthorized.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Closes a partner backrun-share account.
+#[derive(Accounts)]
+pub struct ClosePartnerBackrunShareAccount<'info> {
+    #[account(
+        mut,
+        close = manager_authority,
+        seeds = [
+            PartnerBackrunShareAccount::SEED,
+            partner_backrun_share_account.name.as_ref(),
+            partner_backrun_share_account.validator_vote.as_ref(),
+            &[partner_backrun_share_account.max_epoch_entries],
+        ],
+        bump = partner_backrun_share_account.bump,
+    )]
+    pub partner_backrun_share_account: Account<'info, PartnerBackrunShareAccount>,
+
+    #[account(mut)]
+    pub manager_authority: Signer<'info>,
+}
+
+impl ClosePartnerBackrunShareAccount<'_> {
+    fn auth(ctx: &Context<ClosePartnerBackrunShareAccount>) -> Result<()> {
+        if ctx.accounts.manager_authority.key()
+            != ctx.accounts.partner_backrun_share_account.manager_authority
+        {
+            Err(Unauthorized.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
 // Events
 
 // Emitted when a new RewardCollectionAccount is initialized.
@@ -904,4 +1448,54 @@ pub struct ClaimStatusClosedEvent {
 
     /// [ClaimStatus] account that was closed.
     pub claim_status_account: Pubkey,
+}
+
+#[event]
+pub struct PartnerTipShareAccountInitializedEvent {
+    pub partner_tip_share_account: Pubkey,
+    pub name: [u8; 32],
+    pub validator_vote: Pubkey,
+    pub manager_authority: Pubkey,
+    pub record_authority: Pubkey,
+    pub max_epoch_entries: u8,
+}
+
+#[event]
+pub struct PartnerBackrunShareAccountInitializedEvent {
+    pub partner_backrun_share_account: Pubkey,
+    pub name: [u8; 32],
+    pub validator_vote: Pubkey,
+    pub manager_authority: Pubkey,
+    pub record_authority: Pubkey,
+    pub max_epoch_entries: u8,
+}
+
+#[event]
+pub struct PartnerTipShareRecordedEvent {
+    pub partner_tip_share_account: Pubkey,
+    pub epoch: u64,
+    pub amount: u64,
+}
+
+#[event]
+pub struct PartnerBackrunShareRecordedEvent {
+    pub partner_backrun_share_account: Pubkey,
+    pub epoch: u64,
+    pub amount: u64,
+}
+
+#[event]
+pub struct PartnerTipShareClaimedEvent {
+    pub partner_tip_share_account: Pubkey,
+    pub validator_identity: Pubkey,
+    pub epoch: u64,
+    pub amount: u64,
+}
+
+#[event]
+pub struct PartnerBackrunShareClaimedEvent {
+    pub partner_backrun_share_account: Pubkey,
+    pub validator_identity: Pubkey,
+    pub epoch: u64,
+    pub amount: u64,
 }
