@@ -24,7 +24,7 @@ Space: `PartnerTipShareAccount::space_for(max_epoch_entries)` (same for backrun)
 |-------|------|-------|
 | name | [u8; 32] | Partner/wallet label in seeds; non-empty |
 | validator_vote | Pubkey | Must match RCA vote on claim |
-| manager_authority | Pubkey | Claim share + close account |
+| manager_authority | Pubkey | Set from `config.tip_backrun_manager_authority` at init; claim + close |
 | record_authority | Pubkey | Signs `record_partner_*_share` only |
 | max_epoch_entries | u8 | In seeds; ledger capacity |
 | ledger | PartnerShareLedger | `Vec<EpochAmountEntry>` |
@@ -56,7 +56,7 @@ Space: `PartnerTipShareAccount::space_for(max_epoch_entries)` (same for backrun)
 | upload_merkle_root | merkle_root_upload_authority |
 | claim_partner_*_share | manager_authority |
 | transfer_staker_rewards / MEV ix | initializer |
-| initialize_partner_*_share_account | payer |
+| initialize_partner_*_share_account | `config.tip_backrun_manager_authority` (payer) |
 | record_partner_*_share | record_authority |
 | close_partner_*_share_account | manager_authority |
 | claim | payer |
@@ -84,11 +84,24 @@ Proof siblings use `[1u8]` prefix (`merkle_proof.rs`).
 | EpochAlreadyClaimed | Entry already claimed |
 | PrematurePartnerShareClaim | `current_epoch <= epoch` |
 | RewardsTooLow | Zero amount or vault under-funded |
+| TipBackrunManagerNotConfigured | `tip_backrun_manager_authority` is `None` on config |
+
+---
+
+## Config (selected fields)
+
+| Field | Notes |
+|-------|-------|
+| tip_backrun_manager_authority | `Option<Pubkey>`; if `None`, partner share init is disabled |
 
 ---
 
 ## Claim Accounts
 
-`claim`: config, reward_collection_account, claim_status (init), claimant, payer, system_program.
+`claim`: reward_collection_account, claim_status (init), claimant, payer, system_program.
 
 Partner share claim also requires `validator_identity` matching RCA `initializer`.
+
+### Partner share init accounts
+
+`config` (RD config PDA), `partner_*_share_account` (init), `validator_vote_account`, `payer` (= `tip_backrun_manager_authority`), `system_program`.

@@ -1,3 +1,4 @@
+#![allow(unexpected_cfgs)]
 use anchor_lang::prelude::*;
 #[cfg(not(feature = "no-entrypoint"))]
 use solana_security_txt::security_txt;
@@ -46,6 +47,7 @@ pub mod reward_distribution {
         cfg.num_epochs_valid = num_epochs_valid;
         cfg.max_commission_bps = max_commission_bps;
         cfg.set_mev_commission_enabled(block_builder_commission_on_mev_commission_enabled);
+        cfg.tip_backrun_manager_authority = None;
         cfg.bump = bump;
         cfg.validate()?;
 
@@ -125,6 +127,7 @@ pub mod reward_distribution {
         config.num_epochs_valid = new_config.num_epochs_valid;
         config.max_commission_bps = new_config.max_commission_bps;
         config.set_mev_commission_enabled(new_config.is_mev_commission_enabled());
+        config.tip_backrun_manager_authority = new_config.tip_backrun_manager_authority;
         config.validate()?;
 
         emit!(ConfigUpdatedEvent {
@@ -137,23 +140,12 @@ pub mod reward_distribution {
     /// Closes the reward distribution config account and reclaims rent.
     /// Only the config authority can invoke this instruction.
     pub fn close_config(ctx: Context<CloseConfig>) -> Result<()> {
-        // Verify caller authority
         CloseConfig::auth(&ctx)?;
 
-        let config_account = &mut ctx.accounts.config;
-        let authority = &mut ctx.accounts.signer;
+        let lamports_to_reclaim = ctx.accounts.config.to_account_info().lamports();
 
-        // Transfer all lamports from config to authority
-        let lamports_to_reclaim = config_account.to_account_info().lamports();
-        **config_account.to_account_info().try_borrow_mut_lamports()? = 0;
-        **authority.try_borrow_mut_lamports()? = authority
-            .lamports()
-            .checked_add(lamports_to_reclaim)
-            .ok_or(ArithmeticError)?;
-
-        // Emit closure event
         emit!(ConfigClosedEvent {
-            authority: authority.key(),
+            authority: ctx.accounts.signer.key(),
             lamports_reclaimed: lamports_to_reclaim,
         });
 
@@ -183,6 +175,13 @@ pub mod reward_distribution {
 
         if current_epoch > reward_collection_acc.expires_at {
             return Err(ExpiredRewardCollectionAccount.into());
+        }
+
+        let account_info = reward_collection_acc.to_account_info();
+        let min_rent = Rent::get()?.minimum_balance(account_info.data_len());
+        let spendable = RewardCollectionAccount::spendable_lamports(account_info.lamports(), min_rent)?;
+        if max_total_claim > spendable {
+            return Err(ExceedsMaxClaim.into());
         }
 
         reward_collection_acc.merkle_root = Some(MerkleRoot {
@@ -398,7 +397,7 @@ pub mod reward_distribution {
         if clock.epoch > reward_collection_account.expires_at {
             return Err(ExpiredRewardCollectionAccount.into());
         }
-
+        
         if claim_status.is_claimed {
             return Err(FundsAlreadyClaimed.into());
         }
@@ -475,18 +474,13 @@ pub mod reward_distribution {
     pub fn initialize_partner_tip_share_account(
         ctx: Context<InitializePartnerTipShareAccount>,
         name: [u8; 32],
-        manager_authority: Pubkey,
         record_authority: Pubkey,
         max_epoch_entries: u8,
         bump: u8,
     ) -> Result<()> {
-        InitializePartnerTipShareAccount::auth(
-            name,
-            manager_authority,
-            record_authority,
-            max_epoch_entries,
-        )?;
+        InitializePartnerTipShareAccount::auth(&ctx, name, record_authority, max_epoch_entries)?;
 
+        let manager_authority = ctx.accounts.config.require_tip_backrun_manager_authority()?;
         let partner_tip_share_account = &mut ctx.accounts.partner_tip_share_account;
         partner_tip_share_account.name = name;
         partner_tip_share_account.validator_vote = ctx.accounts.validator_vote_account.key();
@@ -513,18 +507,13 @@ pub mod reward_distribution {
     pub fn initialize_partner_backrun_share_account(
         ctx: Context<InitializePartnerBackrunShareAccount>,
         name: [u8; 32],
-        manager_authority: Pubkey,
         record_authority: Pubkey,
         max_epoch_entries: u8,
         bump: u8,
     ) -> Result<()> {
-        InitializePartnerBackrunShareAccount::auth(
-            name,
-            manager_authority,
-            record_authority,
-            max_epoch_entries,
-        )?;
+        InitializePartnerBackrunShareAccount::auth(&ctx, name, record_authority, max_epoch_entries)?;
 
+        let manager_authority = ctx.accounts.config.require_tip_backrun_manager_authority()?;
         let partner_backrun_share_account = &mut ctx.accounts.partner_backrun_share_account;
         partner_backrun_share_account.name = name;
         partner_backrun_share_account.validator_vote = ctx.accounts.validator_vote_account.key();
@@ -774,6 +763,9 @@ pub enum ErrorCode {
 
     #[msg("Partner share can only be claimed after the epoch has ended.")]
     PrematurePartnerShareClaim,
+
+    #[msg("Tip/backrun partner share manager is not configured on the reward distribution config.")]
+    TipBackrunManagerNotConfigured,
 }
 
 /// Closes a `ClaimStatus` account and refunds lamports to the payer.
@@ -950,9 +942,6 @@ impl CloseRewardCollectionAccount<'_> {
 #[derive(Accounts)]
 #[instruction(_bump: u8, _amount: u64, _proof: Vec<[u8; 32]>)]
 pub struct Claim<'info> {
-    /// The global configuration account for Reward Distribution settings.
-    pub config: Account<'info, RewardDistributionConfigAccount>,
-
     #[account(mut, rent_exempt = enforce)]
     pub reward_collection_account: Account<'info, RewardCollectionAccount>,
 
@@ -1079,7 +1068,7 @@ impl TransferBlockBuilderCommissionOnMevCommission<'_> {
 
 /// Initializes a partner tip-share vault PDA.
 #[derive(Accounts)]
-#[instruction(name: [u8; 32], manager_authority: Pubkey, record_authority: Pubkey, max_epoch_entries: u8, bump: u8)]
+#[instruction(name: [u8; 32], record_authority: Pubkey, max_epoch_entries: u8, bump: u8)]
 pub struct InitializePartnerTipShareAccount<'info> {
     #[account(
         init,
@@ -1095,6 +1084,12 @@ pub struct InitializePartnerTipShareAccount<'info> {
     )]
     pub partner_tip_share_account: Account<'info, PartnerTipShareAccount>,
 
+    #[account(
+        seeds = [RewardDistributionConfigAccount::SEED],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, RewardDistributionConfigAccount>,
+
     /// CHECK: validator vote account used in PDA seeds.
     pub validator_vote_account: UncheckedAccount<'info>,
 
@@ -1106,18 +1101,22 @@ pub struct InitializePartnerTipShareAccount<'info> {
 
 impl InitializePartnerTipShareAccount<'_> {
     fn auth(
+        ctx: &Context<InitializePartnerTipShareAccount>,
         name: [u8; 32],
-        manager_authority: Pubkey,
         record_authority: Pubkey,
         max_epoch_entries: u8,
     ) -> Result<()> {
-        PartnerTipShareAccount::auth(name, manager_authority, record_authority, max_epoch_entries)
+        let manager = ctx.accounts.config.require_tip_backrun_manager_authority()?;
+        if ctx.accounts.payer.key() != manager {
+            return Err(Unauthorized.into());
+        }
+        PartnerTipShareAccount::validate_init_params(name, record_authority, max_epoch_entries)
     }
 }
 
 /// Initializes a partner backrun-share vault PDA.
 #[derive(Accounts)]
-#[instruction(name: [u8; 32], manager_authority: Pubkey, record_authority: Pubkey, max_epoch_entries: u8, bump: u8)]
+#[instruction(name: [u8; 32], record_authority: Pubkey, max_epoch_entries: u8, bump: u8)]
 pub struct InitializePartnerBackrunShareAccount<'info> {
     #[account(
         init,
@@ -1133,6 +1132,12 @@ pub struct InitializePartnerBackrunShareAccount<'info> {
     )]
     pub partner_backrun_share_account: Account<'info, PartnerBackrunShareAccount>,
 
+    #[account(
+        seeds = [RewardDistributionConfigAccount::SEED],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, RewardDistributionConfigAccount>,
+
     /// CHECK: validator vote account used in PDA seeds.
     pub validator_vote_account: UncheckedAccount<'info>,
 
@@ -1144,17 +1149,16 @@ pub struct InitializePartnerBackrunShareAccount<'info> {
 
 impl InitializePartnerBackrunShareAccount<'_> {
     fn auth(
+        ctx: &Context<InitializePartnerBackrunShareAccount>,
         name: [u8; 32],
-        manager_authority: Pubkey,
         record_authority: Pubkey,
         max_epoch_entries: u8,
     ) -> Result<()> {
-        PartnerBackrunShareAccount::auth(
-            name,
-            manager_authority,
-            record_authority,
-            max_epoch_entries,
-        )
+        let manager = ctx.accounts.config.require_tip_backrun_manager_authority()?;
+        if ctx.accounts.payer.key() != manager {
+            return Err(Unauthorized.into());
+        }
+        PartnerBackrunShareAccount::validate_init_params(name, record_authority, max_epoch_entries)
     }
 }
 
@@ -1349,21 +1353,6 @@ impl ClosePartnerBackrunShareAccount<'_> {
 pub struct RewardCollectionAccountInitializedEvent {
     /// The newly initialized reward colection account.
     pub reward_collection_account: Pubkey,
-}
-
-// Emitted when validator commission basis points are updated.
-#[event]
-pub struct ValidatorCommissionBpsUpdatedEvent {
-    pub reward_collection_account: Pubkey,
-    pub old_commission_bps: u16,
-    pub new_commission_bps: u16,
-}
-
-// Emitted when the Merkle root upload authority is changed.
-#[event]
-pub struct MerkleRootUploadAuthorityUpdatedEvent {
-    pub old_authority: Pubkey,
-    pub new_authority: Pubkey,
 }
 
 // Emitted when a config value is updated by an authorized entity.

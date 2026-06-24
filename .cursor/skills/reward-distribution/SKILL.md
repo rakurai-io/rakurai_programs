@@ -33,7 +33,7 @@ PartnerTipShareAccount / PartnerBackrunShareAccount ── per (partner label, v
 
 | Account | Role |
 |---------|------|
-| `RewardDistributionConfigAccount` | Admin, `num_epochs_valid` (1–10), commission caps, MEV toggle |
+| `RewardDistributionConfigAccount` | Admin, `num_epochs_valid` (1–10), commission caps, MEV toggle, `tip_backrun_manager_authority` |
 | `RewardCollectionAccount` | Per-epoch collection vault |
 | `ClaimStatus` | Per-claimant replay guard |
 | `PartnerTipShareAccount` | Partner tip share per label + validator |
@@ -59,7 +59,7 @@ PartnerTipShareAccount / PartnerBackrunShareAccount ── per (partner label, v
 3. **After E**: `upload_merkle_root`; staker `claim`; partner share claim with `epoch = RCA.creation_epoch` and `current_epoch > epoch`.
 4. **Cleanup**: close RCA after expiry; `close_claim_status` permissionless after expiry.
 
-Partner share init: `name[32]` (partner/wallet label), `manager_authority`, `record_authority`, `max_epoch_entries` (1–32), `bump`.
+Partner share init: `name[32]` (partner/wallet label), `record_authority`, `max_epoch_entries` (1–32), `bump`. Requires `config.tip_backrun_manager_authority` set via `update_config`; signer must be that authority. `manager_authority` on the partner account is set from config.
 
 ---
 

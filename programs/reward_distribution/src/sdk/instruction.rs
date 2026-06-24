@@ -392,7 +392,6 @@ pub struct ClaimArgs {
 
 /// Accounts needed to execute a Merkle reward claim.
 pub struct ClaimAccounts {
-    pub config: Pubkey,
     pub reward_collection_account: Pubkey,
     pub claim_status: Pubkey,
     pub claimant: Pubkey,
@@ -409,7 +408,6 @@ pub fn claim_ix(program_id: Pubkey, args: ClaimArgs, accounts: ClaimAccounts) ->
     } = args;
 
     let ClaimAccounts {
-        config,
         reward_collection_account,
         claim_status,
         claimant,
@@ -426,7 +424,6 @@ pub fn claim_ix(program_id: Pubkey, args: ClaimArgs, accounts: ClaimAccounts) ->
         }
         .data(),
         accounts: crate::accounts::Claim {
-            config,
             reward_collection_account,
             claimant,
             claim_status,
@@ -439,7 +436,6 @@ pub fn claim_ix(program_id: Pubkey, args: ClaimArgs, accounts: ClaimAccounts) ->
 
 pub struct InitializePartnerTipShareAccountArgs {
     pub name: [u8; 32],
-    pub manager_authority: Pubkey,
     pub record_authority: Pubkey,
     pub max_epoch_entries: u8,
     pub bump: u8,
@@ -447,6 +443,7 @@ pub struct InitializePartnerTipShareAccountArgs {
 
 pub struct InitializePartnerTipShareAccountAccounts {
     pub partner_tip_share_account: Pubkey,
+    pub config: Pubkey,
     pub validator_vote_account: Pubkey,
     pub payer: Pubkey,
     pub system_program: Pubkey,
@@ -459,13 +456,13 @@ pub fn initialize_partner_tip_share_account_ix(
 ) -> Instruction {
     let InitializePartnerTipShareAccountArgs {
         name,
-        manager_authority,
         record_authority,
         max_epoch_entries,
         bump,
     } = args;
     let InitializePartnerTipShareAccountAccounts {
         partner_tip_share_account,
+        config,
         validator_vote_account,
         payer,
         system_program,
@@ -475,7 +472,6 @@ pub fn initialize_partner_tip_share_account_ix(
         program_id,
         data: crate::instruction::InitializePartnerTipShareAccount {
             name,
-            manager_authority,
             record_authority,
             max_epoch_entries,
             bump,
@@ -483,6 +479,7 @@ pub fn initialize_partner_tip_share_account_ix(
         .data(),
         accounts: crate::accounts::InitializePartnerTipShareAccount {
             partner_tip_share_account,
+            config,
             validator_vote_account,
             payer,
             system_program,
@@ -493,7 +490,6 @@ pub fn initialize_partner_tip_share_account_ix(
 
 pub struct InitializePartnerBackrunShareAccountArgs {
     pub name: [u8; 32],
-    pub manager_authority: Pubkey,
     pub record_authority: Pubkey,
     pub max_epoch_entries: u8,
     pub bump: u8,
@@ -501,6 +497,7 @@ pub struct InitializePartnerBackrunShareAccountArgs {
 
 pub struct InitializePartnerBackrunShareAccountAccounts {
     pub partner_backrun_share_account: Pubkey,
+    pub config: Pubkey,
     pub validator_vote_account: Pubkey,
     pub payer: Pubkey,
     pub system_program: Pubkey,
@@ -513,13 +510,13 @@ pub fn initialize_partner_backrun_share_account_ix(
 ) -> Instruction {
     let InitializePartnerBackrunShareAccountArgs {
         name,
-        manager_authority,
         record_authority,
         max_epoch_entries,
         bump,
     } = args;
     let InitializePartnerBackrunShareAccountAccounts {
         partner_backrun_share_account,
+        config,
         validator_vote_account,
         payer,
         system_program,
@@ -529,7 +526,6 @@ pub fn initialize_partner_backrun_share_account_ix(
         program_id,
         data: crate::instruction::InitializePartnerBackrunShareAccount {
             name,
-            manager_authority,
             record_authority,
             max_epoch_entries,
             bump,
@@ -537,6 +533,7 @@ pub fn initialize_partner_backrun_share_account_ix(
         .data(),
         accounts: crate::accounts::InitializePartnerBackrunShareAccount {
             partner_backrun_share_account,
+            config,
             validator_vote_account,
             payer,
             system_program,

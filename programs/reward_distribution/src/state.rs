@@ -1,6 +1,6 @@
 use crate::ErrorCode::{
     AccountValidationFailure, ArithmeticError, EpochAlreadyClaimed, EpochEntryNotFound,
-    InvalidPartnerName, InvalidPartnerShareEpochCapacity,
+    InvalidPartnerName, InvalidPartnerShareEpochCapacity, TipBackrunManagerNotConfigured,
 };
 use anchor_lang::prelude::*;
 use std::mem::size_of;
@@ -19,6 +19,8 @@ pub struct RewardDistributionConfigAccount {
     pub bump: u8,
     /// If enabled, Block Builder will also deduct its commission from the validator’s MEV commission.
     pub block_builder_commission_on_mev_commission_enabled: Option<bool>,
+    /// Authority that may create partner tip/backrun share accounts and manage claims. `None` disables partner share creation.
+    pub tip_backrun_manager_authority: Option<Pubkey>,
 }
 
 /// Stores validator reward collection account data for a given epoch.
@@ -142,6 +144,13 @@ impl RewardDistributionConfigAccount {
             .is_some()
     }
 
+    /// Returns the configured tip/backrun partner manager, if partner share creation is enabled.
+    pub fn require_tip_backrun_manager_authority(&self) -> Result<Pubkey> {
+        self.tip_backrun_manager_authority
+            .filter(|key| *key != Pubkey::default())
+            .ok_or(TipBackrunManagerNotConfigured.into())
+    }
+
     /// Validates config constraints.
     pub fn validate(&self) -> Result<()> {
         const MAX_NUM_EPOCHS_VALID: u64 = 10;
@@ -194,6 +203,11 @@ impl RewardCollectionAccount {
     /// Whether accumulator tracking fields are persisted on this account.
     pub fn has_accumulator_tracking(&self) -> bool {
         self.block_reward_accumulated.is_some() || self.rakurai_tips_accumulated.is_some()
+    }
+
+    /// Lamports available for claims after rent (balance minus minimum rent).
+    pub fn spendable_lamports(lamports: u64, min_rent: u64) -> Result<u64> {
+        lamports.checked_sub(min_rent).ok_or(ArithmeticError.into())
     }
 
     /// Validates that required fields are not default.
@@ -316,9 +330,8 @@ impl PartnerTipShareAccount {
     }
 
     /// Validates init instruction args before the account is populated.
-    pub fn auth(
+    pub fn validate_init_params(
         name: [u8; 32],
-        manager_authority: Pubkey,
         record_authority: Pubkey,
         max_epoch_entries: u8,
     ) -> Result<()> {
@@ -326,13 +339,29 @@ impl PartnerTipShareAccount {
             return Err(InvalidPartnerName.into());
         }
 
-        if manager_authority == Pubkey::default() || record_authority == Pubkey::default() {
+        if record_authority == Pubkey::default() {
             return Err(AccountValidationFailure.into());
         }
 
         if max_epoch_entries == 0 || max_epoch_entries as usize > MAX_PARTNER_SHARE_EPOCH_ENTRIES_CAP
         {
             return Err(InvalidPartnerShareEpochCapacity.into());
+        }
+
+        Ok(())
+    }
+
+    /// Validates init instruction args including manager authority.
+    pub fn auth(
+        name: [u8; 32],
+        manager_authority: Pubkey,
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+    ) -> Result<()> {
+        Self::validate_init_params(name, record_authority, max_epoch_entries)?;
+
+        if manager_authority == Pubkey::default() {
+            return Err(AccountValidationFailure.into());
         }
 
         Ok(())
@@ -371,9 +400,8 @@ impl PartnerBackrunShareAccount {
     }
 
     /// Validates init instruction args before the account is populated.
-    pub fn auth(
+    pub fn validate_init_params(
         name: [u8; 32],
-        manager_authority: Pubkey,
         record_authority: Pubkey,
         max_epoch_entries: u8,
     ) -> Result<()> {
@@ -381,13 +409,29 @@ impl PartnerBackrunShareAccount {
             return Err(InvalidPartnerName.into());
         }
 
-        if manager_authority == Pubkey::default() || record_authority == Pubkey::default() {
+        if record_authority == Pubkey::default() {
             return Err(AccountValidationFailure.into());
         }
 
         if max_epoch_entries == 0 || max_epoch_entries as usize > MAX_PARTNER_SHARE_EPOCH_ENTRIES_CAP
         {
             return Err(InvalidPartnerShareEpochCapacity.into());
+        }
+
+        Ok(())
+    }
+
+    /// Validates init instruction args including manager authority.
+    pub fn auth(
+        name: [u8; 32],
+        manager_authority: Pubkey,
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+    ) -> Result<()> {
+        Self::validate_init_params(name, record_authority, max_epoch_entries)?;
+
+        if manager_authority == Pubkey::default() {
+            return Err(AccountValidationFailure.into());
         }
 
         Ok(())
@@ -435,4 +479,70 @@ impl ClaimStatus {
     pub const SEED: &'static [u8] = b"CLAIM_STATUS";
     /// Account size for rent-exemption.
     pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spendable_lamports_subtracts_rent() {
+        assert_eq!(
+            RewardCollectionAccount::spendable_lamports(1_000, 100).unwrap(),
+            900
+        );
+        assert!(RewardCollectionAccount::spendable_lamports(50, 100).is_err());
+    }
+
+    #[test]
+    fn rtca_is_balance_minus_rent_minus_brca() {
+        let mut rca = RewardCollectionAccount {
+            block_reward_accumulated: Some(300),
+            rakurai_tips_accumulated: Some(0),
+            ..Default::default()
+        };
+        assert_eq!(rca.compute_rakurai_tips_accumulated(1_000, 100), 600);
+        rca.refresh_rakurai_tips_accumulated(1_000, 100);
+        assert_eq!(rca.rakurai_tips_accumulated, Some(600));
+    }
+
+    #[test]
+    fn partner_ledger_add_accumulates_same_epoch() {
+        let mut ledger = PartnerShareLedger::default();
+        ledger.add(5, 100, 4).unwrap();
+        ledger.add(5, 50, 4).unwrap();
+        assert_eq!(ledger.entries.len(), 1);
+        assert_eq!(ledger.entries[0].amount, 150);
+    }
+
+    #[test]
+    fn partner_ledger_fifo_evicts_oldest_epoch() {
+        let mut ledger = PartnerShareLedger::default();
+        for epoch in [1u64, 2, 3, 4] {
+            ledger.add(epoch, 10, 4).unwrap();
+        }
+        ledger.add(5, 99, 4).unwrap();
+        assert_eq!(ledger.entries.len(), 4);
+        assert!(!ledger.entries.iter().any(|e| e.epoch == 1));
+        assert!(ledger
+            .entries
+            .iter()
+            .any(|e| e.epoch == 5 && e.amount == 99));
+    }
+
+    #[test]
+    fn tip_backrun_manager_required_when_unset() {
+        let config = RewardDistributionConfigAccount::default();
+        assert!(config.require_tip_backrun_manager_authority().is_err());
+    }
+
+    #[test]
+    fn tip_backrun_manager_returns_pubkey_when_set() {
+        let key = Pubkey::new_unique();
+        let config = RewardDistributionConfigAccount {
+            tip_backrun_manager_authority: Some(key),
+            ..Default::default()
+        };
+        assert_eq!(config.require_tip_backrun_manager_authority().unwrap(), key);
+    }
 }
