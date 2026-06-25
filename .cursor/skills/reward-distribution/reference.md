@@ -24,13 +24,17 @@ Space: `PartnerTipShareAccount::space_for(max_epoch_entries)` (same for backrun)
 |-------|------|-------|
 | name | [u8; 32] | Partner/wallet label in seeds; non-empty |
 | validator_vote | Pubkey | Must match RCA vote on claim |
-| manager_authority | Pubkey | Set from `config.tip_backrun_manager_authority` at init; claim + close |
+| manager_authority | Pubkey | Set from `config.tip_backrun_manager_authority` at init; claim, update commission, close |
 | record_authority | Pubkey | Signs `record_partner_*_share` only |
 | max_epoch_entries | u8 | In seeds; ledger capacity |
+| commission_bps | u16 | Share of epoch ledger amount sent to `commission_account` on claim |
+| commission_account | Pubkey | Receives commission portion; required non-default when `commission_bps > 0` |
 | ledger | PartnerShareLedger | `Vec<EpochAmountEntry>` |
 | bump | u8 | |
 
 **EpochAmountEntry**: `epoch`, `amount`, `claimed`. Ledger grows until capacity, then overwrites oldest entry.
+
+**Claim split**: `commission_amount = amount * commission_bps / 10000`; remainder → RCA `initializer` (validator identity).
 
 ---
 
@@ -40,11 +44,10 @@ Space: `PartnerTipShareAccount::space_for(max_epoch_entries)` (same for backrun)
 |-------|-------|
 | validator_vote_account | Vote pubkey |
 | creation_epoch | Partner share claim `epoch` arg |
-| initializer | Validator identity; receives partner share payouts |
-| block_reward_accumulated | BRCA (`Option`) |
-| rakurai_tips_accumulated | RTCA (`Option`); `balance - rent - BRCA` |
+| initializer | Validator identity; receives partner share remainder after commission |
 | expires_at | Claims deadline |
 | merkle_root | Optional Merkle metadata |
+| block_reward_commission_bps / block_builder_commission_* | Block reward path only |
 
 ---
 
@@ -57,9 +60,10 @@ Vote binding (where applicable): vote account owned by vote program; `VoteState`
 | initialize_reward_collection_account | validator identity | required | Enabled RAA PDA; vote node == signer |
 | upload_merkle_root | merkle_root_upload_authority | — | — |
 | claim_partner_*_share | manager_authority | — | — |
+| update_partner_*_share_commission | manager_authority | — | — |
 | transfer_staker_rewards | initializer | required | vote == `RCA.validator_vote_account`; vote node == signer |
 | transfer_block_builder_commission_on_mev_commission | initializer | — | — |
-| initialize_partner_*_share_account | `config.tip_backrun_manager_authority` (payer) | — | — |
+| initialize_partner_*_share_account | `config.tip_backrun_manager_authority` (payer) | — | passes `commission_bps`, `commission_account` |
 | record_partner_*_share | record_authority | — | — |
 | close_partner_*_share_account | manager_authority | — | — |
 | claim | payer | — | — |
@@ -95,6 +99,7 @@ Proof siblings use `[1u8]` prefix (`merkle_proof.rs`).
 | EpochAlreadyClaimed | Entry already claimed |
 | PrematurePartnerShareClaim | `current_epoch <= epoch` |
 | RewardsTooLow | Zero amount or vault under-funded |
+| MaxCommissionFeeBpsExceeded | `commission_bps > config.max_commission_bps` |
 | TipBackrunManagerNotConfigured | `tip_backrun_manager_authority` is `None` on config |
 | RakuraiSchedulerNotEnabled | RAA exists but `is_enabled == false` (RCA init) |
 | Unauthorized | Signer / vote / RAA mismatch |
@@ -106,6 +111,7 @@ Proof siblings use `[1u8]` prefix (`merkle_proof.rs`).
 | Field | Notes |
 |-------|-------|
 | tip_backrun_manager_authority | `Option<Pubkey>`; if `None`, partner share init is disabled |
+| max_commission_bps | Caps partner share `commission_bps` at init and update |
 
 ---
 
@@ -113,8 +119,12 @@ Proof siblings use `[1u8]` prefix (`merkle_proof.rs`).
 
 `claim`: reward_collection_account, claim_status (init), claimant, payer, system_program.
 
-Partner share claim also requires `validator_identity` matching RCA `initializer`.
+Partner share claim: `reward_collection_account`, `partner_*_share_account`, `commission_account` (must match stored pubkey), `validator_identity` (= RCA initializer), `manager_authority`.
 
 ### Partner share init accounts
 
-`config` (RD config PDA), `partner_*_share_account` (init), `validator_vote_account`, `payer` (= `tip_backrun_manager_authority`), `system_program`.
+`config` (RD config PDA), `partner_*_share_account` (init), `validator_vote_account`, `payer` (= `tip_backrun_manager_authority`), `system_program`. Args include `commission_bps`, `commission_account`.
+
+### Partner share commission update accounts
+
+`partner_*_share_account` (mut), `config`, `manager_authority`.

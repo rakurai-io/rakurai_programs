@@ -1,9 +1,9 @@
 ---
 name: reward-distribution
 description: >-
-  Rakurai Reward Distribution program (RCA, BRCA, RTCA, Merkle claims, partner
-  tip/backrun share PDAs). Use for reward distribution, RCA, partner share vaults,
-  Merkle claims, block builder commission, or reward-distribution CLI work.
+  Rakurai Reward Distribution program (RCA, Merkle claims, partner tip/backrun
+  share PDAs). Use for reward distribution, RCA, partner share vaults, Merkle
+  claims, block builder commission, or reward-distribution CLI work.
 ---
 
 # Rakurai Reward Distribution
@@ -17,15 +17,13 @@ description: >-
 ## Architecture
 
 ```
-RAA commission ──► RCA (vote, epoch)
-Tips ──lamports──► RCA  →  RTCA = balance - rent - BRCA
+RAA commission ──► RCA (vote, epoch) ──► Merkle staker claims
 PartnerTipShareAccount / PartnerBackrunShareAccount ── per (partner label, vote, max_epochs)
+  record_* (accounting) ──► claim_* splits commission_bps to commission_account, rest to validator identity
 ```
 
-- **RCA** — lamport vault, optional Merkle root, BRCA/RTCA (`Option` on legacy accounts)
-- **BRCA** — block-reward accumulator; incremented on `transfer_staker_rewards`
-- **RTCA** — derived Rakurai-tip total; refreshed after BRCA or claim changes
-- **Partner share PDAs** — epoch ledger + lamport vault; `record_*` is accounting-only
+- **RCA** — lamport vault, optional Merkle root; block rewards via `transfer_staker_rewards`
+- **Partner share PDAs** — epoch ledger + lamport vault; `record_*` is accounting-only; claim splits per `commission_bps`
 
 ---
 
@@ -48,18 +46,18 @@ PartnerTipShareAccount / PartnerBackrunShareAccount ── per (partner label, v
 | Config | `initialize`, `update_config`, `close_config` |
 | RCA | `initialize_reward_collection_account`, `upload_merkle_root`, `transfer_staker_rewards`, `transfer_block_builder_commission_on_mev_commission`, `close_reward_collection_account` |
 | Claims | `claim`, `close_claim_status` |
-| Partner share | `initialize_partner_tip_share_account`, `initialize_partner_backrun_share_account`, `record_partner_tip_share`, `record_partner_backrun_share`, `claim_partner_tip_share`, `claim_partner_backrun_share`, `close_partner_tip_share_account`, `close_partner_backrun_share_account` |
+| Partner share | `initialize_partner_tip_share_account`, `initialize_partner_backrun_share_account`, `record_partner_tip_share`, `record_partner_backrun_share`, `claim_partner_tip_share`, `claim_partner_backrun_share`, `update_partner_tip_share_commission`, `update_partner_backrun_share_commission`, `close_partner_tip_share_account`, `close_partner_backrun_share_account` |
 
 ---
 
 ## Epoch Flow
 
-1. **Init RCA** (epoch E): validator identity signs; pass `validator_vote_account` + enabled RAA; `expires_at = E + num_epochs_valid`; BRCA/RTCA = `Some(0)`.
-2. **During E**: `transfer_staker_rewards` (pass same vote account; must match RCA); tips to RCA (off-chain lamports); `record_partner_*_share`; optional MEV commission ix.
-3. **After E**: `upload_merkle_root`; staker `claim`; partner share claim with `epoch = RCA.creation_epoch` and `current_epoch > epoch`.
+1. **Init RCA** (epoch E): validator identity signs; pass `validator_vote_account` + enabled RAA; `expires_at = E + num_epochs_valid`.
+2. **During E**: `transfer_staker_rewards` (pass same vote account; must match RCA); `record_partner_*_share`; optional MEV commission ix.
+3. **After E**: `upload_merkle_root`; staker `claim`; partner share claim with `epoch = RCA.creation_epoch` and `current_epoch > epoch` — commission portion to `commission_account`, remainder to validator identity.
 4. **Cleanup**: close RCA after expiry; `close_claim_status` permissionless after expiry.
 
-Partner share init: `name[32]` (partner/wallet label), `record_authority`, `max_epoch_entries` (1–32), `bump`. Requires `config.tip_backrun_manager_authority` set via `update_config`; signer must be that authority. `manager_authority` on the partner account is set from config.
+Partner share init: `name[32]`, `record_authority`, `max_epoch_entries` (1–32), `commission_bps`, `commission_account`, `bump`. Requires `config.tip_backrun_manager_authority` set; signer must be that authority. Manager may later call `update_partner_*_share_commission`.
 
 ---
 

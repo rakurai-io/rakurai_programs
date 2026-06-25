@@ -1,6 +1,7 @@
 use crate::ErrorCode::{
     AccountValidationFailure, ArithmeticError, EpochAlreadyClaimed, EpochEntryNotFound,
-    InvalidPartnerName, InvalidPartnerShareEpochCapacity, TipBackrunManagerNotConfigured,
+    InvalidPartnerName, InvalidPartnerShareEpochCapacity, MaxCommissionFeeBpsExceeded,
+    TipBackrunManagerNotConfigured,
 };
 use anchor_lang::prelude::*;
 use std::mem::size_of;
@@ -94,6 +95,10 @@ pub struct PartnerTipShareAccount {
     pub record_authority: Pubkey,
     /// Max distinct epochs in `ledger` (used in PDA seeds).
     pub max_epoch_entries: u8,
+    /// Commission on partner share claims (basis points); remainder goes to validator identity.
+    pub commission_bps: u16,
+    /// Receives the commission portion on `claim_partner_tip_share`.
+    pub commission_account: Pubkey,
     pub ledger: PartnerShareLedger,
     pub bump: u8,
 }
@@ -110,12 +115,31 @@ pub struct PartnerBackrunShareAccount {
     pub record_authority: Pubkey,
     /// Max distinct epochs in `ledger` (used in PDA seeds).
     pub max_epoch_entries: u8,
+    /// Commission on partner share claims (basis points); remainder goes to validator identity.
+    pub commission_bps: u16,
+    /// Receives the commission portion on `claim_partner_backrun_share`.
+    pub commission_account: Pubkey,
     pub ledger: PartnerShareLedger,
     pub bump: u8,
 }
 
 const HEADER_SIZE: usize = 8;
 const MAX_COMMISSION_BPS: u16 = 10000;
+
+/// Validates partner-share commission fields against config caps.
+pub fn validate_partner_commission(
+    commission_bps: u16,
+    commission_account: Pubkey,
+    max_commission_bps: u16,
+) -> Result<()> {
+    if commission_bps > max_commission_bps {
+        return Err(MaxCommissionFeeBpsExceeded.into());
+    }
+    if commission_bps > 0 && commission_account == Pubkey::default() {
+        return Err(AccountValidationFailure.into());
+    }
+    Ok(())
+}
 
 impl RewardDistributionConfigAccount {
     /// PDA seed for the config account.
@@ -289,6 +313,8 @@ impl PartnerTipShareAccount {
             + 32
             + 32
             + 1
+            + 2
+            + 32
             + 4
             + max_epoch_entries * size_of::<EpochAmountEntry>()
             + 1
@@ -299,6 +325,9 @@ impl PartnerTipShareAccount {
         name: [u8; 32],
         record_authority: Pubkey,
         max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        max_commission_bps: u16,
     ) -> Result<()> {
         if name == [0u8; 32] {
             return Err(InvalidPartnerName.into());
@@ -314,6 +343,8 @@ impl PartnerTipShareAccount {
             return Err(InvalidPartnerShareEpochCapacity.into());
         }
 
+        validate_partner_commission(commission_bps, commission_account, max_commission_bps)?;
+
         Ok(())
     }
 
@@ -323,8 +354,18 @@ impl PartnerTipShareAccount {
         manager_authority: Pubkey,
         record_authority: Pubkey,
         max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        max_commission_bps: u16,
     ) -> Result<()> {
-        Self::validate_init_params(name, record_authority, max_epoch_entries)?;
+        Self::validate_init_params(
+            name,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+            max_commission_bps,
+        )?;
 
         if manager_authority == Pubkey::default() {
             return Err(AccountValidationFailure.into());
@@ -340,6 +381,9 @@ impl PartnerTipShareAccount {
             self.manager_authority,
             self.record_authority,
             self.max_epoch_entries,
+            self.commission_bps,
+            self.commission_account,
+            MAX_COMMISSION_BPS,
         )?;
 
         if self.validator_vote == Pubkey::default() {
@@ -360,6 +404,8 @@ impl PartnerBackrunShareAccount {
             + 32
             + 32
             + 1
+            + 2
+            + 32
             + 4
             + max_epoch_entries * size_of::<EpochAmountEntry>()
             + 1
@@ -370,6 +416,9 @@ impl PartnerBackrunShareAccount {
         name: [u8; 32],
         record_authority: Pubkey,
         max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        max_commission_bps: u16,
     ) -> Result<()> {
         if name == [0u8; 32] {
             return Err(InvalidPartnerName.into());
@@ -385,6 +434,8 @@ impl PartnerBackrunShareAccount {
             return Err(InvalidPartnerShareEpochCapacity.into());
         }
 
+        validate_partner_commission(commission_bps, commission_account, max_commission_bps)?;
+
         Ok(())
     }
 
@@ -394,8 +445,18 @@ impl PartnerBackrunShareAccount {
         manager_authority: Pubkey,
         record_authority: Pubkey,
         max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        max_commission_bps: u16,
     ) -> Result<()> {
-        Self::validate_init_params(name, record_authority, max_epoch_entries)?;
+        Self::validate_init_params(
+            name,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+            max_commission_bps,
+        )?;
 
         if manager_authority == Pubkey::default() {
             return Err(AccountValidationFailure.into());
@@ -411,6 +472,9 @@ impl PartnerBackrunShareAccount {
             self.manager_authority,
             self.record_authority,
             self.max_epoch_entries,
+            self.commission_bps,
+            self.commission_account,
+            MAX_COMMISSION_BPS,
         )?;
 
         if self.validator_vote == Pubkey::default() {
@@ -499,5 +563,16 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(config.require_tip_backrun_manager_authority().unwrap(), key);
+    }
+
+    #[test]
+    fn partner_commission_rejects_bps_above_cap() {
+        assert!(validate_partner_commission(10_001, Pubkey::new_unique(), 10_000).is_err());
+    }
+
+    #[test]
+    fn partner_commission_requires_account_when_bps_positive() {
+        assert!(validate_partner_commission(100, Pubkey::default(), 10_000).is_err());
+        assert!(validate_partner_commission(0, Pubkey::default(), 10_000).is_ok());
     }
 }

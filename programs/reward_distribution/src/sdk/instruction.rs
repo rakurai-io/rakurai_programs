@@ -441,6 +441,8 @@ pub struct InitializePartnerTipShareAccountArgs {
     pub name: [u8; 32],
     pub record_authority: Pubkey,
     pub max_epoch_entries: u8,
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
     pub bump: u8,
 }
 
@@ -461,6 +463,8 @@ pub fn initialize_partner_tip_share_account_ix(
         name,
         record_authority,
         max_epoch_entries,
+        commission_bps,
+        commission_account,
         bump,
     } = args;
     let InitializePartnerTipShareAccountAccounts {
@@ -477,6 +481,8 @@ pub fn initialize_partner_tip_share_account_ix(
             name,
             record_authority,
             max_epoch_entries,
+            commission_bps,
+            commission_account,
             bump,
         }
         .data(),
@@ -495,6 +501,8 @@ pub struct InitializePartnerBackrunShareAccountArgs {
     pub name: [u8; 32],
     pub record_authority: Pubkey,
     pub max_epoch_entries: u8,
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
     pub bump: u8,
 }
 
@@ -515,6 +523,8 @@ pub fn initialize_partner_backrun_share_account_ix(
         name,
         record_authority,
         max_epoch_entries,
+        commission_bps,
+        commission_account,
         bump,
     } = args;
     let InitializePartnerBackrunShareAccountAccounts {
@@ -531,6 +541,8 @@ pub fn initialize_partner_backrun_share_account_ix(
             name,
             record_authority,
             max_epoch_entries,
+            commission_bps,
+            commission_account,
             bump,
         }
         .data(),
@@ -614,6 +626,7 @@ pub struct ClaimPartnerTipShareArgs {
 pub struct ClaimPartnerTipShareAccounts {
     pub reward_collection_account: Pubkey,
     pub partner_tip_share_account: Pubkey,
+    pub commission_account: Pubkey,
     pub validator_identity: Pubkey,
     pub manager_authority: Pubkey,
 }
@@ -627,6 +640,7 @@ pub fn claim_partner_tip_share_ix(
     let ClaimPartnerTipShareAccounts {
         reward_collection_account,
         partner_tip_share_account,
+        commission_account,
         validator_identity,
         manager_authority,
     } = accounts;
@@ -637,6 +651,7 @@ pub fn claim_partner_tip_share_ix(
         accounts: crate::accounts::ClaimPartnerTipShare {
             reward_collection_account,
             partner_tip_share_account,
+            commission_account,
             validator_identity,
             manager_authority,
         }
@@ -651,6 +666,7 @@ pub struct ClaimPartnerBackrunShareArgs {
 pub struct ClaimPartnerBackrunShareAccounts {
     pub reward_collection_account: Pubkey,
     pub partner_backrun_share_account: Pubkey,
+    pub commission_account: Pubkey,
     pub validator_identity: Pubkey,
     pub manager_authority: Pubkey,
 }
@@ -664,6 +680,7 @@ pub fn claim_partner_backrun_share_ix(
     let ClaimPartnerBackrunShareAccounts {
         reward_collection_account,
         partner_backrun_share_account,
+        commission_account,
         validator_identity,
         manager_authority,
     } = accounts;
@@ -674,7 +691,92 @@ pub fn claim_partner_backrun_share_ix(
         accounts: crate::accounts::ClaimPartnerBackrunShare {
             reward_collection_account,
             partner_backrun_share_account,
+            commission_account,
             validator_identity,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdatePartnerTipShareCommissionArgs {
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
+}
+
+pub struct UpdatePartnerTipShareCommissionAccounts {
+    pub partner_tip_share_account: Pubkey,
+    pub config: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+pub fn update_partner_tip_share_commission_ix(
+    program_id: Pubkey,
+    args: UpdatePartnerTipShareCommissionArgs,
+    accounts: UpdatePartnerTipShareCommissionAccounts,
+) -> Instruction {
+    let UpdatePartnerTipShareCommissionArgs {
+        commission_bps,
+        commission_account,
+    } = args;
+    let UpdatePartnerTipShareCommissionAccounts {
+        partner_tip_share_account,
+        config,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdatePartnerTipShareCommission {
+            commission_bps,
+            commission_account,
+        }
+        .data(),
+        accounts: crate::accounts::UpdatePartnerTipShareCommission {
+            partner_tip_share_account,
+            config,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdatePartnerBackrunShareCommissionArgs {
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
+}
+
+pub struct UpdatePartnerBackrunShareCommissionAccounts {
+    pub partner_backrun_share_account: Pubkey,
+    pub config: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+pub fn update_partner_backrun_share_commission_ix(
+    program_id: Pubkey,
+    args: UpdatePartnerBackrunShareCommissionArgs,
+    accounts: UpdatePartnerBackrunShareCommissionAccounts,
+) -> Instruction {
+    let UpdatePartnerBackrunShareCommissionArgs {
+        commission_bps,
+        commission_account,
+    } = args;
+    let UpdatePartnerBackrunShareCommissionAccounts {
+        partner_backrun_share_account,
+        config,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdatePartnerBackrunShareCommission {
+            commission_bps,
+            commission_account,
+        }
+        .data(),
+        accounts: crate::accounts::UpdatePartnerBackrunShareCommission {
+            partner_backrun_share_account,
+            config,
             manager_authority,
         }
         .to_account_metas(None),

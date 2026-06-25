@@ -5,8 +5,9 @@ use solana_security_txt::security_txt;
 
 use crate::{
     state::{
-        ClaimStatus, MerkleRoot, PartnerBackrunShareAccount, PartnerShareLedger,
-        PartnerTipShareAccount, RewardCollectionAccount, RewardDistributionConfigAccount,
+        validate_partner_commission, ClaimStatus, MerkleRoot, PartnerBackrunShareAccount,
+        PartnerShareLedger, PartnerTipShareAccount, RewardCollectionAccount,
+        RewardDistributionConfigAccount,
     },
     ErrorCode::{InvalidBlockBuilderCommissionAccount, RakuraiSchedulerNotEnabled, Unauthorized},
 };
@@ -454,9 +455,18 @@ pub mod reward_distribution {
         name: [u8; 32],
         record_authority: Pubkey,
         max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
         bump: u8,
     ) -> Result<()> {
-        InitializePartnerTipShareAccount::auth(&ctx, name, record_authority, max_epoch_entries)?;
+        InitializePartnerTipShareAccount::auth(
+            &ctx,
+            name,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+        )?;
 
         let manager_authority = ctx
             .accounts
@@ -468,6 +478,8 @@ pub mod reward_distribution {
         partner_tip_share_account.manager_authority = manager_authority;
         partner_tip_share_account.record_authority = record_authority;
         partner_tip_share_account.max_epoch_entries = max_epoch_entries;
+        partner_tip_share_account.commission_bps = commission_bps;
+        partner_tip_share_account.commission_account = commission_account;
         partner_tip_share_account.ledger = PartnerShareLedger::default();
         partner_tip_share_account.bump = bump;
         partner_tip_share_account.validate()?;
@@ -479,6 +491,8 @@ pub mod reward_distribution {
             manager_authority,
             record_authority,
             max_epoch_entries,
+            commission_bps,
+            commission_account,
         });
 
         Ok(())
@@ -490,6 +504,8 @@ pub mod reward_distribution {
         name: [u8; 32],
         record_authority: Pubkey,
         max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
         bump: u8,
     ) -> Result<()> {
         InitializePartnerBackrunShareAccount::auth(
@@ -497,6 +513,8 @@ pub mod reward_distribution {
             name,
             record_authority,
             max_epoch_entries,
+            commission_bps,
+            commission_account,
         )?;
 
         let manager_authority = ctx
@@ -509,6 +527,8 @@ pub mod reward_distribution {
         partner_backrun_share_account.manager_authority = manager_authority;
         partner_backrun_share_account.record_authority = record_authority;
         partner_backrun_share_account.max_epoch_entries = max_epoch_entries;
+        partner_backrun_share_account.commission_bps = commission_bps;
+        partner_backrun_share_account.commission_account = commission_account;
         partner_backrun_share_account.ledger = PartnerShareLedger::default();
         partner_backrun_share_account.bump = bump;
         partner_backrun_share_account.validate()?;
@@ -520,6 +540,8 @@ pub mod reward_distribution {
             manager_authority,
             record_authority,
             max_epoch_entries,
+            commission_bps,
+            commission_account,
         });
 
         Ok(())
@@ -575,20 +597,25 @@ pub mod reward_distribution {
     pub fn claim_partner_tip_share(ctx: Context<ClaimPartnerTipShare>, epoch: u64) -> Result<()> {
         ClaimPartnerTipShare::auth(&ctx)?;
 
+        let commission_bps = ctx.accounts.partner_tip_share_account.commission_bps;
         let partner_share_account_info = ctx.accounts.partner_tip_share_account.to_account_info();
-        let amount = claim_partner_share_revenue(
+        let (commission_amount, validator_amount) = claim_partner_share_revenue(
             &ctx.accounts.reward_collection_account,
             &mut ctx.accounts.partner_tip_share_account.ledger,
             partner_share_account_info,
+            ctx.accounts.commission_account.to_account_info(),
             ctx.accounts.validator_identity.to_account_info(),
+            commission_bps,
             epoch,
         )?;
 
         emit!(PartnerTipShareClaimedEvent {
             partner_tip_share_account: ctx.accounts.partner_tip_share_account.key(),
             validator_identity: ctx.accounts.validator_identity.key(),
+            commission_account: ctx.accounts.commission_account.key(),
             epoch,
-            amount,
+            commission_amount,
+            validator_amount,
         });
 
         Ok(())
@@ -601,21 +628,72 @@ pub mod reward_distribution {
     ) -> Result<()> {
         ClaimPartnerBackrunShare::auth(&ctx)?;
 
+        let commission_bps = ctx.accounts.partner_backrun_share_account.commission_bps;
         let partner_share_account_info =
             ctx.accounts.partner_backrun_share_account.to_account_info();
-        let amount = claim_partner_share_revenue(
+        let (commission_amount, validator_amount) = claim_partner_share_revenue(
             &ctx.accounts.reward_collection_account,
             &mut ctx.accounts.partner_backrun_share_account.ledger,
             partner_share_account_info,
+            ctx.accounts.commission_account.to_account_info(),
             ctx.accounts.validator_identity.to_account_info(),
+            commission_bps,
             epoch,
         )?;
 
         emit!(PartnerBackrunShareClaimedEvent {
             partner_backrun_share_account: ctx.accounts.partner_backrun_share_account.key(),
             validator_identity: ctx.accounts.validator_identity.key(),
+            commission_account: ctx.accounts.commission_account.key(),
             epoch,
-            amount,
+            commission_amount,
+            validator_amount,
+        });
+
+        Ok(())
+    }
+
+    /// Updates partner tip-share commission settings. Manager authority only.
+    pub fn update_partner_tip_share_commission(
+        ctx: Context<UpdatePartnerTipShareCommission>,
+        commission_bps: u16,
+        commission_account: Pubkey,
+    ) -> Result<()> {
+        UpdatePartnerTipShareCommission::auth(&ctx, commission_bps, commission_account)?;
+
+        let partner_tip_share_account = &mut ctx.accounts.partner_tip_share_account;
+        partner_tip_share_account.commission_bps = commission_bps;
+        partner_tip_share_account.commission_account = commission_account;
+        partner_tip_share_account.manager_authority = ctx.accounts.manager_authority.key();
+        partner_tip_share_account.validate()?;
+
+        emit!(PartnerTipShareCommissionUpdatedEvent {
+            partner_tip_share_account: partner_tip_share_account.key(),
+            commission_bps,
+            commission_account,
+        });
+
+        Ok(())
+    }
+
+    /// Updates partner backrun-share commission settings. Manager authority only.
+    pub fn update_partner_backrun_share_commission(
+        ctx: Context<UpdatePartnerBackrunShareCommission>,
+        commission_bps: u16,
+        commission_account: Pubkey,
+    ) -> Result<()> {
+        UpdatePartnerBackrunShareCommission::auth(&ctx, commission_bps, commission_account)?;
+
+        let partner_backrun_share_account = &mut ctx.accounts.partner_backrun_share_account;
+        partner_backrun_share_account.commission_bps = commission_bps;
+        partner_backrun_share_account.commission_account = commission_account;
+        partner_backrun_share_account.manager_authority = ctx.accounts.manager_authority.key();
+        partner_backrun_share_account.validate()?;
+
+        emit!(PartnerBackrunShareCommissionUpdatedEvent {
+            partner_backrun_share_account: partner_backrun_share_account.key(),
+            commission_bps,
+            commission_account,
         });
 
         Ok(())
@@ -642,9 +720,11 @@ fn claim_partner_share_revenue(
     reward_collection_account: &RewardCollectionAccount,
     ledger: &mut PartnerShareLedger,
     partner_share_account: AccountInfo,
+    commission_account: AccountInfo,
     validator_identity: AccountInfo,
+    commission_bps: u16,
     epoch: u64,
-) -> Result<u64> {
+) -> Result<(u64, u64)> {
     use crate::ErrorCode::*;
 
     let current_epoch = Clock::get()?.epoch;
@@ -670,23 +750,44 @@ fn claim_partner_share_revenue(
         entry.amount
     };
 
+    let commission_amount = if commission_bps == 0 {
+        0
+    } else {
+        entry_amount
+            .checked_mul(commission_bps as u64)
+            .ok_or(ArithmeticError)?
+            .checked_div(10_000)
+            .ok_or(ArithmeticError)?
+    };
+    let validator_amount = entry_amount
+        .checked_sub(commission_amount)
+        .ok_or(ArithmeticError)?;
+
     let rent = Rent::get()?;
     let min_rent = rent.minimum_balance(partner_share_account.data_len());
     let available = partner_share_account.lamports().saturating_sub(min_rent);
-    let transfer_amount = entry_amount.min(available);
-    if transfer_amount < entry_amount {
+    if available < entry_amount {
         return Err(RewardsTooLow.into());
     }
 
-    RewardCollectionAccount::transfer_lamports(
-        partner_share_account,
-        validator_identity,
-        transfer_amount,
-    )?;
+    if commission_amount > 0 {
+        RewardCollectionAccount::transfer_lamports(
+            partner_share_account.clone(),
+            commission_account,
+            commission_amount,
+        )?;
+    }
+    if validator_amount > 0 {
+        RewardCollectionAccount::transfer_lamports(
+            partner_share_account,
+            validator_identity,
+            validator_amount,
+        )?;
+    }
 
     ledger.mark_claimed(epoch)?;
 
-    Ok(transfer_amount)
+    Ok((commission_amount, validator_amount))
 }
 
 /// Custom errors for Reward Distribution Program instructions.
@@ -1073,7 +1174,7 @@ impl TransferBlockBuilderCommissionOnMevCommission<'_> {
 
 /// Initializes a partner tip-share vault PDA.
 #[derive(Accounts)]
-#[instruction(name: [u8; 32], record_authority: Pubkey, max_epoch_entries: u8, bump: u8)]
+#[instruction(name: [u8; 32], record_authority: Pubkey, max_epoch_entries: u8, commission_bps: u16, commission_account: Pubkey, bump: u8)]
 pub struct InitializePartnerTipShareAccount<'info> {
     #[account(
         init,
@@ -1110,6 +1211,8 @@ impl InitializePartnerTipShareAccount<'_> {
         name: [u8; 32],
         record_authority: Pubkey,
         max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
     ) -> Result<()> {
         let manager = ctx
             .accounts
@@ -1118,13 +1221,20 @@ impl InitializePartnerTipShareAccount<'_> {
         if ctx.accounts.payer.key() != manager {
             return Err(Unauthorized.into());
         }
-        PartnerTipShareAccount::validate_init_params(name, record_authority, max_epoch_entries)
+        PartnerTipShareAccount::validate_init_params(
+            name,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+            ctx.accounts.config.max_commission_bps,
+        )
     }
 }
 
 /// Initializes a partner backrun-share vault PDA.
 #[derive(Accounts)]
-#[instruction(name: [u8; 32], record_authority: Pubkey, max_epoch_entries: u8, bump: u8)]
+#[instruction(name: [u8; 32], record_authority: Pubkey, max_epoch_entries: u8, commission_bps: u16, commission_account: Pubkey, bump: u8)]
 pub struct InitializePartnerBackrunShareAccount<'info> {
     #[account(
         init,
@@ -1161,6 +1271,8 @@ impl InitializePartnerBackrunShareAccount<'_> {
         name: [u8; 32],
         record_authority: Pubkey,
         max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
     ) -> Result<()> {
         let manager = ctx
             .accounts
@@ -1169,7 +1281,14 @@ impl InitializePartnerBackrunShareAccount<'_> {
         if ctx.accounts.payer.key() != manager {
             return Err(Unauthorized.into());
         }
-        PartnerBackrunShareAccount::validate_init_params(name, record_authority, max_epoch_entries)
+        PartnerBackrunShareAccount::validate_init_params(
+            name,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+            ctx.accounts.config.max_commission_bps,
+        )
     }
 }
 
@@ -1228,6 +1347,13 @@ pub struct ClaimPartnerTipShare<'info> {
     #[account(mut)]
     pub partner_tip_share_account: Account<'info, PartnerTipShareAccount>,
 
+    /// CHECK: must match partner account commission destination
+    #[account(
+        mut,
+        constraint = commission_account.key() == partner_tip_share_account.commission_account,
+    )]
+    pub commission_account: UncheckedAccount<'info>,
+
     /// CHECK: must match RCA initializer
     #[account(
         mut,
@@ -1267,6 +1393,13 @@ pub struct ClaimPartnerBackrunShare<'info> {
     #[account(mut)]
     pub partner_backrun_share_account: Account<'info, PartnerBackrunShareAccount>,
 
+    /// CHECK: must match partner account commission destination
+    #[account(
+        mut,
+        constraint = commission_account.key() == partner_backrun_share_account.commission_account,
+    )]
+    pub commission_account: UncheckedAccount<'info>,
+
     /// CHECK: must match RCA initializer
     #[account(
         mut,
@@ -1290,6 +1423,74 @@ impl ClaimPartnerBackrunShare<'_> {
         } else {
             Ok(())
         }
+    }
+}
+
+/// Updates partner tip-share commission settings.
+#[derive(Accounts)]
+pub struct UpdatePartnerTipShareCommission<'info> {
+    #[account(mut)]
+    pub partner_tip_share_account: Account<'info, PartnerTipShareAccount>,
+
+    #[account(
+        seeds = [RewardDistributionConfigAccount::SEED],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, RewardDistributionConfigAccount>,
+
+    pub manager_authority: Signer<'info>,
+}
+
+impl UpdatePartnerTipShareCommission<'_> {
+    fn auth(
+        ctx: &Context<UpdatePartnerTipShareCommission>,
+        commission_bps: u16,
+        commission_account: Pubkey,
+    ) -> Result<()> {
+        if ctx.accounts.manager_authority.key()
+            != ctx.accounts.partner_tip_share_account.manager_authority
+        {
+            return Err(Unauthorized.into());
+        }
+        validate_partner_commission(
+            commission_bps,
+            commission_account,
+            ctx.accounts.config.max_commission_bps,
+        )
+    }
+}
+
+/// Updates partner backrun-share commission settings.
+#[derive(Accounts)]
+pub struct UpdatePartnerBackrunShareCommission<'info> {
+    #[account(mut)]
+    pub partner_backrun_share_account: Account<'info, PartnerBackrunShareAccount>,
+
+    #[account(
+        seeds = [RewardDistributionConfigAccount::SEED],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, RewardDistributionConfigAccount>,
+
+    pub manager_authority: Signer<'info>,
+}
+
+impl UpdatePartnerBackrunShareCommission<'_> {
+    fn auth(
+        ctx: &Context<UpdatePartnerBackrunShareCommission>,
+        commission_bps: u16,
+        commission_account: Pubkey,
+    ) -> Result<()> {
+        if ctx.accounts.manager_authority.key()
+            != ctx.accounts.partner_backrun_share_account.manager_authority
+        {
+            return Err(Unauthorized.into());
+        }
+        validate_partner_commission(
+            commission_bps,
+            commission_account,
+            ctx.accounts.config.max_commission_bps,
+        )
     }
 }
 
@@ -1458,6 +1659,8 @@ pub struct PartnerTipShareAccountInitializedEvent {
     pub manager_authority: Pubkey,
     pub record_authority: Pubkey,
     pub max_epoch_entries: u8,
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
 }
 
 #[event]
@@ -1468,6 +1671,8 @@ pub struct PartnerBackrunShareAccountInitializedEvent {
     pub manager_authority: Pubkey,
     pub record_authority: Pubkey,
     pub max_epoch_entries: u8,
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
 }
 
 #[event]
@@ -1488,14 +1693,32 @@ pub struct PartnerBackrunShareRecordedEvent {
 pub struct PartnerTipShareClaimedEvent {
     pub partner_tip_share_account: Pubkey,
     pub validator_identity: Pubkey,
+    pub commission_account: Pubkey,
     pub epoch: u64,
-    pub amount: u64,
+    pub commission_amount: u64,
+    pub validator_amount: u64,
 }
 
 #[event]
 pub struct PartnerBackrunShareClaimedEvent {
     pub partner_backrun_share_account: Pubkey,
     pub validator_identity: Pubkey,
+    pub commission_account: Pubkey,
     pub epoch: u64,
-    pub amount: u64,
+    pub commission_amount: u64,
+    pub validator_amount: u64,
+}
+
+#[event]
+pub struct PartnerTipShareCommissionUpdatedEvent {
+    pub partner_tip_share_account: Pubkey,
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
+}
+
+#[event]
+pub struct PartnerBackrunShareCommissionUpdatedEvent {
+    pub partner_backrun_share_account: Pubkey,
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
 }
