@@ -624,7 +624,6 @@ pub struct ClaimPartnerTipShareArgs {
 }
 
 pub struct ClaimPartnerTipShareAccounts {
-    pub reward_collection_account: Pubkey,
     pub partner_tip_share_account: Pubkey,
     pub commission_account: Pubkey,
     pub validator_identity: Pubkey,
@@ -638,7 +637,6 @@ pub fn claim_partner_tip_share_ix(
 ) -> Instruction {
     let ClaimPartnerTipShareArgs { epoch } = args;
     let ClaimPartnerTipShareAccounts {
-        reward_collection_account,
         partner_tip_share_account,
         commission_account,
         validator_identity,
@@ -649,7 +647,6 @@ pub fn claim_partner_tip_share_ix(
         program_id,
         data: crate::instruction::ClaimPartnerTipShare { epoch }.data(),
         accounts: crate::accounts::ClaimPartnerTipShare {
-            reward_collection_account,
             partner_tip_share_account,
             commission_account,
             validator_identity,
@@ -664,7 +661,6 @@ pub struct ClaimPartnerBackrunShareArgs {
 }
 
 pub struct ClaimPartnerBackrunShareAccounts {
-    pub reward_collection_account: Pubkey,
     pub partner_backrun_share_account: Pubkey,
     pub commission_account: Pubkey,
     pub validator_identity: Pubkey,
@@ -678,7 +674,6 @@ pub fn claim_partner_backrun_share_ix(
 ) -> Instruction {
     let ClaimPartnerBackrunShareArgs { epoch } = args;
     let ClaimPartnerBackrunShareAccounts {
-        reward_collection_account,
         partner_backrun_share_account,
         commission_account,
         validator_identity,
@@ -689,7 +684,6 @@ pub fn claim_partner_backrun_share_ix(
         program_id,
         data: crate::instruction::ClaimPartnerBackrunShare { epoch }.data(),
         accounts: crate::accounts::ClaimPartnerBackrunShare {
-            reward_collection_account,
             partner_backrun_share_account,
             commission_account,
             validator_identity,

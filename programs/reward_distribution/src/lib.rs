@@ -600,7 +600,6 @@ pub mod reward_distribution {
         let commission_bps = ctx.accounts.partner_tip_share_account.commission_bps;
         let partner_share_account_info = ctx.accounts.partner_tip_share_account.to_account_info();
         let (commission_amount, validator_amount) = claim_partner_share_revenue(
-            &ctx.accounts.reward_collection_account,
             &mut ctx.accounts.partner_tip_share_account.ledger,
             partner_share_account_info,
             ctx.accounts.commission_account.to_account_info(),
@@ -632,7 +631,6 @@ pub mod reward_distribution {
         let partner_share_account_info =
             ctx.accounts.partner_backrun_share_account.to_account_info();
         let (commission_amount, validator_amount) = claim_partner_share_revenue(
-            &ctx.accounts.reward_collection_account,
             &mut ctx.accounts.partner_backrun_share_account.ledger,
             partner_share_account_info,
             ctx.accounts.commission_account.to_account_info(),
@@ -717,7 +715,6 @@ pub mod reward_distribution {
 }
 
 fn claim_partner_share_revenue(
-    reward_collection_account: &RewardCollectionAccount,
     ledger: &mut PartnerShareLedger,
     partner_share_account: AccountInfo,
     commission_account: AccountInfo,
@@ -730,9 +727,6 @@ fn claim_partner_share_revenue(
     let current_epoch = Clock::get()?.epoch;
     if current_epoch <= epoch {
         return Err(PrematurePartnerShareClaim.into());
-    }
-    if current_epoch > reward_collection_account.expires_at {
-        return Err(ExpiredRewardCollectionAccount.into());
     }
 
     let entry_amount = {
@@ -1338,12 +1332,6 @@ impl RecordPartnerBackrunShare<'_> {
 #[derive(Accounts)]
 #[instruction(epoch: u64)]
 pub struct ClaimPartnerTipShare<'info> {
-    #[account(
-        constraint = reward_collection_account.creation_epoch == epoch,
-        constraint = reward_collection_account.validator_vote_account == partner_tip_share_account.validator_vote,
-    )]
-    pub reward_collection_account: Account<'info, RewardCollectionAccount>,
-
     #[account(mut)]
     pub partner_tip_share_account: Account<'info, PartnerTipShareAccount>,
 
@@ -1352,14 +1340,10 @@ pub struct ClaimPartnerTipShare<'info> {
         mut,
         constraint = commission_account.key() == partner_tip_share_account.commission_account,
     )]
-    pub commission_account: UncheckedAccount<'info>,
+    pub commission_account: AccountInfo<'info>,
 
-    /// CHECK: must match RCA initializer
-    #[account(
-        mut,
-        constraint = validator_identity.key() == reward_collection_account.initializer,
-    )]
-    pub validator_identity: UncheckedAccount<'info>,
+    /// CHECK: this is safe
+    pub validator_identity: AccountInfo<'info>,
 
     pub manager_authority: Signer<'info>,
 }
@@ -1368,10 +1352,6 @@ impl ClaimPartnerTipShare<'_> {
     fn auth(ctx: &Context<ClaimPartnerTipShare>) -> Result<()> {
         if ctx.accounts.manager_authority.key()
             != ctx.accounts.partner_tip_share_account.manager_authority
-        {
-            Err(Unauthorized.into())
-        } else if ctx.accounts.validator_identity.key()
-            != ctx.accounts.reward_collection_account.initializer
         {
             Err(Unauthorized.into())
         } else {
@@ -1384,12 +1364,6 @@ impl ClaimPartnerTipShare<'_> {
 #[derive(Accounts)]
 #[instruction(epoch: u64)]
 pub struct ClaimPartnerBackrunShare<'info> {
-    #[account(
-        constraint = reward_collection_account.creation_epoch == epoch,
-        constraint = reward_collection_account.validator_vote_account == partner_backrun_share_account.validator_vote,
-    )]
-    pub reward_collection_account: Account<'info, RewardCollectionAccount>,
-
     #[account(mut)]
     pub partner_backrun_share_account: Account<'info, PartnerBackrunShareAccount>,
 
@@ -1398,14 +1372,10 @@ pub struct ClaimPartnerBackrunShare<'info> {
         mut,
         constraint = commission_account.key() == partner_backrun_share_account.commission_account,
     )]
-    pub commission_account: UncheckedAccount<'info>,
+    pub commission_account: AccountInfo<'info>,
 
-    /// CHECK: must match RCA initializer
-    #[account(
-        mut,
-        constraint = validator_identity.key() == reward_collection_account.initializer,
-    )]
-    pub validator_identity: UncheckedAccount<'info>,
+    /// CHECK: this is safe
+    pub validator_identity: AccountInfo<'info>,
 
     pub manager_authority: Signer<'info>,
 }
@@ -1414,10 +1384,6 @@ impl ClaimPartnerBackrunShare<'_> {
     fn auth(ctx: &Context<ClaimPartnerBackrunShare>) -> Result<()> {
         if ctx.accounts.manager_authority.key()
             != ctx.accounts.partner_backrun_share_account.manager_authority
-        {
-            Err(Unauthorized.into())
-        } else if ctx.accounts.validator_identity.key()
-            != ctx.accounts.reward_collection_account.initializer
         {
             Err(Unauthorized.into())
         } else {
