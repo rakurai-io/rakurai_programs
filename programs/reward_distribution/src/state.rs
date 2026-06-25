@@ -49,10 +49,6 @@ pub struct RewardCollectionAccount {
     pub bump: u8,
     /// Amount of MEV commission deducted by Block Builder (if enabled).
     pub block_builder_mev_commission_deducted: Option<u64>,
-    /// Cumulative block-reward earned this epoch.
-    pub block_reward_accumulated: Option<u64>,
-    /// Cumulative rakurai tips earned this epoch.
-    pub rakurai_tips_accumulated: Option<u64>,
 }
 
 /// Metadata about the Merkle root used for claims.
@@ -173,37 +169,6 @@ impl RewardCollectionAccount {
 
     /// Account size for rent-exemption.
     pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
-
-    /// Block reward accumulator (BRCA), defaulting to 0 for legacy accounts.
-    pub fn block_reward_accumulated(&self) -> u64 {
-        self.block_reward_accumulated.unwrap_or(0)
-    }
-
-    /// Rakurai tips split (RTCA), defaulting to 0 for legacy accounts.
-    pub fn rakurai_tips_accumulated(&self) -> u64 {
-        self.rakurai_tips_accumulated.unwrap_or(0)
-    }
-
-    /// RTCA = lamports above rent minus BRCA. Tips arrive as raw lamports to the RCA;
-    /// refreshed when BRCA or balance changes.
-    pub fn compute_rakurai_tips_accumulated(&self, lamports: u64, rent: u64) -> u64 {
-        lamports
-            .saturating_sub(rent)
-            .saturating_sub(self.block_reward_accumulated())
-    }
-
-    /// Updates stored RTCA from current account balance when tracking is enabled.
-    pub fn refresh_rakurai_tips_accumulated(&mut self, lamports: u64, rent: u64) {
-        if self.rakurai_tips_accumulated.is_some() {
-            self.rakurai_tips_accumulated =
-                Some(self.compute_rakurai_tips_accumulated(lamports, rent));
-        }
-    }
-
-    /// Whether accumulator tracking fields are persisted on this account.
-    pub fn has_accumulator_tracking(&self) -> bool {
-        self.block_reward_accumulated.is_some() || self.rakurai_tips_accumulated.is_some()
-    }
 
     /// Lamports available for claims after rent (balance minus minimum rent).
     pub fn spendable_lamports(lamports: u64, min_rent: u64) -> Result<u64> {
@@ -343,7 +308,8 @@ impl PartnerTipShareAccount {
             return Err(AccountValidationFailure.into());
         }
 
-        if max_epoch_entries == 0 || max_epoch_entries as usize > MAX_PARTNER_SHARE_EPOCH_ENTRIES_CAP
+        if max_epoch_entries == 0
+            || max_epoch_entries as usize > MAX_PARTNER_SHARE_EPOCH_ENTRIES_CAP
         {
             return Err(InvalidPartnerShareEpochCapacity.into());
         }
@@ -413,7 +379,8 @@ impl PartnerBackrunShareAccount {
             return Err(AccountValidationFailure.into());
         }
 
-        if max_epoch_entries == 0 || max_epoch_entries as usize > MAX_PARTNER_SHARE_EPOCH_ENTRIES_CAP
+        if max_epoch_entries == 0
+            || max_epoch_entries as usize > MAX_PARTNER_SHARE_EPOCH_ENTRIES_CAP
         {
             return Err(InvalidPartnerShareEpochCapacity.into());
         }
@@ -492,18 +459,6 @@ mod tests {
             900
         );
         assert!(RewardCollectionAccount::spendable_lamports(50, 100).is_err());
-    }
-
-    #[test]
-    fn rtca_is_balance_minus_rent_minus_brca() {
-        let mut rca = RewardCollectionAccount {
-            block_reward_accumulated: Some(300),
-            rakurai_tips_accumulated: Some(0),
-            ..Default::default()
-        };
-        assert_eq!(rca.compute_rakurai_tips_accumulated(1_000, 100), 600);
-        rca.refresh_rakurai_tips_accumulated(1_000, 100);
-        assert_eq!(rca.rakurai_tips_accumulated, Some(600));
     }
 
     #[test]

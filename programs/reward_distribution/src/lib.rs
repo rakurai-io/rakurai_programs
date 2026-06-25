@@ -104,9 +104,6 @@ pub mod reward_distribution {
             reward_collection_acc.block_builder_mev_commission_deducted = None;
         }
 
-        reward_collection_acc.block_reward_accumulated = Some(0);
-        reward_collection_acc.rakurai_tips_accumulated = Some(0);
-
         reward_collection_acc.validate()?;
 
         emit!(RewardCollectionAccountInitializedEvent {
@@ -260,20 +257,6 @@ pub mod reward_distribution {
                     ctx.accounts.system_program.to_account_info(),
                 ],
             )?;
-        }
-
-        if let Some(block_reward_accumulated) = &mut reward_collection_acc.block_reward_accumulated
-        {
-            *block_reward_accumulated = block_reward_accumulated
-                .checked_add(staker_rewards)
-                .ok_or(ArithmeticError)?;
-        }
-
-        if reward_collection_acc.rakurai_tips_accumulated.is_some() {
-            let account_info = reward_collection_acc.to_account_info();
-            let lamports = account_info.lamports();
-            let min_rent = Rent::get()?.minimum_balance(account_info.data_len());
-            reward_collection_acc.refresh_rakurai_tips_accumulated(lamports, min_rent);
         }
 
         emit!(StakerRewardsTransferredEvent {
@@ -459,13 +442,6 @@ pub mod reward_distribution {
             claimant: claimant_account.key(),
             amount
         });
-
-        if reward_collection_account.rakurai_tips_accumulated.is_some() {
-            let account_info = reward_collection_account.to_account_info();
-            let lamports = account_info.lamports();
-            let min_rent = Rent::get()?.minimum_balance(account_info.data_len());
-            reward_collection_account.refresh_rakurai_tips_accumulated(lamports, min_rent);
-        }
 
         reward_collection_account.validate()?;
 
