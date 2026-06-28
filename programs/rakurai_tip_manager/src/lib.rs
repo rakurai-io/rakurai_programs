@@ -38,6 +38,21 @@ pub const RAKURAI_TIP_ACCOUNT_7_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_7";
 pub const HEADER: usize = 8;
 const MAX_COMMISSION_BPS: u64 = 10_000;
 
+/// Seed for partner tip-share vaults in reward_distribution (must stay in sync).
+const PARTNER_TIP_SHARE_SEED: &[u8] = b"PARTNER_TIP_SHARE";
+/// Partner label for the Rakurai tip-share vault (`name` field in PDA seeds).
+pub const RAKURAI_PARTNER_TIP_SHARE_NAME: [u8; 32] = {
+    let mut name = [0u8; 32];
+    name[0] = b'R';
+    name[1] = b'a';
+    name[2] = b'k';
+    name[3] = b'u';
+    name[4] = b'r';
+    name[5] = b'a';
+    name[6] = b'i';
+    name
+};
+
 /// Rakurai Tip Manager Program: users send tips to one of eight tip accounts, validators periodically drain them
 /// and tips are split between the configured tip receiver and an block builder commission account.
 #[program]
@@ -466,8 +481,25 @@ pub struct ChangeTipReceiver<'info> {
     #[account(mut, constraint = old_tip_receiver.key() == tip_manager_config.validator_tip_receiver_account)]
     pub old_tip_receiver: AccountInfo<'info>,
 
-    /// CHECK: any new, writable account is allowed as a tip receiver.
-    #[account(mut)]
+    /// CHECK: reward_distribution program id for partner tip-share PDA derivation.
+    pub reward_distribution_program: AccountInfo<'info>,
+
+    /// Rakurai partner tip-share PDA for this validator vote.
+    #[account(
+        mut,
+        constraint = new_tip_receiver.owner == reward_distribution_program.key @ Unauthorized,
+        constraint = {
+            let (expected, _) = Pubkey::find_program_address(
+                &[
+                    PARTNER_TIP_SHARE_SEED,
+                    RAKURAI_PARTNER_TIP_SHARE_NAME.as_ref(),
+                    validator_vote_account.key().as_ref(),
+                ],
+                reward_distribution_program.key,
+            );
+            new_tip_receiver.key() == expected
+        } @ Unauthorized,
+    )]
     pub new_tip_receiver: AccountInfo<'info>,
 
     /// CHECK: old_block_builder receives a % of funds in the RakuraiTipAccount accounts
