@@ -93,7 +93,7 @@ pub struct PartnerTipShareAccount {
     pub manager_authority: Pubkey,
     /// Signs `record_partner_tip_share`.
     pub record_authority: Pubkey,
-    /// Max distinct epochs in `ledger` (used in PDA seeds).
+    /// Max distinct epochs in `ledger`.
     pub max_epoch_entries: u8,
     /// Commission on partner share claims (basis points); remainder goes to validator identity.
     pub commission_bps: u16,
@@ -113,7 +113,7 @@ pub struct PartnerBackrunShareAccount {
     pub manager_authority: Pubkey,
     /// Signs `record_partner_backrun_share`.
     pub record_authority: Pubkey,
-    /// Max distinct epochs in `ledger` (used in PDA seeds).
+    /// Max distinct epochs in `ledger`.
     pub max_epoch_entries: u8,
     /// Commission on partner share claims (basis points); remainder goes to validator identity.
     pub commission_bps: u16,

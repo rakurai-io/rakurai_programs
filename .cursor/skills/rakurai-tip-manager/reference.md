@@ -11,7 +11,9 @@ PDA seeds, account layouts, instruction accounts. Source: `programs/rakurai_tip_
 | Config | `b"TIP_MANAGER_CONFIG_ACCOUNT"` |
 | Tip 0–7 | `b"RAKURAI_TIP_ACCOUNT_N"` (N = 0..7) |
 
-SDK: `derive_rakurai_tip_manager_config_account_address`, `derive_rakurai_tip_payment_account_pdas`.
+SDK: `derive_rakurai_tip_manager_config_account_address`, `derive_rakurai_tip_payment_account_pdas`, `derive_rakurai_partner_tip_share_address` (reward_distribution program + vote).
+
+Partner tip-share PDA (reward_distribution): `[PARTNER_TIP_SHARE, "Rakurai"[32], validator_vote]`.
 
 ---
 
@@ -22,7 +24,7 @@ SDK: `derive_rakurai_tip_manager_config_account_address`, `derive_rakurai_tip_pa
 | Field | Type | Notes |
 |-------|------|-------|
 | authority | Pubkey | `close`, `change_block_builder` |
-| validator_tip_receiver_account | Pubkey | Updated on `change_tip_receiver` |
+| validator_tip_receiver_account | Pubkey | Updated on `change_tip_receiver` → partner tip-share PDA |
 | block_builder_commission_account | Pubkey | Commission destination |
 | block_builder_commission_bps | u64 | 0–10000 |
 | bumps | RakuraiTipManagerBumps | config + 8 tip bumps |
@@ -45,9 +47,13 @@ tip_manager_config (mut, close→signer), rakurai_tip_account_0..7 (mut, close�
 
 ### ChangeTipReceiver
 
-tip_manager_config (mut), rakurai_activation_account (RAA PDA for signer), validator_vote_account, old_tip_receiver (mut), new_tip_receiver (mut), block_builder_commission_account (mut), rakurai_tip_account_0..7 (mut), signer (mut, signer)
+tip_manager_config (mut), rakurai_activation_account (RAA PDA), validator_vote_account, old_tip_receiver (mut), **reward_distribution_program**, new_tip_receiver (mut, partner tip-share PDA), block_builder_commission_account (mut), rakurai_tip_account_0..7 (mut), signer (mut, signer)
 
-Auth: RAA `is_enabled` + `validator_authority == signer`; vote program owner; vote node pubkey == signer.
+**new_tip_receiver constraints:**
+- `owner == reward_distribution_program.key`
+- Address == `find_program_address(PARTNER_TIP_SHARE, RAKURAI_PARTNER_TIP_SHARE_NAME, vote, reward_distribution_program)`
+
+Auth (in `auth()`): vote program owner; vote node == signer. RAA enabled + validator_authority via account constraints.
 
 ### ChangeBlockBuilder
 
@@ -59,8 +65,8 @@ tip_manager_config (mut), validator_tip_receiver_account (mut), old_block_builde
 
 1. Drain 8 PDAs → `total_tips` (preserve rent each)
 2. `block_builder_fee = total * bps / 10000`
-3. Credit validator share + commission accounts
-4. On receiver/builder change: update config field
+3. Credit **old** tip receiver + commission accounts (not `new_tip_receiver`)
+4. `change_tip_receiver`: update `validator_tip_receiver_account` to `new_tip_receiver`
 
 ---
 
@@ -102,7 +108,7 @@ Prefer SDK `derive_rakurai_tip_payment_account_pdas` for localnet/redeploy.
 |-------|------|
 | ArithmeticError | Overflow in split/drain/close |
 | MaxCommissionBpsExceeded | bps > 10_000 |
-| Unauthorized | Wrong authority on `change_block_builder` / `close`; vote mismatch on `change_tip_receiver` |
+| Unauthorized | Wrong authority; vote mismatch; partner PDA mismatch |
 | RakuraiSchedulerNotEnabled | RAA exists but `is_enabled == false` on `change_tip_receiver` |
 
 Events: `TipsClaimedEvent` (drain ixs), `TipsManagerCloseEvent` (close).

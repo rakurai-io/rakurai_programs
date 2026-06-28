@@ -57,7 +57,7 @@ PartnerTipShareAccount / PartnerBackrunShareAccount ── per (partner label, v
 3. **After E**: `upload_merkle_root`; staker `claim`; partner share claim with `epoch = RCA.creation_epoch` and `current_epoch > epoch` — commission portion to `commission_account`, remainder to validator identity.
 4. **Cleanup**: close RCA after expiry; `close_claim_status` permissionless after expiry.
 
-Partner share init: `name[32]`, `record_authority`, `max_epoch_entries` (1–32), `commission_bps`, `commission_account`, `bump`. Requires `config.tip_backrun_manager_authority` set; signer must be that authority. Manager may later call `update_partner_*_share_commission`.
+Partner share init: `name[32]`, `record_authority`, `max_epoch_entries` (1–32, ledger capacity), `commission_bps`, `commission_account`, `bump`. PDA: `[PARTNER_*_SHARE, name, vote]`. Requires `config.tip_backrun_manager_authority`; manager may call `update_partner_*_share_commission`.
 
 ---
 

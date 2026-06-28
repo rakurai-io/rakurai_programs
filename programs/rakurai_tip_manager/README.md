@@ -64,16 +64,19 @@ These accounts are empty state accounts that hold SOL (lamports). When tips are 
 
 1. **Users send tips** → Tips are sent to any of the eight tip accounts via standard SOL transfers
 2. **Tips accumulate** → Tips accumulate in the tip accounts until claimed
-3. **Validator claims tips** → Validator calls `change_tip_receiver` instruction to drain all accounts
+3. **Validator claims tips** → Validator calls `change_tip_receiver` to drain all accounts and rotate config receiver to their Rakurai partner tip-share PDA
 4. **Automatic split** → Tips are automatically split:
    - Block builder commission → `block_builder_commission_account`
-   - Remaining tips → `validator_tip_receiver_account`
+   - Remaining tips → `old_tip_receiver` (current config receiver)
+5. **Config update** → `validator_tip_receiver_account` set to the Rakurai `PartnerTipShareAccount` PDA for this validator vote
 
 ---
 
 ## Integration with Reward Distribution
 
-When validators receive tips through the Tip Manager Program, these tips are credited to their epoch specific **[Reward Collection Account (RCA)](../reward_distribution/README.md)**. The [`Reward Distribution Program`](../reward_distribution/README.md) then handles the distribution of these tips, including any commission deductions for Rakurai if applicable.
+Tips drained to the partner tip-share PDA accumulate as lamports. The validator records attributed amounts via `record_partner_tip_share`; Rakurai claims post-epoch via `claim_partner_tip_share` (commission split per `commission_bps`).
+
+Partner vault PDA: `[PARTNER_TIP_SHARE, "Rakurai", validator_vote]` on reward_distribution. Initialize with `initialize_partner_tip_share_account` before the first `change_tip_receiver`.
 
 ---
 

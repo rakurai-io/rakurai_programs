@@ -11,10 +11,10 @@ Source: `programs/reward_distribution/src/` (v0.3.0).
 | Config | `RD_CONFIG_ACCOUNT` |
 | RCA | `REWARD_COLLECTION_ACCOUNT`, vote, `epoch.to_le_bytes()` |
 | ClaimStatus | `CLAIM_STATUS`, claimant, rca |
-| PartnerTipShare | `PARTNER_TIP_SHARE`, name[32], vote, `&[max_epoch_entries]` |
-| PartnerBackrunShare | `PARTNER_BACKRUN_SHARE`, name[32], vote, `&[max_epoch_entries]` |
+| PartnerTipShare | `PARTNER_TIP_SHARE`, name[32], vote |
+| PartnerBackrunShare | `PARTNER_BACKRUN_SHARE`, name[32], vote |
 
-Space: `PartnerTipShareAccount::space_for(max_epoch_entries)` (same for backrun). Cap: `MAX_PARTNER_SHARE_EPOCH_ENTRIES_CAP = 32`.
+Space: `PartnerTipShareAccount::space_for(max_epoch_entries)` (same for backrun). `max_epoch_entries` is ledger capacity only (not in PDA seeds). Cap: `MAX_PARTNER_SHARE_EPOCH_ENTRIES_CAP = 32`.
 
 ---
 
@@ -26,7 +26,7 @@ Space: `PartnerTipShareAccount::space_for(max_epoch_entries)` (same for backrun)
 | validator_vote | Pubkey | Must match RCA vote on claim |
 | manager_authority | Pubkey | Set from `config.tip_backrun_manager_authority` at init; claim, update commission, close |
 | record_authority | Pubkey | Signs `record_partner_*_share` only |
-| max_epoch_entries | u8 | In seeds; ledger capacity |
+| max_epoch_entries | u8 | Ledger capacity (1–32); affects account size, not PDA seeds |
 | commission_bps | u16 | Share of epoch ledger amount sent to `commission_account` on claim |
 | commission_account | Pubkey | Receives commission portion; required non-default when `commission_bps > 0` |
 | ledger | PartnerShareLedger | `Vec<EpochAmountEntry>` |

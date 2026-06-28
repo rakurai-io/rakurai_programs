@@ -1178,7 +1178,6 @@ pub struct InitializePartnerTipShareAccount<'info> {
             PartnerTipShareAccount::SEED,
             name.as_ref(),
             validator_vote_account.key().as_ref(),
-            &[max_epoch_entries],
         ],
         bump,
     )]
@@ -1238,7 +1237,6 @@ pub struct InitializePartnerBackrunShareAccount<'info> {
             PartnerBackrunShareAccount::SEED,
             name.as_ref(),
             validator_vote_account.key().as_ref(),
-            &[max_epoch_entries],
         ],
         bump,
     )]
@@ -1470,7 +1468,6 @@ pub struct ClosePartnerTipShareAccount<'info> {
             PartnerTipShareAccount::SEED,
             partner_tip_share_account.name.as_ref(),
             partner_tip_share_account.validator_vote.as_ref(),
-            &[partner_tip_share_account.max_epoch_entries],
         ],
         bump = partner_tip_share_account.bump,
     )]
@@ -1502,7 +1499,6 @@ pub struct ClosePartnerBackrunShareAccount<'info> {
             PartnerBackrunShareAccount::SEED,
             partner_backrun_share_account.name.as_ref(),
             partner_backrun_share_account.validator_vote.as_ref(),
-            &[partner_backrun_share_account.max_epoch_entries],
         ],
         bump = partner_backrun_share_account.bump,
     )]

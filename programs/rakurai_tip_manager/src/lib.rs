@@ -489,13 +489,9 @@ pub struct ChangeTipReceiver<'info> {
         mut,
         constraint = new_tip_receiver.owner == reward_distribution_program.key @ Unauthorized,
         constraint = {
-            let (expected, _) = Pubkey::find_program_address(
-                &[
-                    PARTNER_TIP_SHARE_SEED,
-                    RAKURAI_PARTNER_TIP_SHARE_NAME.as_ref(),
-                    validator_vote_account.key().as_ref(),
-                ],
-                reward_distribution_program.key,
+            let (expected, _) = crate::sdk::derive_rakurai_partner_tip_share_address(
+                &reward_distribution_program.key(),
+                &validator_vote_account.key(),
             );
             new_tip_receiver.key() == expected
         } @ Unauthorized,

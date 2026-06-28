@@ -3,7 +3,7 @@ name: rakurai-tip-manager
 description: >-
   Rakurai Tip Manager on-chain program (8 tip PDAs, config singleton), tip draining,
   and commission split. Use for tip manager, change_tip_receiver, tip
-  accounts, block builder commission on tips, or integrating tips with RCA/RTCA.
+  accounts, block builder commission on tips, or integrating tips with partner share vaults.
 ---
 
 # Rakurai Tip Manager
@@ -22,11 +22,11 @@ RakuraiTipAccount x8: empty state, lamport vaults (seeds _0.._7)
 
 Users ──SOL──► any tip PDA
 
-change_tip_receiver: drain → old_tip_receiver + commission; set new receiver (Rakurai validator)
+change_tip_receiver: drain → old_tip_receiver + commission; config → partner tip-share PDA
 change_block_builder: drain → validator receiver + old builder; update builder (authority)
 ```
 
-No reward_distribution CPI. Routing tips to RCA is done off-chain (lamport transfer to current-epoch RCA); RTCA = `balance - rent - BRCA`.
+No reward_distribution CPI. Drained lamports land on `old_tip_receiver`; config `validator_tip_receiver_account` is set to the Rakurai `PartnerTipShareAccount` PDA for subsequent drains.
 
 ---
 
@@ -36,21 +36,24 @@ No reward_distribution CPI. Routing tips to RCA is done off-chain (lamport trans
 |-------------|--------|---------|
 | `initialize_rakurai_tip_manager` | payer | Config + 8 tip PDAs |
 | `close_rakurai_tip_manager` | authority | Close all; reclaim rent |
-| `change_tip_receiver` | Rakurai validator identity | Drain → old receiver + commission; set new receiver |
+| `change_tip_receiver` | Rakurai validator identity | Drain → old receiver + commission; set config receiver to partner tip-share PDA |
 | `change_block_builder` | authority | Drain → validator receiver + old builder; update builder |
 
-`change_tip_receiver` auth: enabled RAA PDA (`signer == validator_authority`); `validator_vote_account` with vote node == signer.
+`change_tip_receiver` auth: enabled RAA PDA; vote node == signer. `new_tip_receiver` must be `[PARTNER_TIP_SHARE, "Rakurai", vote]` PDA on reward_distribution (pass `reward_distribution_program` account).
 
 ---
 
 ## Tip Flow
 
-1. Users transfer SOL to any of 8 tip PDAs ([deployed addresses](reference.md#deployed-tip-account-addresses)).
-2. **Periodic drain**: `change_tip_receiver` when rotating receiver (validator leader-turn client).
-3. Split: `block_builder_fee = total * bps / 10000`; remainder to validator share account.
-4. **RCA credit** (optional): client transfers validator-share lamports to current-epoch RCA off-chain.
+1. Rakurai inits partner vault: `initialize_partner_tip_share_account` (reward_distribution).
+2. Users transfer SOL to any of 8 tip PDAs.
+3. Validator calls `change_tip_receiver` on leader turns:
+   - Split: `block_builder_fee = total * bps / 10000`; remainder → `old_tip_receiver`
+   - Config receiver → partner tip-share PDA
+4. Validator records attributed amounts: `record_partner_tip_share`.
+5. Post-epoch: Rakurai `claim_partner_tip_share` (commission split).
 
-`change_tip_receiver`: `old_tip_receiver` and `block_builder_commission_account` must match config.
+First drain after tip-manager init credits `old_tip_receiver` (initially payer), not the partner PDA, until config already points at the partner vault.
 
 ---
 
@@ -60,6 +63,7 @@ No reward_distribution CPI. Routing tips to RCA is done off-chain (lamport trans
 use rakurai_tip_manager::sdk::{
     derive_rakurai_tip_manager_config_account_address,
     derive_rakurai_tip_payment_account_pdas,
+    derive_rakurai_partner_tip_share_address,
 };
 ```
 
@@ -70,8 +74,7 @@ Builders: `initialize_rakurai_tip_manager_ix`, `close_rakurai_tip_manager_ix`, `
 ## Build & Program IDs
 
 ```bash
-anchor build -p rakurai_tip_manager
-anchor test -p rakurai_tip_manager
+anchor build -p rakurai_tip_manager --no-idl
 ```
 
 | Cluster | Program ID |
@@ -80,6 +83,4 @@ anchor test -p rakurai_tip_manager
 | testnet | `4qRZaFzf7MvgfBTCP9grb69cCST8UmKHPtkpGAgkJosD` |
 | localnet | `6z4rnNKVzSYBxqfshk1QZFgJv17KjZoirFhpWSjqQMfu` |
 
-`declare_id!` = testnet. IDL: `programs/rakurai_tip_manager/idl/rakurai_tip_manager.json`.
-
-**Related**: `reward_distribution` (RCA/RTCA), `rakurai_activation` (commission alignment).
+**Related**: `reward_distribution` (partner share PDAs), `rakurai_activation` (RAA gate).
