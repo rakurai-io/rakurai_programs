@@ -89,7 +89,7 @@ cargo run --bin rakurai-activation -- -p pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM
 3. Subcommands → operator workflows, not every on-chain ix
 4. Reuse `lib.rs`; add `get_*`/`display_*` as needed
 
-**Suggested v1 — reward_distribution**: `init-rca`, `show-rca`, `upload-merkle-root`, `claim`, partner share init/record/claim.
+**Suggested v1 — reward_distribution**: `init-rca`, `show-rca`, `upload-merkle-root`, `claim`, revenue-share init/record/claim.
 
 **Suggested v1 — tip_manager**: `show-config`, `claim-tips`, `change-tip-receiver`, `change-block-builder`. Optional `--reward-distribution-program-id` only if CLI also credits RCA off-chain.
 

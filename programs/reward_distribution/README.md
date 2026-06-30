@@ -97,38 +97,31 @@ Block Builder charges commission on MEV Rewards **only** if the following condit
 
 ---
 
-## Partner Share Accounts (Tip & Backrun)
+## Revenue Share Accounts (Tip & Backrun)
 
-Most revenue flows through accounts Rakurai controls directly (the eight tip PDAs, the per-epoch RCA). **Partner share accounts exist for the cases where the revenue lands in an account Rakurai does *not* control**, so the partner's agreed share has to be tracked and settled separately.
+Most revenue flows through accounts Rakurai controls directly (the eight tip PDAs, the per-epoch RCA). **Revenue share accounts exist for the cases where the revenue lands in an account Rakurai does *not* control**, so the agreed share has to be tracked and settled separately.
 
-### Why a Partner **Tip** Share account
+The unified account is `RevenueShareAccount`, parameterized by `share_kind ∈ {Tip, Backrun}`. The two kinds are exposed as type aliases: **`TipsCollectionAccount` (TCA)** and **`BackrunCollectionAccount` (BCA)**.
 
-By default, searchers tip Rakurai's [eight tip accounts](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/rakurai_tip_manager_faqs#4.-can-i-use-my-own-tip-account-instead-of-rakurais-eight-accounts), and `rakurai_tip_manager` drains them automatically. But a partner can [register their own custom tip account](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/rakurai_tip_manager_faqs#4.-can-i-use-my-own-tip-account-instead-of-rakurais-eight-accounts) and agree to share a commission (e.g. 30%) with Rakurai.
+### Why a **Tips Collection Account** (TCA)
 
-In that case **the tip is received in the partner's own account**, not in a Rakurai-controlled PDA. So Rakurai can't just drain it — instead the validator **records** the attributed amount every leader turn, and after the epoch the partner **settles** their agreed share into the partner tip-share PDA, from which the commission is deducted. That accounting + settlement vault is the **Partner Tip Share** account.
+By default, searchers tip Rakurai's [eight tip accounts](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/rakurai_tip_manager_faqs#4.-can-i-use-my-own-tip-account-instead-of-rakurais-eight-accounts), and `rakurai_tip_manager` drains them automatically. But an external operator/searcher can [register their own custom tip account](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/rakurai_tip_manager_faqs#4.-can-i-use-my-own-tip-account-instead-of-rakurais-eight-accounts) and agree to share a commission (e.g. 30%) with Rakurai.
 
-### Why a Partner **Backrun** Share account
+In that case **the tip is received in the external account holder's own account**, not in a Rakurai-controlled PDA. So Rakurai can't just drain it — instead the validator **records** the attributed amount every leader turn, and after the epoch the external account holder **settles** their agreed share into the Tips Collection Account PDA, from which the commission is deducted.
 
-Same idea for [post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations) used for backrun / arbitrage. The backrun revenue lands in the partner's own flow, so there's no account Rakurai can drain. We **trust the partner to share an agreed percentage** of backrun revenue; the validator records attribution per turn and the partner settles into the **Partner Backrun Share** account — exactly the same flow as tips, just a different `share_kind`.
+### Why a **Backrun Collection Account** (BCA)
 
-### Unified account
-
-Both cases use one PDA type, `PartnerShareAccount`, parameterized by `share_kind`:
-
-- **One account type, two kinds**: `share_kind ∈ {Tip, Backrun}` is part of the PDA seeds, so the same partner label + vote yields distinct Tip and Backrun vaults.
-- **Seeds**: `["PARTNER_SHARE", share_kind ("TIP" | "BACKRUN"), name[32], validator_vote]`.
-- **Roles**:
-  - `manager_authority` — set from `config.tip_backrun_manager_authority` at init; can claim, update commission, update the `convert_to_block_rewards` flag, and close.
-  - `record_authority` — signs `record_partner_share` (accounting only) and may also toggle `convert_to_block_rewards`.
-- **Ledger**: a bounded `Vec<EpochAmountEntry>` (capacity `max_epoch_entries`, 1–32). Each entry holds `epoch`, `amount`, `claimed`, and `converted_to_block_reward` (a snapshot of the account flag at first record for that epoch).
+Same idea for [post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations) used for backrun / arbitrage. The backrun revenue lands in the external account holder's own flow, so there's no account Rakurai can drain. We **trust the revenue source to share an agreed percentage** of backrun revenue; the validator records attribution per turn and the external account holder settles into the Backrun Collection Account — exactly the same flow as tips, just a different `share_kind`.
 
 ### Record → Claim flow
 
-- **Setup**: Rakurai (the `tip_backrun_manager_authority`) calls `initialize_partner_share_account` once per `(share_kind, partner, validator)`, fixing the partner label, `record_authority`, `commission_bps`, and `commission_account`.
-- **Record (each leader turn)**: the `record_authority` calls `record_partner_share(amount)` to accrue the partner's attributed amount for the current epoch into the ledger. This is **accounting only** — no lamports move.
-- **Settle**: after the epoch, the partner transfers their agreed share as plain SOL into the partner share PDA so it holds at least the recorded ledger amount.
-- **Claim (post-epoch)**: the `manager_authority` calls `claim_partner_share(epoch)` for a past epoch (`current_epoch > epoch`); the program splits `commission_bps` → `commission_account` and sends the remainder to the validator identity, marking the ledger entry `claimed`.
-- **Admin**: `manager_authority` can adjust `commission_bps`/`commission_account` (`update_partner_share_commission`) or close the vault; the `convert_to_block_rewards` flag is settable by manager **or** record authority and snapshotted per epoch at first record.
+- **Setup**: Rakurai (the `revenue_manager_authority`) calls `initialize_revenue_share_account` once per `(share_kind, name, validator)`, fixing the label, `record_authority`, `commission_bps`, and `commission_account`.
+- **Record (each leader turn)**: the `record_authority` calls `record_revenue(amount)` to accrue the attributed amount for the current epoch into the ledger. This is **accounting only** — no lamports move.
+- **Settle**: after the epoch, the external account holder transfers their agreed share as plain SOL into the revenue-share PDA so it holds at least the recorded ledger amount.
+- **Claim (post-epoch)**: the `manager_authority` calls `claim_revenue(epoch)` for a past epoch (`current_epoch > epoch`); the program splits `commission_bps` → `commission_account` and sends the remainder to the validator identity, marking the ledger entry `claimed`.
+- **Admin**: `manager_authority` can update `commission_bps`, `commission_account`, and `convert_to_block_rewards` via `update_revenue_share_config`, or `close_revenue_share_account`; `convert_to_block_rewards` is snapshotted per epoch at first `record_revenue`.
+
+PDA seeds: `["REVENUE_SHARE", share_kind ("TIP" | "BACKRUN"), name[32], validator_vote]`.
 
 ---
 

@@ -53,9 +53,9 @@ flowchart TD
 
 ---
 
-## 2. Reward Distribution — RCA & Partner Accounts
+## 2. Reward Distribution — RCA & Revenue-Share Accounts
 
-Per-epoch **RCA** for block rewards (Merkle staker claims) and per-validator **partner share vaults** for tip/backrun attribution.
+Per-epoch **RCA** for block rewards (Merkle staker claims) and per-validator **revenue-share vaults** for tip/backrun attribution.
 
 ```mermaid
 flowchart TD
@@ -73,20 +73,18 @@ flowchart TD
         R4[After expiry: close_reward_collection_account]
     end
 
-    subgraph partner [Partner share vaults per share_kind + label + vote]
-        P0[Rakurai: initialize_partner_share_account share_kind = Tip or Backrun]
-        P0 --> PTS[PartnerShareAccount share_kind in PDA seeds]
-        P1[Leader turn: record_partner_share]
+    subgraph revenue [Revenue-share vaults per share_kind + label + vote]
+        P0[Rakurai: initialize_revenue_share_account share_kind = Tip or Backrun]
+        P0 --> PTS[RevenueShareAccount share_kind in PDA seeds]
+        P1[Leader turn: record_revenue]
         P1 -->|accounting only| LEDGER[Epoch ledger + convert_to_block_rewards snapshot]
-        P2[Post-epoch: claim_partner_share]
+        P2[Post-epoch: claim_revenue]
         P2 -->|commission_bps split| PAY[commission_account + validator identity]
-        P3[Manager: update_partner_share_commission / close]
-        P4[Manager or record authority: update_partner_share_convert_to_block_rewards]
-        P4 --> PTS
+        P3[Manager: update_revenue_share_config / close]
     end
 
     config --> rca
-    config --> partner
+    config --> revenue
 ```
 
 | Path | Phase | Instructions |
@@ -95,18 +93,18 @@ flowchart TD
 | RCA | Leader turns | `transfer_staker_rewards`, optional MEV commission ix |
 | RCA | Post-epoch | `upload_merkle_root`, `claim`, `close_claim_status` |
 | RCA | Cleanup | `close_reward_collection_account` |
-| Partner | Setup | `initialize_partner_share_account` (`share_kind` arg) |
-| Partner | Leader turns | `record_partner_share` |
-| Partner | Post-epoch | `claim_partner_share` |
-| Partner | Admin | `update_partner_share_commission`, `update_partner_share_convert_to_block_rewards`, `close_partner_share_account` |
+| Revenue | Setup | `initialize_revenue_share_account` (`share_kind` arg) |
+| Revenue | Leader turns | `record_revenue` |
+| Revenue | Post-epoch | `claim_revenue` |
+| Revenue | Admin | `update_revenue_share_config`, `close_revenue_share_account` |
 
-Partner PDA seeds: `[PARTNER_SHARE, share_kind ("TIP" \| "BACKRUN"), name, validator_vote]`. One unified `PartnerShareAccount` (aliases `PartnerTipShareAccount` / `PartnerBackrunShareAccount`); `share_kind` selects Tip vs Backrun. Claim requires partner PDA lamports ≥ ledger amount.
+Revenue-share PDA seeds: `[REVENUE_SHARE, share_kind ("TIP" \| "BACKRUN"), name, validator_vote]`. One unified `RevenueShareAccount` (aliases `TipsCollectionAccount` (TCA) / `BackrunCollectionAccount` (BCA)); `share_kind` selects Tip vs Backrun. Claim requires revenue-share PDA lamports ≥ ledger amount.
 
 ---
 
 ## 3. Rakurai Tip Manager
 
-Global **8 tip PDAs** + singleton config. Validators drain on leader turns; config receiver rotates to partner tip-share PDA.
+Global **8 tip PDAs** + singleton config. Validators drain on leader turns; config receiver rotates to tip revenue-share PDA.
 
 ```mermaid
 flowchart TD
@@ -122,13 +120,13 @@ flowchart TD
     end
 
     subgraph drain [Validator leader turn]
-        PRE[Prerequisite: partner share PDA Tip kind initialized on reward_distribution]
+        PRE[Prerequisite: revenue-share PDA Tip kind initialized on reward_distribution]
         V1[change_tip_receiver]
         V1 -->|RAA enabled + vote auth| DRAIN[Drain 8 tip PDAs]
         DRAIN --> SPLIT[Split by block_builder_commission_bps]
         SPLIT --> OLD[validator_fee → old_tip_receiver]
         SPLIT --> BB[block_builder_fee → commission account]
-        V1 --> CFG2[config.validator_tip_receiver = partner tip-share PDA]
+        V1 --> CFG2[config.validator_tip_receiver = tip revenue-share PDA]
     end
 
     subgraph admin [Admin]
@@ -148,7 +146,7 @@ flowchart TD
 | Rotate builder | `change_block_builder` | config authority |
 | Shutdown | `close_rakurai_tip_manager` | config authority |
 
-**Corner cases:** Current drain credits `old_tip_receiver`, not `new_tip_receiver`. First drain after tip-manager init credits init payer until config already points at partner PDA. Partner vault must exist before `change_tip_receiver` succeeds.
+**Corner cases:** Current drain credits `old_tip_receiver`, not `new_tip_receiver`. First drain after tip-manager init credits init payer until config already points at the revenue-share PDA. Revenue-share vault must exist before `change_tip_receiver` succeeds.
 
 ---
 
@@ -162,13 +160,13 @@ sequenceDiagram
 
     Note over Act: RAA enabled (2/2)
     RD->>RD: initialize_reward_collection_account
-    RD->>RD: initialize_partner_share_account (Tip, Rakurai)
+    RD->>RD: initialize_revenue_share_account (Tip, Rakurai)
     loop Leader turns
         RD->>RD: transfer_staker_rewards
-        RD->>RD: record_partner_share
-        TM->>TM: change_tip_receiver → partner PDA
+        RD->>RD: record_revenue
+        TM->>TM: change_tip_receiver → revenue-share PDA
     end
     Note over RD: Post-epoch
     RD->>RD: upload_merkle_root + claim
-    RD->>RD: claim_partner_share
+    RD->>RD: claim_revenue
 ```

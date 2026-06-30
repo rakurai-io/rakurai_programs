@@ -5,8 +5,8 @@ use solana_security_txt::security_txt;
 
 use crate::{
     state::{
-        validate_partner_commission, ClaimStatus, MerkleRoot, PartnerShareAccount,
-        PartnerShareKind, RewardCollectionAccount, RewardDistributionConfigAccount,
+        validate_commission, ClaimStatus, MerkleRoot, RevenueShareAccount,
+        RevenueKind, RewardCollectionAccount, RewardDistributionConfigAccount,
     },
     ErrorCode::{InvalidBlockBuilderCommissionAccount, RakuraiSchedulerNotEnabled, Unauthorized},
 };
@@ -48,7 +48,7 @@ pub mod reward_distribution {
         cfg.num_epochs_valid = num_epochs_valid;
         cfg.max_commission_bps = max_commission_bps;
         cfg.set_mev_commission_enabled(block_builder_commission_on_mev_commission_enabled);
-        cfg.tip_backrun_manager_authority = None;
+        cfg.revenue_manager_authority = None;
         cfg.bump = bump;
         cfg.validate()?;
 
@@ -125,7 +125,7 @@ pub mod reward_distribution {
         config.num_epochs_valid = new_config.num_epochs_valid;
         config.max_commission_bps = new_config.max_commission_bps;
         config.set_mev_commission_enabled(new_config.is_mev_commission_enabled());
-        config.tip_backrun_manager_authority = new_config.tip_backrun_manager_authority;
+        config.revenue_manager_authority = new_config.revenue_manager_authority;
         config.validate()?;
 
         emit!(ConfigUpdatedEvent {
@@ -448,10 +448,10 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Initializes a partner share vault (tip or backrun) for a validator.
-    pub fn initialize_partner_share_account(
-        ctx: Context<InitializePartnerShareAccount>,
-        share_kind: PartnerShareKind,
+    /// Initializes a revenue share vault (tip or backrun) for a validator.
+    pub fn initialize_revenue_share_account(
+        ctx: Context<InitializeRevenueShareAccount>,
+        share_kind: RevenueKind,
         name: [u8; 32],
         record_authority: Pubkey,
         max_epoch_entries: u8,
@@ -459,7 +459,7 @@ pub mod reward_distribution {
         commission_account: Pubkey,
         bump: u8,
     ) -> Result<()> {
-        InitializePartnerShareAccount::auth(
+        InitializeRevenueShareAccount::auth(
             &ctx,
             name,
             record_authority,
@@ -468,9 +468,9 @@ pub mod reward_distribution {
             commission_account,
         )?;
 
-        let manager_authority = ctx.accounts.config.require_tip_backrun_manager_authority()?;
-        let partner_share_account = &mut ctx.accounts.partner_share_account;
-        partner_share_account.populate_on_init(
+        let manager_authority = ctx.accounts.config.require_revenue_manager_authority()?;
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        revenue_share_account.populate_on_init(
             share_kind,
             name,
             ctx.accounts.validator_vote_account.key(),
@@ -482,11 +482,11 @@ pub mod reward_distribution {
             bump,
         )?;
 
-        emit!(PartnerShareAccountInitializedEvent {
-            partner_share_account: partner_share_account.key(),
+        emit!(RevenueShareAccountInitializedEvent {
+            revenue_share_account: revenue_share_account.key(),
             share_kind,
             name,
-            validator_vote: partner_share_account.validator_vote,
+            validator_vote: revenue_share_account.validator_vote,
             manager_authority,
             record_authority,
             max_epoch_entries,
@@ -497,17 +497,17 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Records partner share for the current epoch (accounting only).
-    pub fn record_partner_share(ctx: Context<RecordPartnerShare>, amount: u64) -> Result<()> {
-        RecordPartnerShare::auth(&ctx)?;
+    /// Records revenue for the current epoch (accounting only).
+    pub fn record_revenue(ctx: Context<RecordRevenue>, amount: u64) -> Result<()> {
+        RecordRevenue::auth(&ctx)?;
 
         let epoch = Clock::get()?.epoch;
-        let partner_share_account = &mut ctx.accounts.partner_share_account;
-        partner_share_account.record_share(epoch, amount)?;
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        revenue_share_account.record_revenue(epoch, amount)?;
 
-        emit!(PartnerShareRecordedEvent {
-            partner_share_account: partner_share_account.key(),
-            share_kind: partner_share_account.share_kind,
+        emit!(RevenueRecordedEvent {
+            revenue_share_account: revenue_share_account.key(),
+            share_kind: revenue_share_account.share_kind,
             epoch,
             amount,
         });
@@ -515,25 +515,25 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Claims partner share for a completed epoch.
-    pub fn claim_partner_share(ctx: Context<ClaimPartnerShare>, epoch: u64) -> Result<()> {
-        ClaimPartnerShare::auth(&ctx)?;
+    /// Claims revenue for a completed epoch.
+    pub fn claim_revenue(ctx: Context<ClaimRevenue>, epoch: u64) -> Result<()> {
+        ClaimRevenue::auth(&ctx)?;
 
-        let partner_share_account = &mut ctx.accounts.partner_share_account;
-        let share_kind = partner_share_account.share_kind;
-        let commission_bps = partner_share_account.commission_bps;
-        let partner_share_account_info = partner_share_account.to_account_info();
-        let (commission_amount, validator_amount) = PartnerShareAccount::claim_revenue(
-            &mut partner_share_account.ledger,
-            partner_share_account_info,
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        let share_kind = revenue_share_account.share_kind;
+        let commission_bps = revenue_share_account.commission_bps;
+        let revenue_share_account_info = revenue_share_account.to_account_info();
+        let (commission_amount, validator_amount) = RevenueShareAccount::claim_revenue(
+            &mut revenue_share_account.ledger,
+            revenue_share_account_info,
             ctx.accounts.commission_account.to_account_info(),
             ctx.accounts.validator_identity.to_account_info(),
             commission_bps,
             epoch,
         )?;
 
-        emit!(PartnerShareClaimedEvent {
-            partner_share_account: partner_share_account.key(),
+        emit!(RevenueClaimedEvent {
+            revenue_share_account: revenue_share_account.key(),
             share_kind,
             validator_identity: ctx.accounts.validator_identity.key(),
             commission_account: ctx.accounts.commission_account.key(),
@@ -545,26 +545,26 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Updates partner share commission settings. Manager authority only.
-    pub fn update_partner_share_commission(
-        ctx: Context<UpdatePartnerShareCommission>,
+    /// Updates revenue share config (`commission_bps`, `commission_account`, `convert_to_block_rewards`). Manager authority only.
+    pub fn update_revenue_share_config(
+        ctx: Context<UpdateRevenueShareConfig>,
         commission_bps: u16,
         commission_account: Pubkey,
         convert_to_block_rewards: bool,
     ) -> Result<()> {
-        UpdatePartnerShareCommission::auth(&ctx, commission_bps, commission_account)?;
+        UpdateRevenueShareConfig::auth(&ctx, commission_bps, commission_account)?;
 
-        let partner_share_account = &mut ctx.accounts.partner_share_account;
-        partner_share_account.update_commission(
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        revenue_share_account.update_commission(
             commission_bps,
             commission_account,
             convert_to_block_rewards,
             ctx.accounts.manager_authority.key(),
         )?;
 
-        emit!(PartnerShareCommissionUpdatedEvent {
-            partner_share_account: partner_share_account.key(),
-            share_kind: partner_share_account.share_kind,
+        emit!(RevenueShareConfigUpdatedEvent {
+            revenue_share_account: revenue_share_account.key(),
+            share_kind: revenue_share_account.share_kind,
             commission_bps,
             commission_account,
             convert_to_block_rewards,
@@ -573,30 +573,9 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Updates whether future recorded shares convert to block rewards on claim.
-    /// Callable by manager or record authority.
-    pub fn update_partner_share_convert_to_block_rewards(
-        ctx: Context<UpdatePartnerShareConvertToBlockRewards>,
-        convert_to_block_rewards: bool,
-    ) -> Result<()> {
-        UpdatePartnerShareConvertToBlockRewards::auth(&ctx)?;
-
-        let partner_share_account = &mut ctx.accounts.partner_share_account;
-        partner_share_account.set_convert_to_block_rewards(convert_to_block_rewards)?;
-
-        emit!(PartnerShareConvertToBlockRewardsUpdatedEvent {
-            partner_share_account: partner_share_account.key(),
-            share_kind: partner_share_account.share_kind,
-            convert_to_block_rewards,
-            authority: ctx.accounts.authority.key(),
-        });
-
-        Ok(())
-    }
-
-    /// Closes a partner share account and returns remaining lamports to the manager authority.
-    pub fn close_partner_share_account(ctx: Context<ClosePartnerShareAccount>) -> Result<()> {
-        ClosePartnerShareAccount::auth(&ctx)?;
+    /// Closes a revenue share account and returns remaining lamports to the manager authority.
+    pub fn close_revenue_share_account(ctx: Context<CloseRevenueShareAccount>) -> Result<()> {
+        CloseRevenueShareAccount::auth(&ctx)?;
         Ok(())
     }
 }
@@ -652,25 +631,25 @@ pub enum ErrorCode {
     #[msg("MEV commission has already been deducted for this epoch")]
     MevCommissionAlreadyDeducted,
 
-    #[msg("Partner label must be non-empty.")]
-    InvalidPartnerName,
+    #[msg("Revenue label must be non-empty.")]
+    InvalidRevenueName,
 
-    #[msg("Partner share ledger capacity must be between 1 and the program cap.")]
-    InvalidPartnerShareEpochCapacity,
+    #[msg("Revenue ledger capacity must be between 1 and the program cap.")]
+    InvalidRevenueEpochCapacity,
 
-    #[msg("Epoch entry not found in partner share ledger.")]
+    #[msg("Epoch entry not found in revenue ledger.")]
     EpochEntryNotFound,
 
-    #[msg("Partner share for this epoch has already been claimed.")]
+    #[msg("Revenue for this epoch has already been claimed.")]
     EpochAlreadyClaimed,
 
-    #[msg("Partner share can only be claimed after the epoch has ended.")]
-    PrematurePartnerShareClaim,
+    #[msg("Revenue can only be claimed after the epoch has ended.")]
+    PrematureRevenueClaim,
 
     #[msg(
-        "Tip/backrun partner share manager is not configured on the reward distribution config."
+        "Tip/backrun revenue manager is not configured on the reward distribution config."
     )]
-    TipBackrunManagerNotConfigured,
+    RevenueManagerNotConfigured,
 
     #[msg("Rakurai scheduler is not enabled for this validator.")]
     RakuraiSchedulerNotEnabled,
@@ -983,23 +962,23 @@ impl TransferBlockBuilderCommissionOnMevCommission<'_> {
     }
 }
 
-/// Initializes a partner share vault PDA (tip or backrun).
+/// Initializes a revenue share vault PDA (tip or backrun).
 #[derive(Accounts)]
-#[instruction(share_kind: PartnerShareKind, name: [u8; 32], _record_authority: Pubkey, max_epoch_entries: u8, _commission_bps: u16, _commission_account: Pubkey, _bump: u8)]
-pub struct InitializePartnerShareAccount<'info> {
+#[instruction(share_kind: RevenueKind, name: [u8; 32], _record_authority: Pubkey, max_epoch_entries: u8, _commission_bps: u16, _commission_account: Pubkey, _bump: u8)]
+pub struct InitializeRevenueShareAccount<'info> {
     #[account(
         init,
         payer = payer,
-        space = PartnerShareAccount::space_for(max_epoch_entries as usize),
+        space = RevenueShareAccount::space_for(max_epoch_entries as usize),
         seeds = [
-            PartnerShareAccount::SEED,
+            RevenueShareAccount::SEED,
             share_kind.seed(),
             name.as_ref(),
             validator_vote_account.key().as_ref(),
         ],
         bump,
     )]
-    pub partner_share_account: Account<'info, PartnerShareAccount>,
+    pub revenue_share_account: Account<'info, RevenueShareAccount>,
 
     #[account(
         seeds = [RewardDistributionConfigAccount::SEED],
@@ -1016,20 +995,20 @@ pub struct InitializePartnerShareAccount<'info> {
     pub system_program: Program<'info, System>,
 }
 
-impl InitializePartnerShareAccount<'_> {
+impl InitializeRevenueShareAccount<'_> {
     fn auth(
-        ctx: &Context<InitializePartnerShareAccount>,
+        ctx: &Context<InitializeRevenueShareAccount>,
         name: [u8; 32],
         record_authority: Pubkey,
         max_epoch_entries: u8,
         commission_bps: u16,
         commission_account: Pubkey,
     ) -> Result<()> {
-        let manager = ctx.accounts.config.require_tip_backrun_manager_authority()?;
+        let manager = ctx.accounts.config.require_revenue_manager_authority()?;
         if ctx.accounts.payer.key() != manager {
             return Err(Unauthorized.into());
         }
-        PartnerShareAccount::validate_init_params(
+        RevenueShareAccount::validate_init_params(
             name,
             record_authority,
             max_epoch_entries,
@@ -1040,34 +1019,34 @@ impl InitializePartnerShareAccount<'_> {
     }
 }
 
-/// Records partner share for the current epoch.
+/// Records revenue for the current epoch.
 #[derive(Accounts)]
-pub struct RecordPartnerShare<'info> {
+pub struct RecordRevenue<'info> {
     #[account(mut)]
-    pub partner_share_account: Account<'info, PartnerShareAccount>,
+    pub revenue_share_account: Account<'info, RevenueShareAccount>,
 
     pub record_authority: Signer<'info>,
 }
 
-impl RecordPartnerShare<'_> {
-    fn auth(ctx: &Context<RecordPartnerShare>) -> Result<()> {
+impl RecordRevenue<'_> {
+    fn auth(ctx: &Context<RecordRevenue>) -> Result<()> {
         ctx.accounts
-            .partner_share_account
+            .revenue_share_account
             .auth_record_signer(ctx.accounts.record_authority.key())
     }
 }
 
-/// Claims partner share for a completed epoch.
+/// Claims revenue for a completed epoch.
 #[derive(Accounts)]
 #[instruction(epoch: u64)]
-pub struct ClaimPartnerShare<'info> {
+pub struct ClaimRevenue<'info> {
     #[account(mut)]
-    pub partner_share_account: Account<'info, PartnerShareAccount>,
+    pub revenue_share_account: Account<'info, RevenueShareAccount>,
 
-    /// CHECK: must match partner account commission destination
+    /// CHECK: must match revenue account commission destination
     #[account(
         mut,
-        constraint = commission_account.key() == partner_share_account.commission_account,
+        constraint = commission_account.key() == revenue_share_account.commission_account,
     )]
     pub commission_account: AccountInfo<'info>,
 
@@ -1077,19 +1056,19 @@ pub struct ClaimPartnerShare<'info> {
     pub manager_authority: Signer<'info>,
 }
 
-impl ClaimPartnerShare<'_> {
-    fn auth(ctx: &Context<ClaimPartnerShare>) -> Result<()> {
+impl ClaimRevenue<'_> {
+    fn auth(ctx: &Context<ClaimRevenue>) -> Result<()> {
         ctx.accounts
-            .partner_share_account
+            .revenue_share_account
             .auth_manager_signer(ctx.accounts.manager_authority.key())
     }
 }
 
-/// Updates partner share commission settings.
+/// Updates revenue share config (`commission_bps`, `commission_account`, `convert_to_block_rewards`).
 #[derive(Accounts)]
-pub struct UpdatePartnerShareCommission<'info> {
+pub struct UpdateRevenueShareConfig<'info> {
     #[account(mut)]
-    pub partner_share_account: Account<'info, PartnerShareAccount>,
+    pub revenue_share_account: Account<'info, RevenueShareAccount>,
 
     #[account(
         seeds = [RewardDistributionConfigAccount::SEED],
@@ -1100,16 +1079,16 @@ pub struct UpdatePartnerShareCommission<'info> {
     pub manager_authority: Signer<'info>,
 }
 
-impl UpdatePartnerShareCommission<'_> {
+impl UpdateRevenueShareConfig<'_> {
     fn auth(
-        ctx: &Context<UpdatePartnerShareCommission>,
+        ctx: &Context<UpdateRevenueShareConfig>,
         commission_bps: u16,
         commission_account: Pubkey,
     ) -> Result<()> {
         ctx.accounts
-            .partner_share_account
+            .revenue_share_account
             .auth_manager_signer(ctx.accounts.manager_authority.key())?;
-        validate_partner_commission(
+        validate_commission(
             commission_bps,
             commission_account,
             ctx.accounts.config.max_commission_bps,
@@ -1117,47 +1096,30 @@ impl UpdatePartnerShareCommission<'_> {
     }
 }
 
-/// Updates partner share `convert_to_block_rewards` (manager or record authority).
+/// Closes a revenue share account.
 #[derive(Accounts)]
-pub struct UpdatePartnerShareConvertToBlockRewards<'info> {
-    #[account(mut)]
-    pub partner_share_account: Account<'info, PartnerShareAccount>,
-
-    pub authority: Signer<'info>,
-}
-
-impl UpdatePartnerShareConvertToBlockRewards<'_> {
-    fn auth(ctx: &Context<UpdatePartnerShareConvertToBlockRewards>) -> Result<()> {
-        ctx.accounts
-            .partner_share_account
-            .auth_manager_or_record_signer(ctx.accounts.authority.key())
-    }
-}
-
-/// Closes a partner share account.
-#[derive(Accounts)]
-pub struct ClosePartnerShareAccount<'info> {
+pub struct CloseRevenueShareAccount<'info> {
     #[account(
         mut,
         close = manager_authority,
         seeds = [
-            PartnerShareAccount::SEED,
-            partner_share_account.share_kind.seed(),
-            partner_share_account.name.as_ref(),
-            partner_share_account.validator_vote.as_ref(),
+            RevenueShareAccount::SEED,
+            revenue_share_account.share_kind.seed(),
+            revenue_share_account.name.as_ref(),
+            revenue_share_account.validator_vote.as_ref(),
         ],
-        bump = partner_share_account.bump,
+        bump = revenue_share_account.bump,
     )]
-    pub partner_share_account: Account<'info, PartnerShareAccount>,
+    pub revenue_share_account: Account<'info, RevenueShareAccount>,
 
     #[account(mut)]
     pub manager_authority: Signer<'info>,
 }
 
-impl ClosePartnerShareAccount<'_> {
-    fn auth(ctx: &Context<ClosePartnerShareAccount>) -> Result<()> {
+impl CloseRevenueShareAccount<'_> {
+    fn auth(ctx: &Context<CloseRevenueShareAccount>) -> Result<()> {
         ctx.accounts
-            .partner_share_account
+            .revenue_share_account
             .auth_manager_signer(ctx.accounts.manager_authority.key())
     }
 }
@@ -1256,9 +1218,9 @@ pub struct ClaimStatusClosedEvent {
 }
 
 #[event]
-pub struct PartnerShareAccountInitializedEvent {
-    pub partner_share_account: Pubkey,
-    pub share_kind: PartnerShareKind,
+pub struct RevenueShareAccountInitializedEvent {
+    pub revenue_share_account: Pubkey,
+    pub share_kind: RevenueKind,
     pub name: [u8; 32],
     pub validator_vote: Pubkey,
     pub manager_authority: Pubkey,
@@ -1269,17 +1231,17 @@ pub struct PartnerShareAccountInitializedEvent {
 }
 
 #[event]
-pub struct PartnerShareRecordedEvent {
-    pub partner_share_account: Pubkey,
-    pub share_kind: PartnerShareKind,
+pub struct RevenueRecordedEvent {
+    pub revenue_share_account: Pubkey,
+    pub share_kind: RevenueKind,
     pub epoch: u64,
     pub amount: u64,
 }
 
 #[event]
-pub struct PartnerShareClaimedEvent {
-    pub partner_share_account: Pubkey,
-    pub share_kind: PartnerShareKind,
+pub struct RevenueClaimedEvent {
+    pub revenue_share_account: Pubkey,
+    pub share_kind: RevenueKind,
     pub validator_identity: Pubkey,
     pub commission_account: Pubkey,
     pub epoch: u64,
@@ -1288,18 +1250,10 @@ pub struct PartnerShareClaimedEvent {
 }
 
 #[event]
-pub struct PartnerShareCommissionUpdatedEvent {
-    pub partner_share_account: Pubkey,
-    pub share_kind: PartnerShareKind,
+pub struct RevenueShareConfigUpdatedEvent {
+    pub revenue_share_account: Pubkey,
+    pub share_kind: RevenueKind,
     pub commission_bps: u16,
     pub commission_account: Pubkey,
     pub convert_to_block_rewards: bool,
-}
-
-#[event]
-pub struct PartnerShareConvertToBlockRewardsUpdatedEvent {
-    pub partner_share_account: Pubkey,
-    pub share_kind: PartnerShareKind,
-    pub convert_to_block_rewards: bool,
-    pub authority: Pubkey,
 }

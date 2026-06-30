@@ -3,7 +3,7 @@ use anchor_lang::{
     prelude::Pubkey, solana_program::instruction::Instruction, InstructionData, ToAccountMetas,
 };
 
-use crate::{PartnerShareKind, RewardDistributionConfigAccount};
+use crate::{RevenueKind, RewardDistributionConfigAccount};
 
 /// Arguments for initializing the reward distribution config account.
 pub struct InitializeArgs {
@@ -437,8 +437,8 @@ pub fn claim_ix(program_id: Pubkey, args: ClaimArgs, accounts: ClaimAccounts) ->
     }
 }
 
-pub struct InitializePartnerShareAccountArgs {
-    pub share_kind: PartnerShareKind,
+pub struct InitializeRevenueShareAccountArgs {
+    pub share_kind: RevenueKind,
     pub name: [u8; 32],
     pub record_authority: Pubkey,
     pub max_epoch_entries: u8,
@@ -447,20 +447,20 @@ pub struct InitializePartnerShareAccountArgs {
     pub bump: u8,
 }
 
-pub struct InitializePartnerShareAccountAccounts {
-    pub partner_share_account: Pubkey,
+pub struct InitializeRevenueShareAccountAccounts {
+    pub revenue_share_account: Pubkey,
     pub config: Pubkey,
     pub validator_vote_account: Pubkey,
     pub payer: Pubkey,
     pub system_program: Pubkey,
 }
 
-pub fn initialize_partner_share_account_ix(
+pub fn initialize_revenue_share_account_ix(
     program_id: Pubkey,
-    args: InitializePartnerShareAccountArgs,
-    accounts: InitializePartnerShareAccountAccounts,
+    args: InitializeRevenueShareAccountArgs,
+    accounts: InitializeRevenueShareAccountAccounts,
 ) -> Instruction {
-    let InitializePartnerShareAccountArgs {
+    let InitializeRevenueShareAccountArgs {
         share_kind,
         name,
         record_authority,
@@ -469,8 +469,8 @@ pub fn initialize_partner_share_account_ix(
         commission_account,
         bump,
     } = args;
-    let InitializePartnerShareAccountAccounts {
-        partner_share_account,
+    let InitializeRevenueShareAccountAccounts {
+        revenue_share_account,
         config,
         validator_vote_account,
         payer,
@@ -479,7 +479,7 @@ pub fn initialize_partner_share_account_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::InitializePartnerShareAccount {
+        data: crate::instruction::InitializeRevenueShareAccount {
             share_kind,
             name,
             record_authority,
@@ -489,8 +489,8 @@ pub fn initialize_partner_share_account_ix(
             bump,
         }
         .data(),
-        accounts: crate::accounts::InitializePartnerShareAccount {
-            partner_share_account,
+        accounts: crate::accounts::InitializeRevenueShareAccount {
+            revenue_share_account,
             config,
             validator_vote_account,
             payer,
@@ -500,56 +500,56 @@ pub fn initialize_partner_share_account_ix(
     }
 }
 
-pub struct RecordPartnerShareArgs {
+pub struct RecordRevenueArgs {
     pub amount: u64,
 }
 
-pub struct RecordPartnerShareAccounts {
-    pub partner_share_account: Pubkey,
+pub struct RecordRevenueShareAccounts {
+    pub revenue_share_account: Pubkey,
     pub record_authority: Pubkey,
 }
 
-pub fn record_partner_share_ix(
+pub fn record_revenue_ix(
     program_id: Pubkey,
-    args: RecordPartnerShareArgs,
-    accounts: RecordPartnerShareAccounts,
+    args: RecordRevenueArgs,
+    accounts: RecordRevenueShareAccounts,
 ) -> Instruction {
-    let RecordPartnerShareArgs { amount } = args;
-    let RecordPartnerShareAccounts {
-        partner_share_account,
+    let RecordRevenueArgs { amount } = args;
+    let RecordRevenueShareAccounts {
+        revenue_share_account,
         record_authority,
     } = accounts;
 
     Instruction {
         program_id,
-        data: crate::instruction::RecordPartnerShare { amount }.data(),
-        accounts: crate::accounts::RecordPartnerShare {
-            partner_share_account,
+        data: crate::instruction::RecordRevenue { amount }.data(),
+        accounts: crate::accounts::RecordRevenue {
+            revenue_share_account,
             record_authority,
         }
         .to_account_metas(None),
     }
 }
 
-pub struct ClaimPartnerShareArgs {
+pub struct ClaimRevenueArgs {
     pub epoch: u64,
 }
 
-pub struct ClaimPartnerShareAccounts {
-    pub partner_share_account: Pubkey,
+pub struct ClaimRevenueShareAccounts {
+    pub revenue_share_account: Pubkey,
     pub commission_account: Pubkey,
     pub validator_identity: Pubkey,
     pub manager_authority: Pubkey,
 }
 
-pub fn claim_partner_share_ix(
+pub fn claim_revenue_ix(
     program_id: Pubkey,
-    args: ClaimPartnerShareArgs,
-    accounts: ClaimPartnerShareAccounts,
+    args: ClaimRevenueArgs,
+    accounts: ClaimRevenueShareAccounts,
 ) -> Instruction {
-    let ClaimPartnerShareArgs { epoch } = args;
-    let ClaimPartnerShareAccounts {
-        partner_share_account,
+    let ClaimRevenueArgs { epoch } = args;
+    let ClaimRevenueShareAccounts {
+        revenue_share_account,
         commission_account,
         validator_identity,
         manager_authority,
@@ -557,9 +557,9 @@ pub fn claim_partner_share_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::ClaimPartnerShare { epoch }.data(),
-        accounts: crate::accounts::ClaimPartnerShare {
-            partner_share_account,
+        data: crate::instruction::ClaimRevenue { epoch }.data(),
+        accounts: crate::accounts::ClaimRevenue {
+            revenue_share_account,
             commission_account,
             validator_identity,
             manager_authority,
@@ -568,44 +568,44 @@ pub fn claim_partner_share_ix(
     }
 }
 
-pub struct UpdatePartnerShareCommissionArgs {
+pub struct UpdateRevenueShareConfigArgs {
     pub commission_bps: u16,
     pub commission_account: Pubkey,
     pub convert_to_block_rewards: bool,
 }
 
-pub struct UpdatePartnerShareCommissionAccounts {
-    pub partner_share_account: Pubkey,
+pub struct UpdateRevenueShareConfigAccounts {
+    pub revenue_share_account: Pubkey,
     pub config: Pubkey,
     pub manager_authority: Pubkey,
 }
 
-pub fn update_partner_share_commission_ix(
+pub fn update_revenue_share_config_ix(
     program_id: Pubkey,
-    args: UpdatePartnerShareCommissionArgs,
-    accounts: UpdatePartnerShareCommissionAccounts,
+    args: UpdateRevenueShareConfigArgs,
+    accounts: UpdateRevenueShareConfigAccounts,
 ) -> Instruction {
-    let UpdatePartnerShareCommissionArgs {
+    let UpdateRevenueShareConfigArgs {
         commission_bps,
         commission_account,
         convert_to_block_rewards,
     } = args;
-    let UpdatePartnerShareCommissionAccounts {
-        partner_share_account,
+    let UpdateRevenueShareConfigAccounts {
+        revenue_share_account,
         config,
         manager_authority,
     } = accounts;
 
     Instruction {
         program_id,
-        data: crate::instruction::UpdatePartnerShareCommission {
+        data: crate::instruction::UpdateRevenueShareConfig {
             commission_bps,
             commission_account,
             convert_to_block_rewards,
         }
         .data(),
-        accounts: crate::accounts::UpdatePartnerShareCommission {
-            partner_share_account,
+        accounts: crate::accounts::UpdateRevenueShareConfig {
+            revenue_share_account,
             config,
             manager_authority,
         }
@@ -613,61 +613,25 @@ pub fn update_partner_share_commission_ix(
     }
 }
 
-pub struct UpdatePartnerShareConvertToBlockRewardsArgs {
-    pub convert_to_block_rewards: bool,
-}
-
-pub struct UpdatePartnerShareConvertToBlockRewardsAccounts {
-    pub partner_share_account: Pubkey,
-    pub authority: Pubkey,
-}
-
-pub fn update_partner_share_convert_to_block_rewards_ix(
-    program_id: Pubkey,
-    args: UpdatePartnerShareConvertToBlockRewardsArgs,
-    accounts: UpdatePartnerShareConvertToBlockRewardsAccounts,
-) -> Instruction {
-    let UpdatePartnerShareConvertToBlockRewardsArgs {
-        convert_to_block_rewards,
-    } = args;
-    let UpdatePartnerShareConvertToBlockRewardsAccounts {
-        partner_share_account,
-        authority,
-    } = accounts;
-
-    Instruction {
-        program_id,
-        data: crate::instruction::UpdatePartnerShareConvertToBlockRewards {
-            convert_to_block_rewards,
-        }
-        .data(),
-        accounts: crate::accounts::UpdatePartnerShareConvertToBlockRewards {
-            partner_share_account,
-            authority,
-        }
-        .to_account_metas(None),
-    }
-}
-
-pub struct ClosePartnerShareAccountAccounts {
-    pub partner_share_account: Pubkey,
+pub struct CloseRevenueShareAccountAccounts {
+    pub revenue_share_account: Pubkey,
     pub manager_authority: Pubkey,
 }
 
-pub fn close_partner_share_account_ix(
+pub fn close_revenue_share_account_ix(
     program_id: Pubkey,
-    accounts: ClosePartnerShareAccountAccounts,
+    accounts: CloseRevenueShareAccountAccounts,
 ) -> Instruction {
-    let ClosePartnerShareAccountAccounts {
-        partner_share_account,
+    let CloseRevenueShareAccountAccounts {
+        revenue_share_account,
         manager_authority,
     } = accounts;
 
     Instruction {
         program_id,
-        data: crate::instruction::ClosePartnerShareAccount {}.data(),
-        accounts: crate::accounts::ClosePartnerShareAccount {
-            partner_share_account,
+        data: crate::instruction::CloseRevenueShareAccount {}.data(),
+        accounts: crate::accounts::CloseRevenueShareAccount {
+            revenue_share_account,
             manager_authority,
         }
         .to_account_metas(None),

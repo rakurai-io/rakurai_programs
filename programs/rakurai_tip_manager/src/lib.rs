@@ -38,8 +38,8 @@ pub const RAKURAI_TIP_ACCOUNT_7_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_7";
 pub const HEADER: usize = 8;
 const MAX_COMMISSION_BPS: u64 = 10_000;
 
-/// Partner label for the Rakurai tip-share vault (`name` field in PDA seeds).
-pub const RAKURAI_PARTNER_TIP_SHARE_NAME: [u8; 32] = {
+/// Rakurai label for the tip revenue share vault (`TipsCollectionAccount` / TCA; `name` field in PDA seeds).
+pub const RAKURAI_REVENUE_NAME: [u8; 32] = {
     let mut name = [0u8; 32];
     name[0] = b'R';
     name[1] = b'a';
@@ -479,15 +479,15 @@ pub struct ChangeTipReceiver<'info> {
     #[account(mut, constraint = old_tip_receiver.key() == tip_manager_config.validator_tip_receiver_account)]
     pub old_tip_receiver: AccountInfo<'info>,
 
-    /// CHECK: reward_distribution program id for partner tip-share PDA derivation.
+    /// CHECK: reward_distribution program id for tip revenue share PDA derivation (TCA).
     pub reward_distribution_program: AccountInfo<'info>,
 
-    /// Rakurai partner tip-share PDA for this validator vote.
+    /// Rakurai tip revenue share PDA (`TipsCollectionAccount` / TCA) for this validator vote.
     #[account(
         mut,
         constraint = new_tip_receiver.owner == reward_distribution_program.key @ Unauthorized,
         constraint = {
-            let (expected, _) = crate::sdk::derive_rakurai_partner_tip_share_address(
+            let (expected, _) = crate::sdk::derive_rakurai_tip_collection_address(
                 &reward_distribution_program.key(),
                 &validator_vote_account.key(),
             );

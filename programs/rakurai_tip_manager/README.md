@@ -64,19 +64,19 @@ These accounts are empty state accounts that hold SOL (lamports). When tips are 
 
 1. **Users send tips** → Tips are sent to any of the eight tip accounts via standard SOL transfers
 2. **Tips accumulate** → Tips accumulate in the tip accounts until claimed
-3. **Validator claims tips** → Validator calls `change_tip_receiver` to drain all accounts and rotate config receiver to their Rakurai partner tip-share PDA
+3. **Validator claims tips** → Validator calls `change_tip_receiver` to drain all accounts and rotate config receiver to their Rakurai Tips Collection Account (TCA) PDA
 4. **Automatic split** → Tips are automatically split:
    - Block builder commission → `block_builder_commission_account`
    - Remaining tips → `old_tip_receiver` (current config receiver)
-5. **Config update** → `validator_tip_receiver_account` set to the Rakurai partner share PDA (Tip kind) for this validator vote
+5. **Config update** → `validator_tip_receiver_account` set to the Rakurai Tips Collection Account (TCA) PDA for this validator vote
 
 ---
 
 ## Integration with Reward Distribution
 
-Tips drained to the partner share PDA accumulate as lamports. The validator records attributed amounts via `record_partner_share`; Rakurai claims post-epoch via `claim_partner_share` (commission split per `commission_bps`).
+Tips drained to the Tips Collection Account (TCA) PDA accumulate as lamports. The validator records attributed amounts via `record_revenue`; Rakurai claims post-epoch via `claim_revenue` (commission split per `commission_bps`).
 
-Partner vault PDA: `[PARTNER_SHARE, "TIP", "Rakurai", validator_vote]` on reward_distribution. Initialize with `initialize_partner_share_account` (with `share_kind = Tip`) before the first `change_tip_receiver`.
+TCA PDA: `[REVENUE_SHARE, "TIP", "Rakurai", validator_vote]` on reward_distribution. Initialize with `initialize_revenue_share_account` (with `share_kind = Tip`) before the first `change_tip_receiver`.
 
 ---
 
