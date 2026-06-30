@@ -13,7 +13,7 @@ PDA seeds, account layouts, instruction accounts. Source: `programs/rakurai_tip_
 
 SDK: `derive_rakurai_tip_manager_config_account_address`, `derive_rakurai_tip_payment_account_pdas`, `derive_rakurai_partner_tip_share_address` (reward_distribution program + vote).
 
-Partner tip-share PDA (reward_distribution): `[PARTNER_TIP_SHARE, "Rakurai"[32], validator_vote]`.
+Partner share PDA (reward_distribution, Tip kind): `[PARTNER_SHARE, "TIP", "Rakurai"[32], validator_vote]`.
 
 ---
 
@@ -47,11 +47,11 @@ tip_manager_config (mut, closeâ†’signer), rakurai_tip_account_0..7 (mut, closeâ†
 
 ### ChangeTipReceiver
 
-tip_manager_config (mut), rakurai_activation_account (RAA PDA), validator_vote_account, old_tip_receiver (mut), **reward_distribution_program**, new_tip_receiver (mut, partner tip-share PDA), block_builder_commission_account (mut), rakurai_tip_account_0..7 (mut), signer (mut, signer)
+tip_manager_config (mut), rakurai_activation_account (RAA PDA), validator_vote_account, old_tip_receiver (mut), **reward_distribution_program**, new_tip_receiver (mut, partner share PDA, Tip kind), block_builder_commission_account (mut), rakurai_tip_account_0..7 (mut), signer (mut, signer)
 
 **new_tip_receiver constraints:**
 - `owner == reward_distribution_program.key`
-- Address == `find_program_address(PARTNER_TIP_SHARE, RAKURAI_PARTNER_TIP_SHARE_NAME, vote, reward_distribution_program)`
+- Address == `derive_rakurai_partner_tip_share_address(reward_distribution_program, vote)` = `[PARTNER_SHARE, "TIP", RAKURAI_PARTNER_TIP_SHARE_NAME, vote]`
 
 Auth (in `auth()`): vote program owner; vote node == signer. RAA enabled + validator_authority via account constraints.
 

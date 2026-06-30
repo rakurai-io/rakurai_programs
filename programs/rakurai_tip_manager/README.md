@@ -68,15 +68,15 @@ These accounts are empty state accounts that hold SOL (lamports). When tips are 
 4. **Automatic split** → Tips are automatically split:
    - Block builder commission → `block_builder_commission_account`
    - Remaining tips → `old_tip_receiver` (current config receiver)
-5. **Config update** → `validator_tip_receiver_account` set to the Rakurai `PartnerTipShareAccount` PDA for this validator vote
+5. **Config update** → `validator_tip_receiver_account` set to the Rakurai partner share PDA (Tip kind) for this validator vote
 
 ---
 
 ## Integration with Reward Distribution
 
-Tips drained to the partner tip-share PDA accumulate as lamports. The validator records attributed amounts via `record_partner_tip_share`; Rakurai claims post-epoch via `claim_partner_tip_share` (commission split per `commission_bps`).
+Tips drained to the partner share PDA accumulate as lamports. The validator records attributed amounts via `record_partner_share`; Rakurai claims post-epoch via `claim_partner_share` (commission split per `commission_bps`).
 
-Partner vault PDA: `[PARTNER_TIP_SHARE, "Rakurai", validator_vote]` on reward_distribution. Initialize with `initialize_partner_tip_share_account` before the first `change_tip_receiver`.
+Partner vault PDA: `[PARTNER_SHARE, "TIP", "Rakurai", validator_vote]` on reward_distribution. Initialize with `initialize_partner_share_account` (with `share_kind = Tip`) before the first `change_tip_receiver`.
 
 ---
 

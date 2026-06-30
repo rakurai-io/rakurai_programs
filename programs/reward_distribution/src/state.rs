@@ -75,7 +75,7 @@ pub struct EpochAmountEntry {
     pub epoch: u64,
     pub amount: u64,
     pub claimed: bool,
-    /// When true, this epoch's share is gets converted to block rewards.
+    /// When true, this epoch's share is converted to block rewards on claim.
     pub converted_to_block_reward: bool,
 }
 
@@ -457,61 +457,10 @@ impl PartnerShareAccount {
         Ok(())
     }
 
-    pub fn auth_initialize_payer(
-        config: &RewardDistributionConfigAccount,
-        payer: Pubkey,
-        name: [u8; 32],
-        record_authority: Pubkey,
-        max_epoch_entries: u8,
-        commission_bps: u16,
-        commission_account: Pubkey,
-    ) -> Result<Pubkey> {
-        let manager = config.require_tip_backrun_manager_authority()?;
-        if payer != manager {
-            return Err(crate::ErrorCode::Unauthorized.into());
-        }
-        Self::validate_init_params(
-            name,
-            record_authority,
-            max_epoch_entries,
-            commission_bps,
-            commission_account,
-            config.max_commission_bps,
-        )?;
-        Ok(manager)
-    }
-
-    /// Validates init instruction args including manager authority.
-    pub fn auth(
-        name: [u8; 32],
-        manager_authority: Pubkey,
-        record_authority: Pubkey,
-        max_epoch_entries: u8,
-        commission_bps: u16,
-        commission_account: Pubkey,
-        max_commission_bps: u16,
-    ) -> Result<()> {
-        Self::validate_init_params(
-            name,
-            record_authority,
-            max_epoch_entries,
-            commission_bps,
-            commission_account,
-            max_commission_bps,
-        )?;
-
-        if manager_authority == Pubkey::default() {
-            return Err(AccountValidationFailure.into());
-        }
-
-        Ok(())
-    }
-
     /// Validates persisted account fields.
     pub fn validate(&self) -> Result<()> {
-        Self::auth(
+        Self::validate_init_params(
             self.name,
-            self.manager_authority,
             self.record_authority,
             self.max_epoch_entries,
             self.commission_bps,
@@ -519,11 +468,83 @@ impl PartnerShareAccount {
             MAX_COMMISSION_BPS,
         )?;
 
-        if self.validator_vote == Pubkey::default() {
+        if self.manager_authority == Pubkey::default() || self.validator_vote == Pubkey::default() {
             return Err(AccountValidationFailure.into());
         }
 
         Ok(())
+    }
+
+    /// Splits a claimable epoch entry between the commission account and validator identity,
+    /// transferring lamports out of the partner share vault. Returns `(commission, validator)`.
+    pub fn claim_revenue(
+        ledger: &mut PartnerShareLedger,
+        partner_share_account: AccountInfo,
+        commission_account: AccountInfo,
+        validator_identity: AccountInfo,
+        commission_bps: u16,
+        epoch: u64,
+    ) -> Result<(u64, u64)> {
+        use crate::ErrorCode::*;
+
+        let current_epoch = Clock::get()?.epoch;
+        if current_epoch <= epoch {
+            return Err(PrematurePartnerShareClaim.into());
+        }
+
+        let entry_amount = {
+            let entry = ledger
+                .entries
+                .iter()
+                .find(|e| e.epoch == epoch)
+                .ok_or(EpochEntryNotFound)?;
+            if entry.claimed {
+                return Err(EpochAlreadyClaimed.into());
+            }
+            if entry.amount == 0 {
+                return Err(RewardsTooLow.into());
+            }
+            entry.amount
+        };
+
+        let commission_amount = if commission_bps == 0 {
+            0
+        } else {
+            entry_amount
+                .checked_mul(commission_bps as u64)
+                .ok_or(ArithmeticError)?
+                .checked_div(10_000)
+                .ok_or(ArithmeticError)?
+        };
+        let validator_amount = entry_amount
+            .checked_sub(commission_amount)
+            .ok_or(ArithmeticError)?;
+
+        let rent = Rent::get()?;
+        let min_rent = rent.minimum_balance(partner_share_account.data_len());
+        let available = partner_share_account.lamports().saturating_sub(min_rent);
+        if available < entry_amount {
+            return Err(RewardsTooLow.into());
+        }
+
+        if commission_amount > 0 {
+            RewardCollectionAccount::transfer_lamports(
+                partner_share_account.clone(),
+                commission_account,
+                commission_amount,
+            )?;
+        }
+        if validator_amount > 0 {
+            RewardCollectionAccount::transfer_lamports(
+                partner_share_account,
+                validator_identity,
+                validator_amount,
+            )?;
+        }
+
+        ledger.mark_claimed(epoch)?;
+
+        Ok((commission_amount, validator_amount))
     }
 }
 /// Stores claim status for a given leaf in the Merkle tree.

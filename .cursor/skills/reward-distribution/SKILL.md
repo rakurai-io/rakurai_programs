@@ -18,12 +18,12 @@ description: >-
 
 ```
 RAA commission ──► RCA (vote, epoch) ──► Merkle staker claims
-PartnerTipShareAccount / PartnerBackrunShareAccount ── per (partner label, vote, max_epochs)
-  record_* (accounting) ──► claim_* splits commission_bps to commission_account, rest to validator identity
+PartnerShareAccount (share_kind = Tip | Backrun) ── per (kind, partner label, vote, max_epochs)
+  record_partner_share (accounting) ──► claim_partner_share splits commission_bps to commission_account, rest to validator identity
 ```
 
 - **RCA** — lamport vault, optional Merkle root; block rewards via `transfer_staker_rewards`
-- **Partner share PDAs** — epoch ledger + lamport vault; `record_*` is accounting-only; claim splits per `commission_bps`
+- **Partner share PDAs** — one unified `PartnerShareAccount` per `(share_kind, name, vote)`; epoch ledger + lamport vault; `record_partner_share` is accounting-only; claim splits per `commission_bps`
 
 ---
 
@@ -34,8 +34,7 @@ PartnerTipShareAccount / PartnerBackrunShareAccount ── per (partner label, v
 | `RewardDistributionConfigAccount` | Admin, `num_epochs_valid` (1–10), commission caps, MEV toggle, `tip_backrun_manager_authority` |
 | `RewardCollectionAccount` | Per-epoch collection vault |
 | `ClaimStatus` | Per-claimant replay guard |
-| `PartnerTipShareAccount` | Partner tip share per label + validator |
-| `PartnerBackrunShareAccount` | Partner backrun share per label + validator |
+| `PartnerShareAccount` | Unified partner share vault per `(share_kind, name, validator)`; `share_kind ∈ {Tip, Backrun}` in PDA seeds. Type aliases `PartnerTipShareAccount` / `PartnerBackrunShareAccount` |
 
 ---
 
@@ -46,18 +45,18 @@ PartnerTipShareAccount / PartnerBackrunShareAccount ── per (partner label, v
 | Config | `initialize`, `update_config`, `close_config` |
 | RCA | `initialize_reward_collection_account`, `upload_merkle_root`, `transfer_staker_rewards`, `transfer_block_builder_commission_on_mev_commission`, `close_reward_collection_account` |
 | Claims | `claim`, `close_claim_status` |
-| Partner share | `initialize_partner_tip_share_account`, `initialize_partner_backrun_share_account`, `record_partner_tip_share`, `record_partner_backrun_share`, `claim_partner_tip_share`, `claim_partner_backrun_share`, `update_partner_tip_share_commission`, `update_partner_backrun_share_commission`, `close_partner_tip_share_account`, `close_partner_backrun_share_account` |
+| Partner share (unified; `share_kind` arg/stored) | `initialize_partner_share_account` (takes `share_kind`), `record_partner_share`, `claim_partner_share`, `update_partner_share_commission`, `update_partner_share_convert_to_block_rewards`, `close_partner_share_account` |
 
 ---
 
 ## Epoch Flow
 
 1. **Init RCA** (epoch E): validator identity signs; pass `validator_vote_account` + enabled RAA; `expires_at = E + num_epochs_valid`.
-2. **During E**: `transfer_staker_rewards` (pass same vote account; must match RCA); `record_partner_*_share`; optional MEV commission ix.
-3. **After E**: `upload_merkle_root`; staker `claim`; partner share claim with `epoch = RCA.creation_epoch` and `current_epoch > epoch` — commission portion to `commission_account`, remainder to validator identity.
+2. **During E**: `transfer_staker_rewards` (pass same vote account; must match RCA); `record_partner_share`; optional MEV commission ix.
+3. **After E**: `upload_merkle_root`; staker `claim`; `claim_partner_share` with `epoch = RCA.creation_epoch` and `current_epoch > epoch` — commission portion to `commission_account`, remainder to validator identity.
 4. **Cleanup**: close RCA after expiry; `close_claim_status` permissionless after expiry.
 
-Partner share init: `name[32]`, `record_authority`, `max_epoch_entries` (1–32, ledger capacity), `commission_bps`, `commission_account`, `bump`. PDA: `[PARTNER_*_SHARE, name, vote]`. Requires `config.tip_backrun_manager_authority`; manager may call `update_partner_*_share_commission`.
+Partner share init: `share_kind` (Tip|Backrun), `name[32]`, `record_authority`, `max_epoch_entries` (1–32, ledger capacity), `commission_bps`, `commission_account`, `bump`. PDA: `[PARTNER_SHARE, share_kind_seed("TIP"|"BACKRUN"), name, vote]`. Requires `config.tip_backrun_manager_authority`; manager may call `update_partner_share_commission`. The `convert_to_block_rewards` flag is settable by **manager or record authority** via `update_partner_share_convert_to_block_rewards` (also set by `update_partner_share_commission`) and snapshotted per epoch into the ledger on `record_partner_share`.
 
 ---
 
@@ -67,8 +66,9 @@ Partner share init: `name[32]`, `record_authority`, `max_epoch_entries` (1–32,
 use reward_distribution::sdk::{
     derive_config_account_address,
     derive_reward_collection_account_address,
-    derive_partner_tip_share_account_address,
-    derive_partner_backrun_share_account_address,
+    derive_partner_share_account_address,          // (share_kind, name, vote)
+    derive_partner_tip_share_account_address,       // wrapper: Tip
+    derive_partner_backrun_share_account_address,   // wrapper: Backrun
 };
 ```
 

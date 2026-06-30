@@ -73,14 +73,16 @@ flowchart TD
         R4[After expiry: close_reward_collection_account]
     end
 
-    subgraph partner [Partner share vaults per label + vote]
-        P0[Rakurai: initialize_partner_tip_share_account / backrun]
-        P0 --> PTS[PartnerTipShareAccount / PartnerBackrunShareAccount]
-        P1[Leader turn: record_partner_tip_share / backrun]
-        P1 -->|accounting only| LEDGER[Epoch ledger]
-        P2[Post-epoch: claim_partner_*_share]
+    subgraph partner [Partner share vaults per share_kind + label + vote]
+        P0[Rakurai: initialize_partner_share_account share_kind = Tip or Backrun]
+        P0 --> PTS[PartnerShareAccount share_kind in PDA seeds]
+        P1[Leader turn: record_partner_share]
+        P1 -->|accounting only| LEDGER[Epoch ledger + convert_to_block_rewards snapshot]
+        P2[Post-epoch: claim_partner_share]
         P2 -->|commission_bps split| PAY[commission_account + validator identity]
-        P3[Manager: update_partner_*_share_commission / close]
+        P3[Manager: update_partner_share_commission / close]
+        P4[Manager or record authority: update_partner_share_convert_to_block_rewards]
+        P4 --> PTS
     end
 
     config --> rca
@@ -93,12 +95,12 @@ flowchart TD
 | RCA | Leader turns | `transfer_staker_rewards`, optional MEV commission ix |
 | RCA | Post-epoch | `upload_merkle_root`, `claim`, `close_claim_status` |
 | RCA | Cleanup | `close_reward_collection_account` |
-| Partner | Setup | `initialize_partner_*_share_account` |
-| Partner | Leader turns | `record_partner_*_share` |
-| Partner | Post-epoch | `claim_partner_*_share` |
-| Partner | Admin | `update_partner_*_share_commission`, `close_partner_*_share_account` |
+| Partner | Setup | `initialize_partner_share_account` (`share_kind` arg) |
+| Partner | Leader turns | `record_partner_share` |
+| Partner | Post-epoch | `claim_partner_share` |
+| Partner | Admin | `update_partner_share_commission`, `update_partner_share_convert_to_block_rewards`, `close_partner_share_account` |
 
-Partner PDA seeds: `[PARTNER_*_SHARE, name, validator_vote]`. Claim requires partner PDA lamports ≥ ledger amount.
+Partner PDA seeds: `[PARTNER_SHARE, share_kind ("TIP" \| "BACKRUN"), name, validator_vote]`. One unified `PartnerShareAccount` (aliases `PartnerTipShareAccount` / `PartnerBackrunShareAccount`); `share_kind` selects Tip vs Backrun. Claim requires partner PDA lamports ≥ ledger amount.
 
 ---
 
@@ -120,7 +122,7 @@ flowchart TD
     end
 
     subgraph drain [Validator leader turn]
-        PRE[Prerequisite: partner tip-share PDA initialized on reward_distribution]
+        PRE[Prerequisite: partner share PDA Tip kind initialized on reward_distribution]
         V1[change_tip_receiver]
         V1 -->|RAA enabled + vote auth| DRAIN[Drain 8 tip PDAs]
         DRAIN --> SPLIT[Split by block_builder_commission_bps]
@@ -160,13 +162,13 @@ sequenceDiagram
 
     Note over Act: RAA enabled (2/2)
     RD->>RD: initialize_reward_collection_account
-    RD->>RD: initialize_partner_tip_share_account (Rakurai)
+    RD->>RD: initialize_partner_share_account (Tip, Rakurai)
     loop Leader turns
         RD->>RD: transfer_staker_rewards
-        RD->>RD: record_partner_tip_share
+        RD->>RD: record_partner_share
         TM->>TM: change_tip_receiver → partner PDA
     end
     Note over RD: Post-epoch
     RD->>RD: upload_merkle_root + claim
-    RD->>RD: claim_partner_tip_share
+    RD->>RD: claim_partner_share
 ```

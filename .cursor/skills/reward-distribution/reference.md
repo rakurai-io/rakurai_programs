@@ -11,10 +11,11 @@ Source: `programs/reward_distribution/src/` (v0.3.0).
 | Config | `RD_CONFIG_ACCOUNT` |
 | RCA | `REWARD_COLLECTION_ACCOUNT`, vote, `epoch.to_le_bytes()` |
 | ClaimStatus | `CLAIM_STATUS`, claimant, rca |
-| PartnerTipShare | `PARTNER_TIP_SHARE`, name[32], vote |
-| PartnerBackrunShare | `PARTNER_BACKRUN_SHARE`, name[32], vote |
+| PartnerShare (Tip/Backrun) | `PARTNER_SHARE`, `share_kind_seed` (`TIP` \| `BACKRUN`), name[32], vote |
 
-Space: `PartnerTipShareAccount::space_for(max_epoch_entries)` (same for backrun). `max_epoch_entries` is ledger capacity only (not in PDA seeds). Cap: `MAX_PARTNER_SHARE_EPOCH_ENTRIES_CAP = 32`.
+Unified account `PartnerShareAccount` (aliases `PartnerTipShareAccount` / `PartnerBackrunShareAccount`). `share_kind` selects the seed segment, so the same `(name, vote)` yields distinct Tip vs Backrun PDAs.
+
+Space: `PartnerShareAccount::space_for(max_epoch_entries)`. `max_epoch_entries` is ledger capacity only (not in PDA seeds). Cap: `MAX_PARTNER_SHARE_EPOCH_ENTRIES_CAP = 32`.
 
 ---
 
@@ -22,17 +23,19 @@ Space: `PartnerTipShareAccount::space_for(max_epoch_entries)` (same for backrun)
 
 | Field | Type | Notes |
 |-------|------|-------|
+| share_kind | PartnerShareKind | `Tip` or `Backrun`; in PDA seeds |
 | name | [u8; 32] | Partner/wallet label in seeds; non-empty |
 | validator_vote | Pubkey | Must match RCA vote on claim |
-| manager_authority | Pubkey | Set from `config.tip_backrun_manager_authority` at init; claim, update commission, close |
-| record_authority | Pubkey | Signs `record_partner_*_share` only |
+| manager_authority | Pubkey | Set from `config.tip_backrun_manager_authority` at init; claim, update commission, update convert flag, close |
+| record_authority | Pubkey | Signs `record_partner_share`; may also call `update_partner_share_convert_to_block_rewards` |
 | max_epoch_entries | u8 | Ledger capacity (1–32); affects account size, not PDA seeds |
 | commission_bps | u16 | Share of epoch ledger amount sent to `commission_account` on claim |
 | commission_account | Pubkey | Receives commission portion; required non-default when `commission_bps > 0` |
+| convert_to_block_rewards | bool | Current routing intent; snapshotted per epoch into the ledger on `record_partner_share` |
 | ledger | PartnerShareLedger | `Vec<EpochAmountEntry>` |
 | bump | u8 | |
 
-**EpochAmountEntry**: `epoch`, `amount`, `claimed`. Ledger grows until capacity, then overwrites oldest entry.
+**EpochAmountEntry**: `epoch`, `amount`, `claimed`, `converted_to_block_reward` (snapshot of `convert_to_block_rewards` when the epoch was first recorded). Ledger grows until capacity, then overwrites oldest entry.
 
 **Claim split**: `commission_amount = amount * commission_bps / 10000`; remainder → RCA `initializer` (validator identity).
 
@@ -59,13 +62,14 @@ Vote binding (where applicable): vote account owned by vote program; `VoteState`
 |-------------|--------|--------------|------------|
 | initialize_reward_collection_account | validator identity | required | Enabled RAA PDA; vote node == signer |
 | upload_merkle_root | merkle_root_upload_authority | — | — |
-| claim_partner_*_share | manager_authority | — | — |
-| update_partner_*_share_commission | manager_authority | — | — |
+| claim_partner_share | manager_authority | — | — |
+| update_partner_share_commission | manager_authority | — | — |
+| update_partner_share_convert_to_block_rewards | manager_authority **or** record_authority | — | — |
 | transfer_staker_rewards | initializer | required | vote == `RCA.validator_vote_account`; vote node == signer |
 | transfer_block_builder_commission_on_mev_commission | initializer | — | — |
-| initialize_partner_*_share_account | `config.tip_backrun_manager_authority` (payer) | — | passes `commission_bps`, `commission_account` |
-| record_partner_*_share | record_authority | — | — |
-| close_partner_*_share_account | manager_authority | — | — |
+| initialize_partner_share_account | `config.tip_backrun_manager_authority` (payer) | — | passes `share_kind`, `commission_bps`, `commission_account` |
+| record_partner_share | record_authority | — | — |
+| close_partner_share_account | manager_authority | — | — |
 | claim | payer | — | — |
 | close_claim_status | — | — | permissionless after expiry |
 
@@ -119,12 +123,14 @@ Proof siblings use `[1u8]` prefix (`merkle_proof.rs`).
 
 `claim`: reward_collection_account, claim_status (init), claimant, payer, system_program.
 
-Partner share claim: `reward_collection_account`, `partner_*_share_account`, `commission_account` (must match stored pubkey), `validator_identity` (= RCA initializer), `manager_authority`.
+Partner share claim (`claim_partner_share`): `reward_collection_account`, `partner_share_account`, `commission_account` (must match stored pubkey), `validator_identity` (= RCA initializer), `manager_authority`.
 
 ### Partner share init accounts
 
-`config` (RD config PDA), `partner_*_share_account` (init), `validator_vote_account`, `payer` (= `tip_backrun_manager_authority`), `system_program`. Args include `commission_bps`, `commission_account`.
+`config` (RD config PDA), `partner_share_account` (init, PDA seeded with `share_kind`), `validator_vote_account`, `payer` (= `tip_backrun_manager_authority`), `system_program`. Args include `share_kind`, `commission_bps`, `commission_account`.
 
 ### Partner share commission update accounts
 
-`partner_*_share_account` (mut), `config`, `manager_authority`.
+`update_partner_share_commission`: `partner_share_account` (mut), `config`, `manager_authority`.
+
+`update_partner_share_convert_to_block_rewards`: `partner_share_account` (mut), `config`, `signer` (= manager_authority **or** record_authority).
