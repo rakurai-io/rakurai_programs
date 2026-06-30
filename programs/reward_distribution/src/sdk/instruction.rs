@@ -696,6 +696,7 @@ pub fn claim_partner_backrun_share_ix(
 pub struct UpdatePartnerTipShareCommissionArgs {
     pub commission_bps: u16,
     pub commission_account: Pubkey,
+    pub convert_to_block_rewards: bool,
 }
 
 pub struct UpdatePartnerTipShareCommissionAccounts {
@@ -712,6 +713,7 @@ pub fn update_partner_tip_share_commission_ix(
     let UpdatePartnerTipShareCommissionArgs {
         commission_bps,
         commission_account,
+        convert_to_block_rewards,
     } = args;
     let UpdatePartnerTipShareCommissionAccounts {
         partner_tip_share_account,
@@ -724,6 +726,7 @@ pub fn update_partner_tip_share_commission_ix(
         data: crate::instruction::UpdatePartnerTipShareCommission {
             commission_bps,
             commission_account,
+            convert_to_block_rewards,
         }
         .data(),
         accounts: crate::accounts::UpdatePartnerTipShareCommission {
@@ -738,6 +741,7 @@ pub fn update_partner_tip_share_commission_ix(
 pub struct UpdatePartnerBackrunShareCommissionArgs {
     pub commission_bps: u16,
     pub commission_account: Pubkey,
+    pub convert_to_block_rewards: bool,
 }
 
 pub struct UpdatePartnerBackrunShareCommissionAccounts {
@@ -754,6 +758,7 @@ pub fn update_partner_backrun_share_commission_ix(
     let UpdatePartnerBackrunShareCommissionArgs {
         commission_bps,
         commission_account,
+        convert_to_block_rewards,
     } = args;
     let UpdatePartnerBackrunShareCommissionAccounts {
         partner_backrun_share_account,
@@ -766,12 +771,85 @@ pub fn update_partner_backrun_share_commission_ix(
         data: crate::instruction::UpdatePartnerBackrunShareCommission {
             commission_bps,
             commission_account,
+            convert_to_block_rewards,
         }
         .data(),
         accounts: crate::accounts::UpdatePartnerBackrunShareCommission {
             partner_backrun_share_account,
             config,
             manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdatePartnerTipShareConvertToBlockRewardsArgs {
+    pub convert_to_block_rewards: bool,
+}
+
+pub struct UpdatePartnerTipShareConvertToBlockRewardsAccounts {
+    pub partner_tip_share_account: Pubkey,
+    pub authority: Pubkey,
+}
+
+pub fn update_partner_tip_share_convert_to_block_rewards_ix(
+    program_id: Pubkey,
+    args: UpdatePartnerTipShareConvertToBlockRewardsArgs,
+    accounts: UpdatePartnerTipShareConvertToBlockRewardsAccounts,
+) -> Instruction {
+    let UpdatePartnerTipShareConvertToBlockRewardsArgs {
+        convert_to_block_rewards,
+    } = args;
+    let UpdatePartnerTipShareConvertToBlockRewardsAccounts {
+        partner_tip_share_account,
+        authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdatePartnerTipShareConvertToBlockRewards {
+            convert_to_block_rewards,
+        }
+        .data(),
+        accounts: crate::accounts::UpdatePartnerTipShareConvertToBlockRewards {
+            partner_tip_share_account,
+            authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdatePartnerBackrunShareConvertToBlockRewardsArgs {
+    pub convert_to_block_rewards: bool,
+}
+
+pub struct UpdatePartnerBackrunShareConvertToBlockRewardsAccounts {
+    pub partner_backrun_share_account: Pubkey,
+    pub authority: Pubkey,
+}
+
+pub fn update_partner_backrun_share_convert_to_block_rewards_ix(
+    program_id: Pubkey,
+    args: UpdatePartnerBackrunShareConvertToBlockRewardsArgs,
+    accounts: UpdatePartnerBackrunShareConvertToBlockRewardsAccounts,
+) -> Instruction {
+    let UpdatePartnerBackrunShareConvertToBlockRewardsArgs {
+        convert_to_block_rewards,
+    } = args;
+    let UpdatePartnerBackrunShareConvertToBlockRewardsAccounts {
+        partner_backrun_share_account,
+        authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdatePartnerBackrunShareConvertToBlockRewards {
+            convert_to_block_rewards,
+        }
+        .data(),
+        accounts: crate::accounts::UpdatePartnerBackrunShareConvertToBlockRewards {
+            partner_backrun_share_account,
+            authority,
         }
         .to_account_metas(None),
     }

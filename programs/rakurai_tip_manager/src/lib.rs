@@ -38,8 +38,6 @@ pub const RAKURAI_TIP_ACCOUNT_7_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_7";
 pub const HEADER: usize = 8;
 const MAX_COMMISSION_BPS: u64 = 10_000;
 
-/// Seed for partner tip-share vaults in reward_distribution (must stay in sync).
-const PARTNER_TIP_SHARE_SEED: &[u8] = b"PARTNER_TIP_SHARE";
 /// Partner label for the Rakurai tip-share vault (`name` field in PDA seeds).
 pub const RAKURAI_PARTNER_TIP_SHARE_NAME: [u8; 32] = {
     let mut name = [0u8; 32];

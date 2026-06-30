@@ -3,7 +3,7 @@ pub mod instruction;
 use anchor_lang::{prelude::Pubkey, solana_program::clock::Epoch};
 
 use crate::{
-    PartnerBackrunShareAccount, PartnerTipShareAccount, RewardCollectionAccount,
+    PartnerShareAccount, PartnerShareKind, RewardCollectionAccount,
     RewardDistributionConfigAccount,
 };
 
@@ -33,19 +33,30 @@ pub fn derive_config_account_address(reward_distribution_program_id: &Pubkey) ->
     )
 }
 
+/// Derives a partner share PDA: `[PARTNER_SHARE, kind, name, vote]`.
+pub fn derive_partner_share_account_address(
+    reward_distribution_program_id: &Pubkey,
+    share_kind: PartnerShareKind,
+    name: &[u8; 32],
+    validator_vote: &Pubkey,
+) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &PartnerShareAccount::pda_seeds(share_kind, name, validator_vote),
+        reward_distribution_program_id,
+    )
+}
+
 /// Derives the PDA for a partner tip-share account.
 pub fn derive_partner_tip_share_account_address(
     reward_distribution_program_id: &Pubkey,
     name: &[u8; 32],
     validator_vote: &Pubkey,
 ) -> (Pubkey, u8) {
-    Pubkey::find_program_address(
-        &[
-            PartnerTipShareAccount::SEED,
-            name.as_ref(),
-            validator_vote.as_ref(),
-        ],
+    derive_partner_share_account_address(
         reward_distribution_program_id,
+        PartnerShareKind::Tip,
+        name,
+        validator_vote,
     )
 }
 
@@ -55,12 +66,10 @@ pub fn derive_partner_backrun_share_account_address(
     name: &[u8; 32],
     validator_vote: &Pubkey,
 ) -> (Pubkey, u8) {
-    Pubkey::find_program_address(
-        &[
-            PartnerBackrunShareAccount::SEED,
-            name.as_ref(),
-            validator_vote.as_ref(),
-        ],
+    derive_partner_share_account_address(
         reward_distribution_program_id,
+        PartnerShareKind::Backrun,
+        name,
+        validator_vote,
     )
 }

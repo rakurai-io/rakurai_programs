@@ -2290,6 +2290,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rakurai_tip_manager"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "rakurai-vote-state",
+ "rakurai_activation",
+ "reward_distribution",
+ "solana-program",
+ "solana-security-txt",
+]
+
+[[package]]
 name = "rand"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2441,10 +2453,11 @@ dependencies = [
 
 [[package]]
 name = "reward_distribution"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anchor-lang",
  "rakurai-vote-state",
+ "rakurai_activation",
  "solana-program",
  "solana-security-txt",
 ]
@@ -3794,14 +3807,6 @@ name = "tinyvec_macros"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
-
-[[package]]
-name = "tip_manager"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
- "solana-security-txt",
-]
 
 [[package]]
 name = "tokio"
