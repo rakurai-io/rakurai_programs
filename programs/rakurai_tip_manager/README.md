@@ -74,9 +74,9 @@ These accounts are empty state accounts that hold SOL (lamports). When tips are 
 
 ## Integration with Reward Distribution
 
-Tips drained to the Tips Collection Account (TCA) PDA accumulate as lamports. The validator records attributed amounts via `record_revenue`; Rakurai claims post-epoch via `claim_revenue` (commission split per `commission_bps`).
+Tips land on the **TCA** (`TipsCollectionAccount`) PDA via `change_tip_receiver`. Validator `record_revenue` each turn; Rakurai `claim_revenue` post-epoch.
 
-TCA PDA: `[REVENUE_SHARE, "TIP", "Rakurai", validator_vote]` on reward_distribution. Initialize with `initialize_revenue_share_account` (with `share_kind = Tip`) before the first `change_tip_receiver`.
+Prerequisite: `initialize_revenue_share_account` (`share_kind = Tip`, name `"Rakurai"`) before the first drain. PDA: `[REVENUE_SHARE, "TIP", "Rakurai", validator_vote]`.
 
 ---
 

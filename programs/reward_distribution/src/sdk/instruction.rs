@@ -613,6 +613,40 @@ pub fn update_revenue_share_config_ix(
     }
 }
 
+pub struct UpdateEpochConvertedToBlockRewardArgs {
+    pub epoch: u64,
+}
+
+pub struct UpdateEpochConvertedToBlockRewardAccounts {
+    pub revenue_share_account: Pubkey,
+    pub validator_vote_account: Pubkey,
+    pub signer: Pubkey,
+}
+
+pub fn update_epoch_converted_to_block_reward_ix(
+    program_id: Pubkey,
+    args: UpdateEpochConvertedToBlockRewardArgs,
+    accounts: UpdateEpochConvertedToBlockRewardAccounts,
+) -> Instruction {
+    let UpdateEpochConvertedToBlockRewardArgs { epoch } = args;
+    let UpdateEpochConvertedToBlockRewardAccounts {
+        revenue_share_account,
+        validator_vote_account,
+        signer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateEpochConvertedToBlockReward { epoch }.data(),
+        accounts: crate::accounts::UpdateEpochConvertedToBlockReward {
+            revenue_share_account,
+            validator_vote_account,
+            signer,
+        }
+        .to_account_metas(None),
+    }
+}
+
 pub struct CloseRevenueShareAccountAccounts {
     pub revenue_share_account: Pubkey,
     pub manager_authority: Pubkey,

@@ -1,6 +1,7 @@
 use crate::ErrorCode::{
-    AccountValidationFailure, ArithmeticError, EpochAlreadyClaimed, EpochEntryNotFound,
-    InvalidRevenueName, InvalidRevenueEpochCapacity, MaxCommissionFeeBpsExceeded,
+    AccountValidationFailure, ArithmeticError, ConvertToBlockRewardsNotEnabled,
+    EpochAlreadyClaimed, EpochAlreadyConvertedToBlockReward, EpochEntryNotFound, EpochNotClaimed,
+    InvalidRevenueEpochCapacity, InvalidRevenueName, MaxCommissionFeeBpsExceeded,
     RevenueManagerNotConfigured,
 };
 use anchor_lang::prelude::*;
@@ -383,12 +384,27 @@ impl RevenueShareAccount {
 
     pub fn record_revenue(&mut self, epoch: u64, amount: u64) -> Result<()> {
         let capacity = self.max_epoch_entries as usize;
-        self.ledger.add(
-            epoch,
-            amount,
-            capacity,
-            self.convert_to_block_rewards,
-        )
+        self.ledger
+            .add(epoch, amount, capacity, self.convert_to_block_rewards)
+    }
+
+    /// Marks a claimed epoch entry as converted to block rewards.
+    /// Requires account `convert_to_block_rewards`, entry `claimed`, and entry flag still false.
+    pub fn mark_epoch_converted_to_block_reward(&mut self, epoch: u64) -> Result<()> {
+        if !self.convert_to_block_rewards {
+            return Err(ConvertToBlockRewardsNotEnabled.into());
+        }
+
+        let entry = self.ledger.get_mut(epoch)?;
+        if !entry.claimed {
+            return Err(EpochNotClaimed.into());
+        }
+        if entry.converted_to_block_reward {
+            return Ok(());
+        }
+
+        entry.converted_to_block_reward = true;
+        Ok(())
     }
 
     pub fn update_commission(
@@ -436,9 +452,7 @@ impl RevenueShareAccount {
             return Err(AccountValidationFailure.into());
         }
 
-        if max_epoch_entries == 0
-            || max_epoch_entries as usize > MAX_REVENUE_EPOCH_ENTRIES_CAP
-        {
+        if max_epoch_entries == 0 || max_epoch_entries as usize > MAX_REVENUE_EPOCH_ENTRIES_CAP {
             return Err(InvalidRevenueEpochCapacity.into());
         }
 
@@ -625,8 +639,7 @@ mod tests {
         let program = Pubkey::new_unique();
 
         let tip_seeds = RevenueShareAccount::pda_seeds(RevenueKind::Tip, &name, &vote);
-        let backrun_seeds =
-            RevenueShareAccount::pda_seeds(RevenueKind::Backrun, &name, &vote);
+        let backrun_seeds = RevenueShareAccount::pda_seeds(RevenueKind::Backrun, &name, &vote);
 
         let tip_addr = Pubkey::find_program_address(&tip_seeds, &program).0;
         let backrun_addr = Pubkey::find_program_address(&backrun_seeds, &program).0;
@@ -642,5 +655,57 @@ mod tests {
     fn commission_requires_account_when_bps_positive() {
         assert!(validate_commission(100, Pubkey::default(), 10_000).is_err());
         assert!(validate_commission(0, Pubkey::default(), 10_000).is_ok());
+    }
+
+    fn test_revenue_share_account(convert_to_block_rewards: bool) -> RevenueShareAccount {
+        let mut name = [0u8; 32];
+        name[0] = b'X';
+        RevenueShareAccount {
+            share_kind: RevenueKind::Tip,
+            name,
+            validator_vote: Pubkey::new_unique(),
+            manager_authority: Pubkey::new_unique(),
+            record_authority: Pubkey::new_unique(),
+            max_epoch_entries: 4,
+            commission_bps: 0,
+            commission_account: Pubkey::default(),
+            convert_to_block_rewards,
+            ledger: RevenueLedger::default(),
+            bump: 0,
+        }
+    }
+
+    #[test]
+    fn mark_epoch_converted_to_block_reward_sets_flag_when_claimed() {
+        let mut acc = test_revenue_share_account(true);
+        // Entry snapshotted false at record time; account flag is true at mark time.
+        acc.ledger.add(10, 100, 4, false).unwrap();
+        acc.ledger.mark_claimed(10).unwrap();
+        acc.mark_epoch_converted_to_block_reward(10).unwrap();
+        assert!(acc.ledger.entries[0].converted_to_block_reward);
+    }
+
+    #[test]
+    fn mark_epoch_converted_to_block_reward_requires_account_flag() {
+        let mut acc = test_revenue_share_account(false);
+        acc.ledger.add(10, 100, 4, false).unwrap();
+        acc.ledger.mark_claimed(10).unwrap();
+        assert!(acc.mark_epoch_converted_to_block_reward(10).is_err());
+    }
+
+    #[test]
+    fn mark_epoch_converted_to_block_reward_requires_claimed() {
+        let mut acc = test_revenue_share_account(true);
+        acc.ledger.add(10, 100, 4, true).unwrap();
+        assert!(acc.mark_epoch_converted_to_block_reward(10).is_err());
+    }
+
+    #[test]
+    fn mark_epoch_converted_to_block_reward_rejects_already_converted() {
+        let mut acc = test_revenue_share_account(true);
+        acc.ledger.add(10, 100, 4, false).unwrap();
+        acc.ledger.mark_claimed(10).unwrap();
+        acc.mark_epoch_converted_to_block_reward(10).unwrap();
+        assert!(acc.mark_epoch_converted_to_block_reward(10).is_err());
     }
 }

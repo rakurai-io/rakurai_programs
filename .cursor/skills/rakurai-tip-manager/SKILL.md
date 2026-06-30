@@ -26,7 +26,7 @@ change_tip_receiver: drain → old_tip_receiver + commission; config → tip rev
 change_block_builder: drain → validator receiver + old builder; update builder (authority)
 ```
 
-No reward_distribution CPI. Drained lamports land on `old_tip_receiver`; config `validator_tip_receiver_account` is set to the Rakurai revenue-share PDA (Tip kind) on reward_distribution for subsequent drains.
+No reward_distribution CPI. Drained lamports land on `old_tip_receiver`; config `validator_tip_receiver_account` is set to the Rakurai **TCA** PDA for subsequent drains.
 
 ---
 
@@ -36,7 +36,7 @@ No reward_distribution CPI. Drained lamports land on `old_tip_receiver`; config 
 |-------------|--------|---------|
 | `initialize_rakurai_tip_manager` | payer | Config + 8 tip PDAs |
 | `close_rakurai_tip_manager` | authority | Close all; reclaim rent |
-| `change_tip_receiver` | Rakurai validator identity | Drain → old receiver + commission; set config receiver to tip revenue-share PDA |
+| `change_tip_receiver` | Rakurai validator identity | Drain → old receiver + commission; set config receiver to TCA PDA |
 | `change_block_builder` | authority | Drain → validator receiver + old builder; update builder |
 
 `change_tip_receiver` auth: enabled RAA PDA; vote node == signer. `new_tip_receiver` must be the `[REVENUE_SHARE, "TIP", "Rakurai", vote]` PDA on reward_distribution (pass `reward_distribution_program` account).
@@ -45,15 +45,12 @@ No reward_distribution CPI. Drained lamports land on `old_tip_receiver`; config 
 
 ## Tip Flow
 
-1. Rakurai inits revenue-share vault: `initialize_revenue_share_account` with `share_kind = Tip` (reward_distribution).
-2. Users transfer SOL to any of 8 tip PDAs.
-3. Validator calls `change_tip_receiver` on leader turns:
-   - Split: `block_builder_fee = total * bps / 10000`; remainder → `old_tip_receiver`
-   - Config receiver → revenue-share PDA (Tip kind)
-4. Validator records attributed amounts: `record_revenue`.
-5. Post-epoch: Rakurai `claim_revenue` (commission split).
+1. Init **TCA**: `initialize_revenue_share_account` (`share_kind = Tip`, name `"Rakurai"`).
+2. Users tip any of 8 PDAs.
+3. Each leader turn: `change_tip_receiver` drains → `old_tip_receiver` + commission; config → TCA.
+4. `record_revenue` (ledger) → settle SOL into TCA → `claim_revenue` post-epoch.
 
-First drain after tip-manager init credits `old_tip_receiver` (initially payer), not the revenue-share PDA, until config already points at the revenue-share vault.
+First drain credits the init payer (config receiver), not TCA, until config already points at TCA.
 
 ---
 

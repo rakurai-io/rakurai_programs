@@ -113,15 +113,18 @@ In that case **the tip is received in the external account holder's own account*
 
 Same idea for [post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations) used for backrun / arbitrage. The backrun revenue lands in the external account holder's own flow, so there's no account Rakurai can drain. We **trust the revenue source to share an agreed percentage** of backrun revenue; the validator records attribution per turn and the external account holder settles into the Backrun Collection Account — exactly the same flow as tips, just a different `share_kind`.
 
-### Record → Claim flow
+### Flow
 
-- **Setup**: Rakurai (the `revenue_manager_authority`) calls `initialize_revenue_share_account` once per `(share_kind, name, validator)`, fixing the label, `record_authority`, `commission_bps`, and `commission_account`.
-- **Record (each leader turn)**: the `record_authority` calls `record_revenue(amount)` to accrue the attributed amount for the current epoch into the ledger. This is **accounting only** — no lamports move.
-- **Settle**: after the epoch, the external account holder transfers their agreed share as plain SOL into the revenue-share PDA so it holds at least the recorded ledger amount.
-- **Claim (post-epoch)**: the `manager_authority` calls `claim_revenue(epoch)` for a past epoch (`current_epoch > epoch`); the program splits `commission_bps` → `commission_account` and sends the remainder to the validator identity, marking the ledger entry `claimed`.
-- **Admin**: `manager_authority` can update `commission_bps`, `commission_account`, and `convert_to_block_rewards` via `update_revenue_share_config`, or `close_revenue_share_account`; `convert_to_block_rewards` is snapshotted per epoch at first `record_revenue`.
+| Step | Who | What |
+|------|-----|------|
+| **Init** | `revenue_manager_authority` | `initialize_revenue_share_account` — once per `(share_kind, name, vote)` |
+| **Record** | `record_authority` | `record_revenue(amount)` each leader turn — ledger only, no lamport move |
+| **Settle** | external account holder | Post-epoch SOL transfer into the revenue-share PDA (≥ ledger amount) |
+| **Claim** | `manager_authority` | `claim_revenue(epoch)` after epoch ends — splits `commission_bps` → `commission_account`, rest → validator identity |
+| **Config** | `manager_authority` | `update_revenue_share_config` or `close_revenue_share_account` |
+| **Convert flag** | `manager_authority`, `record_authority`, or validator identity | `update_epoch_converted_to_block_reward(epoch)` — after claim, if account `convert_to_block_rewards` is true |
 
-PDA seeds: `["REVENUE_SHARE", share_kind ("TIP" | "BACKRUN"), name[32], validator_vote]`.
+PDA: `[REVENUE_SHARE, share_kind ("TIP" \| "BACKRUN"), name[32], validator_vote]`. `convert_to_block_rewards` is snapshotted into the ledger on the first `record_revenue` for each epoch.
 
 ---
 

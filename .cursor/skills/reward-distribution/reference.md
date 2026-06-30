@@ -64,6 +64,7 @@ Vote binding (where applicable): vote account owned by vote program; `VoteState`
 | upload_merkle_root | merkle_root_upload_authority | — | — |
 | claim_revenue | manager_authority | — | — |
 | update_revenue_share_config | manager_authority | — | — |
+| update_epoch_converted_to_block_reward | manager_authority **or** record_authority **or** validator identity (vote node) | required for validator path | account `convert_to_block_rewards`; entry claimed; entry flag false |
 | transfer_staker_rewards | initializer | required | vote == `RCA.validator_vote_account`; vote node == signer |
 | transfer_block_builder_commission_on_mev_commission | initializer | — | — |
 | initialize_revenue_share_account | `config.revenue_manager_authority` (payer) | — | passes `share_kind`, `commission_bps`, `commission_account` |
@@ -100,6 +101,9 @@ Proof siblings use `[1u8]` prefix (`merkle_proof.rs`).
 | InvalidRevenueEpochCapacity | `max_epoch_entries` ∉ 1..=32 |
 | EpochEntryNotFound | No ledger entry for epoch |
 | EpochAlreadyClaimed | Entry already claimed |
+| EpochNotClaimed | Entry not claimed yet (`update_epoch_converted_to_block_reward`) |
+| EpochAlreadyConvertedToBlockReward | Entry already `converted_to_block_reward` |
+| ConvertToBlockRewardsNotEnabled | Account `convert_to_block_rewards` is false |
 | PrematureRevenueClaim | `current_epoch <= epoch` |
 | RewardsTooLow | Zero amount or vault under-funded |
 | MaxCommissionFeeBpsExceeded | `commission_bps > config.max_commission_bps` |
@@ -131,3 +135,5 @@ Revenue claim (`claim_revenue`): `reward_collection_account`, `revenue_share_acc
 ### Revenue share config update accounts
 
 `update_revenue_share_config`: `revenue_share_account` (mut), `config`, `manager_authority`.
+
+`update_epoch_converted_to_block_reward`: `revenue_share_account` (mut), `validator_vote_account`, `signer`.

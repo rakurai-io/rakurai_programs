@@ -45,7 +45,7 @@ RevenueShareAccount (share_kind = Tip | Backrun) ── per (kind, revenue label
 | Config | `initialize`, `update_config`, `close_config` |
 | RCA | `initialize_reward_collection_account`, `upload_merkle_root`, `transfer_staker_rewards`, `transfer_block_builder_commission_on_mev_commission`, `close_reward_collection_account` |
 | Claims | `claim`, `close_claim_status` |
-| Revenue share (unified; `share_kind` arg/stored) | `initialize_revenue_share_account` (takes `share_kind`), `record_revenue`, `claim_revenue`, `update_revenue_share_config`, `close_revenue_share_account` |
+| Revenue share (unified; `share_kind` arg/stored) | `initialize_revenue_share_account` (takes `share_kind`), `record_revenue`, `claim_revenue`, `update_revenue_share_config`, `update_epoch_converted_to_block_reward`, `close_revenue_share_account` |
 
 ---
 
@@ -56,7 +56,7 @@ RevenueShareAccount (share_kind = Tip | Backrun) ── per (kind, revenue label
 3. **After E**: `upload_merkle_root`; staker `claim`; `claim_revenue` with `epoch = RCA.creation_epoch` and `current_epoch > epoch` — commission portion to `commission_account`, remainder to validator identity.
 4. **Cleanup**: close RCA after expiry; `close_claim_status` permissionless after expiry.
 
-Revenue share init: `share_kind` (Tip|Backrun), `name[32]`, `record_authority`, `max_epoch_entries` (1–32, ledger capacity), `commission_bps`, `commission_account`, `bump`. PDA: `[REVENUE_SHARE, share_kind_seed("TIP"|"BACKRUN"), name, vote]`. Requires `config.revenue_manager_authority`; manager may call `update_revenue_share_config` (`commission_bps`, `commission_account`, `convert_to_block_rewards`). The `convert_to_block_rewards` flag is snapshotted per epoch into the ledger on `record_revenue`.
+**Revenue share flow:** init → record (ledger) → settle (SOL into PDA) → claim. PDA `[REVENUE_SHARE, share_kind, name, vote]`. Init/claim/config: `manager_authority` (from `revenue_manager_authority`); record: `record_authority`.
 
 ---
 

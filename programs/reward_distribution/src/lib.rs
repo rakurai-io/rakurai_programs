@@ -573,6 +573,28 @@ pub mod reward_distribution {
         Ok(())
     }
 
+    /// Marks a claimed epoch ledger entry as `converted_to_block_reward`.
+    /// Requires account `convert_to_block_rewards`, entry claimed, and entry flag still false.
+    /// Callable by manager, record authority, or validator identity (vote node signer).
+    pub fn update_epoch_converted_to_block_reward(
+        ctx: Context<UpdateEpochConvertedToBlockReward>,
+        epoch: u64,
+    ) -> Result<()> {
+        UpdateEpochConvertedToBlockReward::auth(&ctx)?;
+
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        revenue_share_account.mark_epoch_converted_to_block_reward(epoch)?;
+
+        emit!(RevenueEpochConvertedToBlockRewardUpdatedEvent {
+            revenue_share_account: revenue_share_account.key(),
+            share_kind: revenue_share_account.share_kind,
+            epoch,
+            authority: ctx.accounts.signer.key(),
+        });
+
+        Ok(())
+    }
+
     /// Closes a revenue share account and returns remaining lamports to the manager authority.
     pub fn close_revenue_share_account(ctx: Context<CloseRevenueShareAccount>) -> Result<()> {
         CloseRevenueShareAccount::auth(&ctx)?;
@@ -645,6 +667,15 @@ pub enum ErrorCode {
 
     #[msg("Revenue can only be claimed after the epoch has ended.")]
     PrematureRevenueClaim,
+
+    #[msg("Account convert_to_block_rewards must be enabled.")]
+    ConvertToBlockRewardsNotEnabled,
+
+    #[msg("Revenue for this epoch has not been claimed yet.")]
+    EpochNotClaimed,
+
+    #[msg("Epoch entry is already marked converted_to_block_reward.")]
+    EpochAlreadyConvertedToBlockReward,
 
     #[msg(
         "Tip/backrun revenue manager is not configured on the reward distribution config."
@@ -1064,6 +1095,48 @@ impl ClaimRevenue<'_> {
     }
 }
 
+/// Marks a claimed epoch as converted to block rewards (`converted_to_block_reward` false → true).
+#[derive(Accounts)]
+#[instruction(epoch: u64)]
+pub struct UpdateEpochConvertedToBlockReward<'info> {
+    #[account(mut)]
+    pub revenue_share_account: Account<'info, RevenueShareAccount>,
+
+    /// CHECK: must match `revenue_share_account.validator_vote` when signer is validator identity.
+    pub validator_vote_account: AccountInfo<'info>,
+
+    pub signer: Signer<'info>,
+}
+
+impl UpdateEpochConvertedToBlockReward<'_> {
+    fn auth(ctx: &Context<UpdateEpochConvertedToBlockReward>) -> Result<()> {
+        use rakurai_vote_state::VoteState;
+
+        let revenue_share_account = &ctx.accounts.revenue_share_account;
+        let signer = ctx.accounts.signer.key();
+
+        if signer == revenue_share_account.manager_authority
+            || signer == revenue_share_account.record_authority
+        {
+            return Ok(());
+        }
+
+        let vote = &ctx.accounts.validator_vote_account;
+        if vote.key() != revenue_share_account.validator_vote {
+            return Err(Unauthorized.into());
+        }
+        if vote.owner != &solana_program::vote::program::id() {
+            return Err(Unauthorized.into());
+        }
+        let node = VoteState::deserialize_node_pubkey(vote).map_err(|_| Unauthorized)?;
+        if node != signer {
+            return Err(Unauthorized.into());
+        }
+
+        Ok(())
+    }
+}
+
 /// Updates revenue share config (`commission_bps`, `commission_account`, `convert_to_block_rewards`).
 #[derive(Accounts)]
 pub struct UpdateRevenueShareConfig<'info> {
@@ -1256,4 +1329,12 @@ pub struct RevenueShareConfigUpdatedEvent {
     pub commission_bps: u16,
     pub commission_account: Pubkey,
     pub convert_to_block_rewards: bool,
+}
+
+#[event]
+pub struct RevenueEpochConvertedToBlockRewardUpdatedEvent {
+    pub revenue_share_account: Pubkey,
+    pub share_kind: RevenueKind,
+    pub epoch: u64,
+    pub authority: Pubkey,
 }
