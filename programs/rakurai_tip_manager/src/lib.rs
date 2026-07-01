@@ -593,17 +593,7 @@ pub struct ChangeTipReceiverV1<'info> {
     pub old_tip_receiver: AccountInfo<'info>,
 
     /// Rakurai tip revenue share PDA (`TipsCollectionAccount` / TCA) for this validator vote.
-    #[account(
-        mut,
-        owner = reward_distribution::ID,
-        constraint = {
-            let (expected, _) = crate::sdk::derive_rakurai_tip_collection_address(
-                &reward_distribution::ID,
-                &new_tip_receiver.validator_vote,
-            );
-            new_tip_receiver.key() == expected
-        } @ Unauthorized,
-    )]
+    #[account(mut, owner = reward_distribution::ID)]
     pub new_tip_receiver: Account<'info, TipsCollectionAccount>,
 
     /// CHECK: old_block_builder receives a % of funds in the RakuraiTipAccount accounts
@@ -683,6 +673,13 @@ impl ChangeTipReceiverV1<'_> {
     /// `[0]` enabled RAA PDA for signer; `[1]` vote account matching `new_tip_receiver.validator_vote`.
     fn auth(ctx: &Context<ChangeTipReceiverV1>) -> Result<()> {
         use anchor_lang::AccountDeserialize;
+        let (expected, _) = crate::sdk::derive_rakurai_tip_collection_address(
+            &reward_distribution::ID,
+            &ctx.accounts.new_tip_receiver.validator_vote,
+        );
+        if ctx.accounts.new_tip_receiver.key() != expected {
+            return Err(Unauthorized.into());
+        }
 
         require_gte!(
             ctx.remaining_accounts.len(),
