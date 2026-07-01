@@ -604,7 +604,7 @@ pub struct ChangeTipReceiverV1<'info> {
             new_tip_receiver.key() == expected
         } @ Unauthorized,
     )]
-    pub new_tip_receiver: Box<Account<'info, TipsCollectionAccount>>,
+    pub new_tip_receiver: Account<'info, TipsCollectionAccount>,
 
     /// CHECK: old_block_builder receives a % of funds in the RakuraiTipAccount accounts
     #[account(mut, constraint = block_builder_commission_account.key() == tip_manager_config.block_builder_commission_account)]
