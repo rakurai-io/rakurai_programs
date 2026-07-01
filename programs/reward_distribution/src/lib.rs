@@ -40,6 +40,7 @@ pub mod reward_distribution {
         num_epochs_valid: u64,
         max_commission_bps: u16,
         block_builder_commission_on_mev_commission_enabled: bool,
+        revenue_manager_authority: Pubkey,
         bump: u8,
     ) -> Result<()> {
         let cfg = &mut ctx.accounts.config;
@@ -47,7 +48,7 @@ pub mod reward_distribution {
         cfg.num_epochs_valid = num_epochs_valid;
         cfg.max_commission_bps = max_commission_bps;
         cfg.set_mev_commission_enabled(block_builder_commission_on_mev_commission_enabled);
-        cfg.revenue_manager_authority = None; // slot reserved in SIZE; set later via update_config
+        cfg.revenue_manager_authority = Some(revenue_manager_authority); // slot reserved in SIZE; set later via update_config
         cfg.bump = bump;
         cfg.validate()?;
 
@@ -872,18 +873,11 @@ pub struct InitializeRewardCollectionAccountV1<'info> {
 #[derive(Accounts)]
 pub struct UpdateConfig<'info> {
     /// The global configuration account for Reward Distribution settings.
-    #[account(
-        mut,
-        realloc = RewardDistributionConfigAccount::SIZE,
-        realloc::payer = authority,
-        realloc::zero = false,
-    )]
+    #[account(mut, rent_exempt = enforce)]
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
 }
 
 impl UpdateConfig<'_> {
@@ -1151,9 +1145,8 @@ impl InitializeRevenueShareAccount<'_> {
             return Err(Unauthorized.into());
         }
 
-        let node_pubkey =
-            VoteState::deserialize_node_pubkey(&ctx.accounts.validator_vote_account)
-                .map_err(|_| Unauthorized)?;
+        let node_pubkey = VoteState::deserialize_node_pubkey(&ctx.accounts.validator_vote_account)
+            .map_err(|_| Unauthorized)?;
         if node_pubkey != ctx.accounts.rakurai_activation_account.validator_authority {
             return Err(Unauthorized.into());
         }

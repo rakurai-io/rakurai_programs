@@ -11,6 +11,7 @@ pub struct InitializeArgs {
     pub num_epochs_valid: u64,
     pub max_commission_bps: u16,
     pub block_builder_commission_on_mev_commission_enabled: bool,
+    pub revenue_manager_authority: Pubkey,
     pub bump: u8,
 }
 
@@ -32,6 +33,7 @@ pub fn initialize_ix(
         num_epochs_valid,
         max_commission_bps,
         block_builder_commission_on_mev_commission_enabled,
+        revenue_manager_authority,
         bump,
     } = args;
 
@@ -48,6 +50,7 @@ pub fn initialize_ix(
             num_epochs_valid,
             max_commission_bps,
             block_builder_commission_on_mev_commission_enabled,
+            revenue_manager_authority,
             bump,
         }
         .data(),
@@ -219,7 +222,6 @@ pub struct UpdateConfigArgs {
 pub struct UpdateConfigAccounts {
     pub config: Pubkey,
     pub authority: Pubkey,
-    pub system_program: Pubkey,
 }
 
 /// Builds the instruction to update the reward distribution config.
@@ -230,21 +232,12 @@ pub fn update_config_ix(
 ) -> Instruction {
     let UpdateConfigArgs { new_config } = args;
 
-    let UpdateConfigAccounts {
-        config,
-        authority,
-        system_program,
-    } = accounts;
+    let UpdateConfigAccounts { config, authority } = accounts;
 
     Instruction {
         program_id,
         data: crate::instruction::UpdateConfig { new_config }.data(),
-        accounts: crate::accounts::UpdateConfig {
-            config,
-            authority,
-            system_program,
-        }
-        .to_account_metas(None),
+        accounts: crate::accounts::UpdateConfig { config, authority }.to_account_metas(None),
     }
 }
 
