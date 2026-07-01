@@ -26,7 +26,8 @@ Space: `RevenueShareAccount::space_for(max_epoch_entries)`. `max_epoch_entries` 
 | share_kind | RevenueKind | `Tip` or `Backrun`; in PDA seeds |
 | name | [u8; 32] | Revenue source / wallet label in seeds; non-empty |
 | validator_vote | Pubkey | Must match RCA vote on claim |
-| manager_authority | Pubkey | Set from `config.revenue_manager_authority` at init; claim, update config, close |
+| initializer | Pubkey | Payer at init; receives account rent on close |
+| manager_authority | Pubkey | Set from `config.revenue_manager_authority` at init; claim, update config |
 | record_authority | Pubkey | Signs `record_revenue` |
 | max_epoch_entries | u8 | Ledger capacity (1–32); affects account size, not PDA seeds |
 | commission_bps | u16 | Share of epoch ledger amount sent to `commission_account` on claim |
@@ -68,9 +69,9 @@ Vote binding (where applicable): vote account owned by vote program; `VoteState`
 | update_epoch_converted_to_block_reward | manager_authority **or** record_authority **or** validator identity (vote node) | required for validator path | account `convert_to_block_rewards`; entry claimed; entry flag false |
 | transfer_staker_rewards | initializer | required | vote == `RCA.validator_vote_account`; vote node == signer |
 | transfer_block_builder_commission_on_mev_commission | initializer | — | — |
-| initialize_revenue_share_account | `config.revenue_manager_authority` (payer) | — | passes `share_kind`, `commission_bps`, `commission_account` |
+| initialize_revenue_share_account | any payer | required | enabled RAA; vote node == RAA `validator_authority`; `manager_authority` from config |
 | record_revenue | record_authority | — | — |
-| close_revenue_share_account | manager_authority | — | — |
+| close_revenue_share_account | `initializer` **or** `manager_authority` | — | rent to `initializer` |
 | claim | payer | — | — |
 | close_claim_status | — | — | permissionless after expiry |
 
@@ -120,7 +121,12 @@ Proof siblings use `[1u8]` prefix (`merkle_proof.rs`).
 
 | Field | Notes |
 |-------|-------|
-| revenue_manager_authority | `Option<Pubkey>`; if `None`, revenue-share init is disabled |
+| revenue_manager_authority | `Option<Pubkey>`; if `None`, revenue-share init is disabled. Field space is reserved at `initialize` (`SIZE`); set via `update_config`. Legacy configs are grown with `realloc` on first `update_config`. |
+
+### `update_config` accounts
+
+`config` (mut, realloc to current `SIZE`), `authority` (mut, signer, pays extra rent if growing), `system_program`.
+
 | max_commission_bps | Caps revenue-share `commission_bps` at init and update |
 
 ---
@@ -133,7 +139,11 @@ Revenue claim (`claim_revenue`): `reward_collection_account`, `revenue_share_acc
 
 ### Revenue share init accounts
 
-`config` (RD config PDA), `revenue_share_account` (init, PDA seeded with `share_kind`), `validator_vote_account`, `payer` (= `revenue_manager_authority`), `system_program`. Args include `share_kind`, `commission_bps`, `commission_account`.
+`config`, `revenue_share_account` (init), `rakurai_activation_account` (enabled RAA), `validator_vote_account`, `payer` (any signer), `system_program`. Args include `share_kind`, `commission_bps`, `commission_account`.
+
+### Revenue share close accounts
+
+`close_revenue_share_account`: `revenue_share_account` (mut, close), `initializer` (mut, receives rent), `authority` (signer = `initializer` or `manager_authority`).
 
 ### Revenue share config update accounts
 

@@ -1,7 +1,8 @@
 use crate::ErrorCode::{
     AccountValidationFailure, ArithmeticError, ConvertToBlockRewardsNotEnabled,
-    EpochAlreadyClaimed, EpochEntryNotFound, EpochNotClaimed, InvalidRevenueEpochCapacity,
-    InvalidRevenueName, MaxCommissionFeeBpsExceeded, RevenueManagerNotConfigured,
+    EpochAlreadyClaimed, EpochAlreadyConvertedToBlockReward, EpochEntryNotFound, EpochNotClaimed,
+    InvalidRevenueEpochCapacity, InvalidRevenueName, MaxCommissionFeeBpsExceeded,
+    RevenueManagerNotConfigured,
 };
 use anchor_lang::prelude::*;
 use std::mem::size_of;
@@ -112,6 +113,8 @@ pub struct RevenueShareAccount {
     /// UTF-8 padded label (used in PDA seeds).
     pub name: [u8; 32],
     pub validator_vote: Pubkey,
+    /// Who paid to create this account; receives rent on close.
+    pub initializer: Pubkey,
     /// Claims revenue, updates config, and closes the account.
     pub manager_authority: Pubkey,
     /// Signs `record_revenue`.
@@ -344,6 +347,7 @@ impl RevenueShareAccount {
             + 1  //share_kind
             + 32 // name
             + 32 // validator_vote
+            + 32 // initializer
             + 32 // manager_authority
             + 32 // record_authority
             + 1 // max_epoch_entries
@@ -360,6 +364,7 @@ impl RevenueShareAccount {
         share_kind: RevenueKind,
         name: [u8; 32],
         validator_vote: Pubkey,
+        initializer: Pubkey,
         manager_authority: Pubkey,
         record_authority: Pubkey,
         max_epoch_entries: u8,
@@ -370,6 +375,7 @@ impl RevenueShareAccount {
         self.share_kind = share_kind;
         self.name = name;
         self.validator_vote = validator_vote;
+        self.initializer = initializer;
         self.manager_authority = manager_authority;
         self.record_authority = record_authority;
         self.max_epoch_entries = max_epoch_entries;
@@ -399,7 +405,7 @@ impl RevenueShareAccount {
             return Err(EpochNotClaimed.into());
         }
         if entry.converted_to_block_reward {
-            return Ok(());
+            return Err(EpochAlreadyConvertedToBlockReward.into());
         }
 
         entry.converted_to_block_reward = true;
@@ -471,7 +477,10 @@ impl RevenueShareAccount {
             MAX_COMMISSION_BPS,
         )?;
 
-        if self.manager_authority == Pubkey::default() || self.validator_vote == Pubkey::default() {
+        if self.manager_authority == Pubkey::default()
+            || self.validator_vote == Pubkey::default()
+            || self.initializer == Pubkey::default()
+        {
             return Err(AccountValidationFailure.into());
         }
 
@@ -663,6 +672,7 @@ mod tests {
             share_kind: RevenueKind::Tip,
             name,
             validator_vote: Pubkey::new_unique(),
+            initializer: Pubkey::new_unique(),
             manager_authority: Pubkey::new_unique(),
             record_authority: Pubkey::new_unique(),
             max_epoch_entries: 4,

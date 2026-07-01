@@ -219,6 +219,7 @@ pub struct UpdateConfigArgs {
 pub struct UpdateConfigAccounts {
     pub config: Pubkey,
     pub authority: Pubkey,
+    pub system_program: Pubkey,
 }
 
 /// Builds the instruction to update the reward distribution config.
@@ -229,12 +230,21 @@ pub fn update_config_ix(
 ) -> Instruction {
     let UpdateConfigArgs { new_config } = args;
 
-    let UpdateConfigAccounts { config, authority } = accounts;
+    let UpdateConfigAccounts {
+        config,
+        authority,
+        system_program,
+    } = accounts;
 
     Instruction {
         program_id,
         data: crate::instruction::UpdateConfig { new_config }.data(),
-        accounts: crate::accounts::UpdateConfig { config, authority }.to_account_metas(None),
+        accounts: crate::accounts::UpdateConfig {
+            config,
+            authority,
+            system_program,
+        }
+        .to_account_metas(None),
     }
 }
 
@@ -502,6 +512,7 @@ pub struct InitializeRevenueShareAccountArgs {
 pub struct InitializeRevenueShareAccountAccounts {
     pub revenue_share_account: Pubkey,
     pub config: Pubkey,
+    pub rakurai_activation_account: Pubkey,
     pub validator_vote_account: Pubkey,
     pub payer: Pubkey,
     pub system_program: Pubkey,
@@ -524,6 +535,7 @@ pub fn initialize_revenue_share_account_ix(
     let InitializeRevenueShareAccountAccounts {
         revenue_share_account,
         config,
+        rakurai_activation_account,
         validator_vote_account,
         payer,
         system_program,
@@ -544,6 +556,7 @@ pub fn initialize_revenue_share_account_ix(
         accounts: crate::accounts::InitializeRevenueShareAccount {
             revenue_share_account,
             config,
+            rakurai_activation_account,
             validator_vote_account,
             payer,
             system_program,
@@ -701,7 +714,8 @@ pub fn update_epoch_converted_to_block_reward_ix(
 
 pub struct CloseRevenueShareAccountAccounts {
     pub revenue_share_account: Pubkey,
-    pub manager_authority: Pubkey,
+    pub initializer: Pubkey,
+    pub authority: Pubkey,
 }
 
 pub fn close_revenue_share_account_ix(
@@ -710,7 +724,8 @@ pub fn close_revenue_share_account_ix(
 ) -> Instruction {
     let CloseRevenueShareAccountAccounts {
         revenue_share_account,
-        manager_authority,
+        initializer,
+        authority,
     } = accounts;
 
     Instruction {
@@ -718,7 +733,8 @@ pub fn close_revenue_share_account_ix(
         data: crate::instruction::CloseRevenueShareAccount {}.data(),
         accounts: crate::accounts::CloseRevenueShareAccount {
             revenue_share_account,
-            manager_authority,
+            initializer,
+            authority,
         }
         .to_account_metas(None),
     }

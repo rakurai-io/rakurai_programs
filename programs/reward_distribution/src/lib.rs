@@ -47,7 +47,7 @@ pub mod reward_distribution {
         cfg.num_epochs_valid = num_epochs_valid;
         cfg.max_commission_bps = max_commission_bps;
         cfg.set_mev_commission_enabled(block_builder_commission_on_mev_commission_enabled);
-        cfg.revenue_manager_authority = None;
+        cfg.revenue_manager_authority = None; // slot reserved in SIZE; set later via update_config
         cfg.bump = bump;
         cfg.validate()?;
 
@@ -102,6 +102,8 @@ pub mod reward_distribution {
     }
 
     /// Update config fields. Only the [RewardDistributionConfigAccount] authority can invoke this.
+    /// Grows legacy config accounts to the current [`RewardDistributionConfigAccount::SIZE`]
+    /// (e.g. to persist `revenue_manager_authority`) before applying updates.
     pub fn update_config(
         ctx: Context<UpdateConfig>,
         new_config: RewardDistributionConfigAccount,
@@ -473,6 +475,7 @@ pub mod reward_distribution {
             share_kind,
             name,
             ctx.accounts.validator_vote_account.key(),
+            ctx.accounts.payer.key(),
             manager_authority,
             record_authority,
             max_epoch_entries,
@@ -486,6 +489,7 @@ pub mod reward_distribution {
             share_kind,
             name,
             validator_vote: revenue_share_account.validator_vote,
+            initializer: ctx.accounts.payer.key(),
             manager_authority,
             record_authority,
             max_epoch_entries,
@@ -594,7 +598,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Closes a revenue share account and returns remaining lamports to the manager authority.
+    /// Closes a revenue share account; rent is returned to the original initializer.
     pub fn close_revenue_share_account(ctx: Context<CloseRevenueShareAccount>) -> Result<()> {
         CloseRevenueShareAccount::auth(&ctx)?;
         Ok(())
@@ -732,6 +736,9 @@ pub enum ErrorCode {
     #[msg("Revenue for this epoch has not been claimed yet.")]
     EpochNotClaimed,
 
+    #[msg("Revenue for this epoch is already marked converted to block rewards.")]
+    EpochAlreadyConvertedToBlockReward,
+
     #[msg("Tip/backrun revenue manager is not configured on the reward distribution config.")]
     RevenueManagerNotConfigured,
 
@@ -865,11 +872,18 @@ pub struct InitializeRewardCollectionAccountV1<'info> {
 #[derive(Accounts)]
 pub struct UpdateConfig<'info> {
     /// The global configuration account for Reward Distribution settings.
-    #[account(mut, rent_exempt = enforce)]
+    #[account(
+        mut,
+        realloc = RewardDistributionConfigAccount::SIZE,
+        realloc::payer = authority,
+        realloc::zero = false,
+    )]
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
 }
 
 impl UpdateConfig<'_> {
@@ -1105,8 +1119,16 @@ pub struct InitializeRevenueShareAccount<'info> {
     )]
     pub config: Account<'info, RewardDistributionConfigAccount>,
 
-    /// CHECK: validator vote account used in PDA seeds.
-    pub validator_vote_account: UncheckedAccount<'info>,
+    #[account(
+        seeds = [RakuraiActivationAccount::SEED, rakurai_activation_account.validator_authority.as_ref()],
+        bump = rakurai_activation_account.bump,
+        seeds::program = rakurai_activation::ID,
+        constraint = rakurai_activation_account.is_enabled @ RakuraiSchedulerNotEnabled,
+    )]
+    pub rakurai_activation_account: Account<'info, RakuraiActivationAccount>,
+
+    /// CHECK: validator vote account used in PDA seeds; node must match RAA validator authority.
+    pub validator_vote_account: AccountInfo<'info>,
 
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -1123,10 +1145,19 @@ impl InitializeRevenueShareAccount<'_> {
         commission_bps: u16,
         commission_account: Pubkey,
     ) -> Result<()> {
-        let manager = ctx.accounts.config.require_revenue_manager_authority()?;
-        if ctx.accounts.payer.key() != manager {
+        use rakurai_vote_state::VoteState;
+
+        if ctx.accounts.validator_vote_account.owner != &solana_program::vote::program::id() {
             return Err(Unauthorized.into());
         }
+
+        let node_pubkey =
+            VoteState::deserialize_node_pubkey(&ctx.accounts.validator_vote_account)
+                .map_err(|_| Unauthorized)?;
+        if node_pubkey != ctx.accounts.rakurai_activation_account.validator_authority {
+            return Err(Unauthorized.into());
+        }
+
         RevenueShareAccount::validate_init_params(
             name,
             record_authority,
@@ -1262,7 +1293,7 @@ impl UpdateRevenueShareConfig<'_> {
 pub struct CloseRevenueShareAccount<'info> {
     #[account(
         mut,
-        close = manager_authority,
+        close = initializer,
         seeds = [
             RevenueShareAccount::SEED,
             revenue_share_account.share_kind.seed(),
@@ -1273,15 +1304,24 @@ pub struct CloseRevenueShareAccount<'info> {
     )]
     pub revenue_share_account: Account<'info, RevenueShareAccount>,
 
-    #[account(mut)]
-    pub manager_authority: Signer<'info>,
+    /// CHECK: receives rent from the closed account; must match stored `initializer`.
+    #[account(
+        mut,
+        constraint = initializer.key() == revenue_share_account.initializer @ Unauthorized,
+    )]
+    pub initializer: AccountInfo<'info>,
+
+    pub authority: Signer<'info>,
 }
 
 impl CloseRevenueShareAccount<'_> {
     fn auth(ctx: &Context<CloseRevenueShareAccount>) -> Result<()> {
-        ctx.accounts
-            .revenue_share_account
-            .auth_manager_signer(ctx.accounts.manager_authority.key())
+        let signer = ctx.accounts.authority.key();
+        let account = &ctx.accounts.revenue_share_account;
+        if signer != account.initializer && signer != account.manager_authority {
+            return Err(Unauthorized.into());
+        }
+        Ok(())
     }
 }
 
@@ -1384,6 +1424,7 @@ pub struct RevenueShareAccountInitializedEvent {
     pub share_kind: RevenueKind,
     pub name: [u8; 32],
     pub validator_vote: Pubkey,
+    pub initializer: Pubkey,
     pub manager_authority: Pubkey,
     pub record_authority: Pubkey,
     pub max_epoch_entries: u8,

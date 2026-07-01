@@ -56,7 +56,7 @@ RevenueShareAccount (share_kind = Tip | Backrun) ── per (kind, revenue label
 3. **After E**: `upload_merkle_root`; staker `claim`; `claim_revenue` with `epoch = RCA.creation_epoch` and `current_epoch > epoch` — commission portion to `commission_account`, remainder to validator identity.
 4. **Cleanup**: close RCA after expiry; `close_claim_status` permissionless after expiry.
 
-**Revenue share flow:** init → record (ledger) → settle (SOL into PDA) → claim. PDA `[REVENUE_SHARE, share_kind, name, vote]`. Init/claim/config: `manager_authority` (from `revenue_manager_authority`); record: `record_authority`.
+**Revenue share flow:** init → record (ledger) → settle (SOL into PDA) → claim. PDA `[REVENUE_SHARE, share_kind, name, vote]`. Init: any payer + enabled RAA; `manager_authority` from config. Record: `record_authority`. Claim/config: `manager_authority`.
 
 ---
 

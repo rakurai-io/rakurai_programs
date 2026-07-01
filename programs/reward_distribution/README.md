@@ -117,11 +117,12 @@ Same idea for [post-pack confirmations](https://docs.rakurai.io/docs/services/ra
 
 | Step | Who | What |
 |------|-----|------|
-| **Init** | `revenue_manager_authority` | `initialize_revenue_share_account` — once per `(share_kind, name, vote)` |
+| **Init** | anyone (payer) | `initialize_revenue_share_account` — enabled RAA for validator vote; once per `(share_kind, name, vote)` |
 | **Record** | `record_authority` | `record_revenue(amount)` each leader turn — ledger only, no lamport move |
 | **Settle** | external account holder | Post-epoch SOL transfer into the revenue-share PDA (≥ ledger amount) |
 | **Claim** | `manager_authority` | `claim_revenue(epoch)` after epoch ends — splits `commission_bps` → `commission_account`, rest → validator identity |
-| **Config** | `manager_authority` | `update_revenue_share_config` or `close_revenue_share_account` |
+| **Config** | `manager_authority` | `update_revenue_share_config` |
+| **Close** | `initializer` or `manager_authority` | `close_revenue_share_account` — rent to `initializer` |
 | **Convert flag** | `manager_authority`, `record_authority`, or validator identity | `update_epoch_converted_to_block_reward(epoch)` — after claim, if account `convert_to_block_rewards` is true |
 
 PDA: `[REVENUE_SHARE, share_kind ("TIP" \| "BACKRUN"), name[32], validator_vote]`. `convert_to_block_rewards` is snapshotted into the ledger on the first `record_revenue` for each epoch.
