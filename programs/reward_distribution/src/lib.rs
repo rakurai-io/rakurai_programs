@@ -5,8 +5,8 @@ use solana_security_txt::security_txt;
 
 use crate::{
     state::{
-        validate_commission, ClaimStatus, MerkleRoot, RevenueShareAccount,
-        RevenueKind, RewardCollectionAccount, RewardDistributionConfigAccount,
+        validate_commission, ClaimStatus, MerkleRoot, RevenueKind, RevenueShareAccount,
+        RewardCollectionAccount, RewardDistributionConfigAccount,
     },
     ErrorCode::{InvalidBlockBuilderCommissionAccount, RakuraiSchedulerNotEnabled, Unauthorized},
 };
@@ -138,12 +138,23 @@ pub mod reward_distribution {
     /// Closes the reward distribution config account and reclaims rent.
     /// Only the config authority can invoke this instruction.
     pub fn close_config(ctx: Context<CloseConfig>) -> Result<()> {
+        // Verify caller authority
         CloseConfig::auth(&ctx)?;
 
-        let lamports_to_reclaim = ctx.accounts.config.to_account_info().lamports();
+        let config_account = &mut ctx.accounts.config;
+        let authority = &mut ctx.accounts.signer;
 
+        // Transfer all lamports from config to authority
+        let lamports_to_reclaim = config_account.to_account_info().lamports();
+        **config_account.to_account_info().try_borrow_mut_lamports()? = 0;
+        **authority.try_borrow_mut_lamports()? = authority
+            .lamports()
+            .checked_add(lamports_to_reclaim)
+            .ok_or(ArithmeticError)?;
+
+        // Emit closure event
         emit!(ConfigClosedEvent {
-            authority: ctx.accounts.signer.key(),
+            authority: authority.key(),
             lamports_reclaimed: lamports_to_reclaim,
         });
 
@@ -212,7 +223,7 @@ pub mod reward_distribution {
             return Err(RewardsTooLow.into());
         }
 
-        let reward_collection_acc = &mut ctx.accounts.reward_collection_account;
+        let reward_collection_acc = &ctx.accounts.reward_collection_account;
 
         // Calculate block builder commission (basis points)
         let block_builder_commission_amount = total_rewards
@@ -674,12 +685,7 @@ pub enum ErrorCode {
     #[msg("Revenue for this epoch has not been claimed yet.")]
     EpochNotClaimed,
 
-    #[msg("Epoch entry is already marked converted_to_block_reward.")]
-    EpochAlreadyConvertedToBlockReward,
-
-    #[msg(
-        "Tip/backrun revenue manager is not configured on the reward distribution config."
-    )]
+    #[msg("Tip/backrun revenue manager is not configured on the reward distribution config.")]
     RevenueManagerNotConfigured,
 
     #[msg("Rakurai scheduler is not enabled for this validator.")]

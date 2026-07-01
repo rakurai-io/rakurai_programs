@@ -1,8 +1,7 @@
 use crate::ErrorCode::{
     AccountValidationFailure, ArithmeticError, ConvertToBlockRewardsNotEnabled,
-    EpochAlreadyClaimed, EpochAlreadyConvertedToBlockReward, EpochEntryNotFound, EpochNotClaimed,
-    InvalidRevenueEpochCapacity, InvalidRevenueName, MaxCommissionFeeBpsExceeded,
-    RevenueManagerNotConfigured,
+    EpochAlreadyClaimed, EpochEntryNotFound, EpochNotClaimed, InvalidRevenueEpochCapacity,
+    InvalidRevenueName, MaxCommissionFeeBpsExceeded, RevenueManagerNotConfigured,
 };
 use anchor_lang::prelude::*;
 use std::mem::size_of;
@@ -342,18 +341,18 @@ impl RevenueShareAccount {
 
     pub fn space_for(max_epoch_entries: usize) -> usize {
         HEADER_SIZE
-            + 1
-            + 32
-            + 32
-            + 32
-            + 32
-            + 1
-            + 2
-            + 32
-            + 1
-            + 4
-            + max_epoch_entries * size_of::<EpochAmountEntry>()
-            + 1
+            + 1  //share_kind
+            + 32 // name
+            + 32 // validator_vote
+            + 32 // manager_authority
+            + 32 // record_authority
+            + 1 // max_epoch_entries
+            + 2 // commission_bps
+            + 32 // commission_account
+            + 1 // convert_to_block_rewards
+            + 4 // vec length (u32)
+            + max_epoch_entries * size_of::<EpochAmountEntry>() // ledger size
+            + 1 // bump
     }
 
     pub fn populate_on_init(

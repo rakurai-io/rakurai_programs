@@ -2,15 +2,11 @@
 
 A collection of Solana smart contracts and tools required for **Rakurai’s validator operations**.
 
-**Rakurai Activation**  
-- Multisig-controlled smart contract that authorizes and manages validators running Rakurai nodes. [Details](./programs/rakurai_activation/README.md)
+## Documentation
 
-**Reward Distribution**  
-- Smart contract for distributing block rewards to stakers using a permissionless, Merkle-root-based verification model. [Details](./programs/reward_distribution/README.md)
-
-**Rakurai Tip Manager**  
-- Smart contract for managing tips sent to validators. Maintains eight tip accounts to reduce write-lock contention and automatically splits tips between the validator's tip receiver account and the block builder commission account. [Details](./programs/rakurai_tip_manager/README.md)
-
-**Rakurai Activation CLI**  
-- Command-line tool for interacting with the Rakurai Activation program.  
-  Allows validators to make key changes to their [RakuraiActivationAccount](./programs/rakurai_activation/README.md#rakuraiactivationaccount-account-creation) — such as enabling/disabling a rakurai scheduler or updating its commission rate. [Details](./cli/README.md)
+| Section | Description |
+| ------- | ----------- |
+| [Rakurai Activation](./programs/rakurai_activation/README.md) | Multisig-controlled smart contract that authorizes and manages validators running Rakurai nodes. |
+| [Reward Distribution](./programs/reward_distribution/README.md) | Distributes block rewards to stakers via post-epoch Merkle claims; tracks off-path tip and backrun revenue in per-validator [Revenue Share Accounts](./programs/reward_distribution/README.md#revenue-share-accounts-tip--backrun) (TCA / BCA). |
+| [Rakurai Tip Manager](./programs/rakurai_tip_manager/README.md) | Manages tips sent to Rakurai validators across eight tip PDAs; drains and splits tips to the validator’s [Tips Collection Account](./programs/reward_distribution/README.md#why-a-tips-collection-account-tca) (TCA). |
+| [Rakurai Activation CLI](./cli/README.md) | Command-line tool for interacting with the Rakurai Activation program — initialize a [Rakurai Activation Account](./programs/rakurai_activation/README.md#rakuraiactivationaccount-account-creation), enable/disable the scheduler, and update commission settings. |
