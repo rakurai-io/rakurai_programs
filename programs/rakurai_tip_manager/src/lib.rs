@@ -18,7 +18,7 @@ security_txt! {
 
 pub mod sdk;
 
-declare_id!("4qRZaFzf7MvgfBTCP9grb69cCST8UmKHPtkpGAgkJosD");
+declare_id!("Ddg1EMgjidDRjxCWojPZhvzqBkpUyK5kkCfuS41g5qDu");
 
 /// PDA Seeds
 
@@ -500,72 +500,54 @@ pub struct ChangeTipReceiver<'info> {
     #[account(mut, constraint = block_builder_commission_account.key() == tip_manager_config.block_builder_commission_account)]
     pub block_builder_commission_account: AccountInfo<'info>,
 
-    #[account(
-        mut,
-        seeds = [RAKURAI_TIP_ACCOUNT_0_SEED],
-        bump = tip_manager_config.bumps.rakurai_tip_account_0,
-        rent_exempt = enforce
-    )]
-    pub rakurai_tip_account_0: Account<'info, RakuraiTipAccount>,
+    /// CHECK: Rakurai tip PDA 0; seeds validated in `ChangeTipReceiver::auth`.
+    #[account(mut)]
+    pub rakurai_tip_account_0: AccountInfo<'info>,
 
-    #[account(
-        mut,
-        seeds = [RAKURAI_TIP_ACCOUNT_1_SEED],
-        bump = tip_manager_config.bumps.rakurai_tip_account_1,
-        rent_exempt = enforce
-    )]
-    pub rakurai_tip_account_1: Account<'info, RakuraiTipAccount>,
+    /// CHECK: Rakurai tip PDA 1; seeds validated in `ChangeTipReceiver::auth`.
+    #[account(mut)]
+    pub rakurai_tip_account_1: AccountInfo<'info>,
 
-    #[account(
-        mut,
-        seeds = [RAKURAI_TIP_ACCOUNT_2_SEED],
-        bump = tip_manager_config.bumps.rakurai_tip_account_2,
-        rent_exempt = enforce
-    )]
-    pub rakurai_tip_account_2: Account<'info, RakuraiTipAccount>,
+    /// CHECK: Rakurai tip PDA 2; seeds validated in `ChangeTipReceiver::auth`.
+    #[account(mut)]
+    pub rakurai_tip_account_2: AccountInfo<'info>,
 
-    #[account(
-        mut,
-        seeds = [RAKURAI_TIP_ACCOUNT_3_SEED],
-        bump = tip_manager_config.bumps.rakurai_tip_account_3,
-        rent_exempt = enforce
-    )]
-    pub rakurai_tip_account_3: Account<'info, RakuraiTipAccount>,
+    /// CHECK: Rakurai tip PDA 3; seeds validated in `ChangeTipReceiver::auth`.
+    #[account(mut)]
+    pub rakurai_tip_account_3: AccountInfo<'info>,
 
-    #[account(
-        mut,
-        seeds = [RAKURAI_TIP_ACCOUNT_4_SEED],
-        bump = tip_manager_config.bumps.rakurai_tip_account_4,
-        rent_exempt = enforce
-    )]
-    pub rakurai_tip_account_4: Account<'info, RakuraiTipAccount>,
+    /// CHECK: Rakurai tip PDA 4; seeds validated in `ChangeTipReceiver::auth`.
+    #[account(mut)]
+    pub rakurai_tip_account_4: AccountInfo<'info>,
 
-    #[account(
-        mut,
-        seeds = [RAKURAI_TIP_ACCOUNT_5_SEED],
-        bump = tip_manager_config.bumps.rakurai_tip_account_5,
-        rent_exempt = enforce
-    )]
-    pub rakurai_tip_account_5: Account<'info, RakuraiTipAccount>,
+    /// CHECK: Rakurai tip PDA 5; seeds validated in `ChangeTipReceiver::auth`.
+    #[account(mut)]
+    pub rakurai_tip_account_5: AccountInfo<'info>,
 
-    #[account(
-        mut,
-        seeds = [RAKURAI_TIP_ACCOUNT_6_SEED],
-        bump = tip_manager_config.bumps.rakurai_tip_account_6,
-        rent_exempt = enforce
-    )]
-    pub rakurai_tip_account_6: Account<'info, RakuraiTipAccount>,
+    /// CHECK: Rakurai tip PDA 6; seeds validated in `ChangeTipReceiver::auth`.
+    #[account(mut)]
+    pub rakurai_tip_account_6: AccountInfo<'info>,
 
-    #[account(
-        mut,
-        seeds = [RAKURAI_TIP_ACCOUNT_7_SEED],
-        bump = tip_manager_config.bumps.rakurai_tip_account_7,
-        rent_exempt = enforce
-    )]
-    pub rakurai_tip_account_7: Account<'info, RakuraiTipAccount>,
+    /// CHECK: Rakurai tip PDA 7; seeds validated in `ChangeTipReceiver::auth`.
+    #[account(mut)]
+    pub rakurai_tip_account_7: AccountInfo<'info>,
 
     #[account(mut)]
     pub signer: Signer<'info>,
+}
+
+fn validate_tip_pda(
+    account: &AccountInfo,
+    seed: &[u8],
+    bump: u8,
+    program_id: &Pubkey,
+) -> Result<()> {
+    let expected =
+        Pubkey::create_program_address(&[seed, &[bump]], program_id).map_err(|_| Unauthorized)?;
+    if account.key() != expected || account.owner != program_id {
+        return Err(Unauthorized.into());
+    }
+    Ok(())
 }
 
 impl ChangeTipReceiver<'_> {
@@ -580,6 +562,57 @@ impl ChangeTipReceiver<'_> {
         if node_pubkey != *ctx.accounts.signer.key {
             return Err(Unauthorized.into());
         }
+
+        let program_id = ctx.program_id;
+        let bumps = &ctx.accounts.tip_manager_config.bumps;
+        validate_tip_pda(
+            &ctx.accounts.rakurai_tip_account_0,
+            RAKURAI_TIP_ACCOUNT_0_SEED,
+            bumps.rakurai_tip_account_0,
+            program_id,
+        )?;
+        validate_tip_pda(
+            &ctx.accounts.rakurai_tip_account_1,
+            RAKURAI_TIP_ACCOUNT_1_SEED,
+            bumps.rakurai_tip_account_1,
+            program_id,
+        )?;
+        validate_tip_pda(
+            &ctx.accounts.rakurai_tip_account_2,
+            RAKURAI_TIP_ACCOUNT_2_SEED,
+            bumps.rakurai_tip_account_2,
+            program_id,
+        )?;
+        validate_tip_pda(
+            &ctx.accounts.rakurai_tip_account_3,
+            RAKURAI_TIP_ACCOUNT_3_SEED,
+            bumps.rakurai_tip_account_3,
+            program_id,
+        )?;
+        validate_tip_pda(
+            &ctx.accounts.rakurai_tip_account_4,
+            RAKURAI_TIP_ACCOUNT_4_SEED,
+            bumps.rakurai_tip_account_4,
+            program_id,
+        )?;
+        validate_tip_pda(
+            &ctx.accounts.rakurai_tip_account_5,
+            RAKURAI_TIP_ACCOUNT_5_SEED,
+            bumps.rakurai_tip_account_5,
+            program_id,
+        )?;
+        validate_tip_pda(
+            &ctx.accounts.rakurai_tip_account_6,
+            RAKURAI_TIP_ACCOUNT_6_SEED,
+            bumps.rakurai_tip_account_6,
+            program_id,
+        )?;
+        validate_tip_pda(
+            &ctx.accounts.rakurai_tip_account_7,
+            RAKURAI_TIP_ACCOUNT_7_SEED,
+            bumps.rakurai_tip_account_7,
+            program_id,
+        )?;
 
         Ok(())
     }

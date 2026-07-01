@@ -24,7 +24,7 @@ pub mod merkle_proof;
 pub mod sdk;
 pub mod state;
 
-declare_id!("A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB");
+declare_id!("FopGPqzyWETpSs716FwKC3mMyzsgohTLWHbuFcEs8SKk");
 
 #[program]
 pub mod reward_distribution {
@@ -1087,7 +1087,8 @@ pub struct ClaimRevenue<'info> {
     )]
     pub commission_account: AccountInfo<'info>,
 
-    /// CHECK: this is safe
+    /// CHECK: validator identity receives the post-commission claim amount.
+    #[account(mut)]
     pub validator_identity: AccountInfo<'info>,
 
     pub manager_authority: Signer<'info>,
