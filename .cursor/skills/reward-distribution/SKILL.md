@@ -43,7 +43,7 @@ RevenueShareAccount (share_kind = Tip | Backrun) ── per (kind, revenue label
 | Category | Instructions |
 |----------|-------------|
 | Config | `initialize`, `update_config`, `close_config` |
-| RCA | `initialize_reward_collection_account`, `upload_merkle_root`, `transfer_staker_rewards`, `transfer_block_builder_commission_on_mev_commission`, `close_reward_collection_account` |
+| RCA | `initialize_reward_collection_account` (legacy), `initialize_reward_collection_account_v1` (preferred), `upload_merkle_root`, `transfer_staker_rewards`, `transfer_block_builder_commission_on_mev_commission`, `close_reward_collection_account` |
 | Claims | `claim`, `close_claim_status` |
 | Revenue share (unified; `share_kind` arg/stored) | `initialize_revenue_share_account` (takes `share_kind`), `record_revenue`, `claim_revenue`, `update_revenue_share_config`, `update_epoch_converted_to_block_reward`, `close_revenue_share_account` |
 
@@ -51,7 +51,7 @@ RevenueShareAccount (share_kind = Tip | Backrun) ── per (kind, revenue label
 
 ## Epoch Flow
 
-1. **Init RCA** (epoch E): validator identity signs; pass `validator_vote_account` + enabled RAA; `expires_at = E + num_epochs_valid`.
+1. **Init RCA** (epoch E): validator identity signs; pass `validator_vote_account` + enabled RAA via `initialize_reward_collection_account_v1` (legacy ix omits RAA).
 2. **During E**: `transfer_staker_rewards` (pass same vote account; must match RCA); `record_revenue`; optional MEV commission ix.
 3. **After E**: `upload_merkle_root`; staker `claim`; `claim_revenue` with `epoch = RCA.creation_epoch` and `current_epoch > epoch` — commission portion to `commission_account`, remainder to validator identity.
 4. **Cleanup**: close RCA after expiry; `close_claim_status` permissionless after expiry.

@@ -22,7 +22,8 @@ RakuraiTipAccount x8: empty state, lamport vaults (seeds _0.._7)
 
 Users ──SOL──► any tip PDA
 
-change_tip_receiver: drain → old_tip_receiver + commission; config → tip revenue-share PDA
+change_tip_receiver: drain → old_tip_receiver + commission; config → tip receiver (legacy)
+change_rakurai_tip_receiver: same drain; RAA + vote + TCA validation; config → TCA PDA
 change_block_builder: drain → validator receiver + old builder; update builder (authority)
 ```
 
@@ -36,10 +37,11 @@ No reward_distribution CPI. Drained lamports land on `old_tip_receiver`; config 
 |-------------|--------|---------|
 | `initialize_rakurai_tip_manager` | payer | Config + 8 tip PDAs |
 | `close_rakurai_tip_manager` | authority | Close all; reclaim rent |
-| `change_tip_receiver` | Rakurai validator identity | Drain → old receiver + commission; set config receiver to TCA PDA |
+| `change_tip_receiver` | Rakurai validator identity | Legacy drain + rotate (no RAA/vote/TCA checks) |
+| `change_rakurai_tip_receiver` | Rakurai-enabled validator | Drain + rotate; RAA enabled, vote auth, TCA PDA enforced |
 | `change_block_builder` | authority | Drain → validator receiver + old builder; update builder |
 
-`change_tip_receiver` auth: enabled RAA PDA; vote node == signer. `new_tip_receiver` must be the `[REVENUE_SHARE, "TIP", "Rakurai", vote]` PDA on reward_distribution (pass `reward_distribution_program` account).
+`change_tip_receiver` auth: signer only (legacy). `change_rakurai_tip_receiver` auth: enabled RAA PDA; vote node == signer; `new_tip_receiver` must be `[REVENUE_SHARE, "TIP", "Rakurai", vote]` PDA (pass `reward_distribution_program`).
 
 ---
 
@@ -47,10 +49,10 @@ No reward_distribution CPI. Drained lamports land on `old_tip_receiver`; config 
 
 1. Init **TCA**: `initialize_revenue_share_account` (`share_kind = Tip`, name `"Rakurai"`).
 2. Users tip any of 8 PDAs.
-3. Each leader turn: `change_tip_receiver` drains → `old_tip_receiver` + commission; config → TCA.
+3. Each leader turn: `change_rakurai_tip_receiver` drains → `old_tip_receiver` + commission; config → TCA.
 4. `record_revenue` (ledger) → settle SOL into TCA → `claim_revenue` post-epoch.
 
-First drain credits the init payer (config receiver), not TCA, until config already points at TCA.
+Use legacy `change_tip_receiver` only until clients migrate. First drain credits the init payer until config points at TCA.
 
 ---
 
@@ -64,7 +66,7 @@ use rakurai_tip_manager::sdk::{
 };
 ```
 
-Builders: `initialize_rakurai_tip_manager_ix`, `close_rakurai_tip_manager_ix`, `change_tip_receiver_ix`, `change_block_builder_ix`.
+Builders: `initialize_rakurai_tip_manager_ix`, `close_rakurai_tip_manager_ix`, `change_tip_receiver_ix`, `change_rakurai_tip_receiver_ix`, `change_block_builder_ix`.
 
 ---
 

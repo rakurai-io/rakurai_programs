@@ -2294,7 +2294,6 @@ name = "rakurai_tip_manager"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
- "rakurai-vote-state",
  "rakurai_activation",
  "reward_distribution",
  "solana-program",

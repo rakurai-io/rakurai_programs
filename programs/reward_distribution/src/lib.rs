@@ -28,7 +28,6 @@ declare_id!("A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB");
 
 #[program]
 pub mod reward_distribution {
-    use rakurai_vote_state::VoteState;
     use solana_program::{program::invoke, system_instruction};
 
     use super::*;
@@ -55,8 +54,8 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Initialize a new [RewardCollectionAccount] associated with the given validator vote key
-    /// and current epoch.
+    /// Initialize a new [RewardCollectionAccount] (legacy account list).
+    /// Prefer `initialize_reward_collection_account_v1` for enabled RAA validation.
     pub fn initialize_reward_collection_account(
         ctx: Context<InitializeRewardCollectionAccount>,
         merkle_root_upload_authority: Pubkey,
@@ -65,52 +64,41 @@ pub mod reward_distribution {
         block_builder_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
-        if block_reward_commission_bps > ctx.accounts.config.max_commission_bps
-            || block_builder_commission_bps > ctx.accounts.config.max_commission_bps
-        {
-            return Err(MaxCommissionFeeBpsExceeded.into());
-        }
+        initialize_reward_collection_account_inner(
+            &ctx.accounts.config,
+            ctx.accounts.reward_collection_account.key(),
+            &mut ctx.accounts.reward_collection_account,
+            &ctx.accounts.validator_vote_account,
+            ctx.accounts.signer.key,
+            merkle_root_upload_authority,
+            block_reward_commission_bps,
+            block_builder_commission_account,
+            block_builder_commission_bps,
+            bump,
+        )
+    }
 
-        if ctx.accounts.validator_vote_account.owner != &solana_program::vote::program::id() {
-            return Err(Unauthorized.into());
-        }
-
-        let node_pubkey =
-            VoteState::deserialize_node_pubkey(&ctx.accounts.validator_vote_account).unwrap();
-        if &node_pubkey != ctx.accounts.signer.key {
-            return Err(Unauthorized.into());
-        }
-
-        let current_epoch = Clock::get()?.epoch;
-
-        let reward_collection_acc = &mut ctx.accounts.reward_collection_account;
-        reward_collection_acc.validator_vote_account = ctx.accounts.validator_vote_account.key();
-        reward_collection_acc.creation_epoch = current_epoch;
-        reward_collection_acc.block_reward_commission_bps = block_reward_commission_bps;
-        reward_collection_acc.block_builder_commission_bps = block_builder_commission_bps;
-        reward_collection_acc.block_builder_commission_account = block_builder_commission_account;
-        reward_collection_acc.merkle_root_upload_authority = merkle_root_upload_authority;
-        reward_collection_acc.merkle_root = None;
-        reward_collection_acc.expires_at = current_epoch
-            .checked_add(ctx.accounts.config.num_epochs_valid)
-            .ok_or(ArithmeticError)?;
-        reward_collection_acc.initializer = ctx.accounts.signer.key();
-        reward_collection_acc.bump = bump;
-
-        // Initialize MEV commission based on config setting
-        if ctx.accounts.config.is_mev_commission_enabled() {
-            reward_collection_acc.block_builder_mev_commission_deducted = Some(0);
-        } else {
-            reward_collection_acc.block_builder_mev_commission_deducted = None;
-        }
-
-        reward_collection_acc.validate()?;
-
-        emit!(RewardCollectionAccountInitializedEvent {
-            reward_collection_account: reward_collection_acc.key(),
-        });
-
-        Ok(())
+    /// Initialize a new [RewardCollectionAccount] with Rakurai activation checks.
+    pub fn initialize_reward_collection_account_v1(
+        ctx: Context<InitializeRewardCollectionAccountV1>,
+        merkle_root_upload_authority: Pubkey,
+        block_reward_commission_bps: u16,
+        block_builder_commission_account: Pubkey,
+        block_builder_commission_bps: u16,
+        bump: u8,
+    ) -> Result<()> {
+        initialize_reward_collection_account_inner(
+            &ctx.accounts.config,
+            ctx.accounts.reward_collection_account.key(),
+            &mut ctx.accounts.reward_collection_account,
+            &ctx.accounts.validator_vote_account,
+            ctx.accounts.signer.key,
+            merkle_root_upload_authority,
+            block_reward_commission_bps,
+            block_builder_commission_account,
+            block_builder_commission_bps,
+            bump,
+        )
     }
 
     /// Update config fields. Only the [RewardDistributionConfigAccount] authority can invoke this.
@@ -613,6 +601,65 @@ pub mod reward_distribution {
     }
 }
 
+fn initialize_reward_collection_account_inner(
+    config: &RewardDistributionConfigAccount,
+    reward_collection_account_pubkey: Pubkey,
+    reward_collection_account: &mut RewardCollectionAccount,
+    validator_vote_account: &AccountInfo,
+    signer: &Pubkey,
+    merkle_root_upload_authority: Pubkey,
+    block_reward_commission_bps: u16,
+    block_builder_commission_account: Pubkey,
+    block_builder_commission_bps: u16,
+    bump: u8,
+) -> Result<()> {
+    use rakurai_vote_state::VoteState;
+
+    if block_reward_commission_bps > config.max_commission_bps
+        || block_builder_commission_bps > config.max_commission_bps
+    {
+        return Err(ErrorCode::MaxCommissionFeeBpsExceeded.into());
+    }
+
+    if validator_vote_account.owner != &solana_program::vote::program::id() {
+        return Err(ErrorCode::Unauthorized.into());
+    }
+
+    let node_pubkey = VoteState::deserialize_node_pubkey(validator_vote_account).unwrap();
+    if &node_pubkey != signer {
+        return Err(ErrorCode::Unauthorized.into());
+    }
+
+    let current_epoch = Clock::get()?.epoch;
+
+    reward_collection_account.validator_vote_account = validator_vote_account.key();
+    reward_collection_account.creation_epoch = current_epoch;
+    reward_collection_account.block_reward_commission_bps = block_reward_commission_bps;
+    reward_collection_account.block_builder_commission_bps = block_builder_commission_bps;
+    reward_collection_account.block_builder_commission_account = block_builder_commission_account;
+    reward_collection_account.merkle_root_upload_authority = merkle_root_upload_authority;
+    reward_collection_account.merkle_root = None;
+    reward_collection_account.expires_at = current_epoch
+        .checked_add(config.num_epochs_valid)
+        .ok_or(ErrorCode::ArithmeticError)?;
+    reward_collection_account.initializer = *signer;
+    reward_collection_account.bump = bump;
+
+    if config.is_mev_commission_enabled() {
+        reward_collection_account.block_builder_mev_commission_deducted = Some(0);
+    } else {
+        reward_collection_account.block_builder_mev_commission_deducted = None;
+    }
+
+    reward_collection_account.validate()?;
+
+    emit!(RewardCollectionAccountInitializedEvent {
+        reward_collection_account: reward_collection_account_pubkey,
+    });
+
+    Ok(())
+}
+
 /// Custom errors for Reward Distribution Program instructions.
 #[error_code]
 pub enum ErrorCode {
@@ -734,7 +781,7 @@ pub struct Initialize<'info> {
     pub initializer: Signer<'info>,
 }
 
-/// Initializes a new reward collection account for a validator at the current epoch.
+/// Initializes a new reward collection account for a validator at the current epoch (legacy).
 #[derive(Accounts)]
 #[instruction(
     _merkle_root_upload_authority: Pubkey,
@@ -742,6 +789,41 @@ pub struct Initialize<'info> {
     _bump: u8
 )]
 pub struct InitializeRewardCollectionAccount<'info> {
+    /// The global configuration account for Reward Distribution settings.
+    pub config: Account<'info, RewardDistributionConfigAccount>,
+
+    #[account(
+        init,
+        seeds = [
+            RewardCollectionAccount::SEED,
+            validator_vote_account.key().as_ref(),
+            Clock::get().unwrap().epoch.to_le_bytes().as_ref(),
+        ],
+        bump,
+        payer = signer,
+        space = RewardCollectionAccount::SIZE,
+        rent_exempt = enforce
+    )]
+    pub reward_collection_account: Account<'info, RewardCollectionAccount>,
+
+    /// CHECK: The validator's vote account (used for metadata and on-chain validation).
+    pub validator_vote_account: AccountInfo<'info>,
+
+    /// CHECK: The validator's identity account (used to derive the PDA and verify authority).
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+/// Initializes a new reward collection account with Rakurai activation checks.
+#[derive(Accounts)]
+#[instruction(
+    _merkle_root_upload_authority: Pubkey,
+    _validator_commission_bps: u16,
+    _bump: u8
+)]
+pub struct InitializeRewardCollectionAccountV1<'info> {
     /// The global configuration account for Reward Distribution settings.
     pub config: Account<'info, RewardDistributionConfigAccount>,
 

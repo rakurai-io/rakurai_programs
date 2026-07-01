@@ -64,7 +64,7 @@ flowchart TD
     end
 
     subgraph rca [RCA — block rewards per vote + epoch]
-        R1[Epoch start: initialize_reward_collection_account]
+        R1[Epoch start: initialize_reward_collection_account_v1]
         R1 -->|requires enabled RAA + vote auth| RCA[RewardCollectionAccount]
         R2[Each leader turn: transfer_staker_rewards]
         R2 --> RCA
@@ -89,7 +89,7 @@ flowchart TD
 
 | Path | Phase | Instructions |
 |------|-------|--------------|
-| RCA | Epoch start | `initialize_reward_collection_account` |
+| RCA | Epoch start | `initialize_reward_collection_account_v1` (preferred) or legacy `initialize_reward_collection_account` |
 | RCA | Leader turns | `transfer_staker_rewards`, optional MEV commission ix |
 | RCA | Post-epoch | `upload_merkle_root`, `claim`, `close_claim_status` |
 | RCA | Cleanup | `close_reward_collection_account` |
@@ -121,7 +121,7 @@ flowchart TD
 
     subgraph drain [Validator leader turn]
         PRE[Prerequisite: revenue-share PDA Tip kind initialized on reward_distribution]
-        V1[change_tip_receiver]
+        V1[change_rakurai_tip_receiver]
         V1 -->|RAA enabled + vote auth| DRAIN[Drain 8 tip PDAs]
         DRAIN --> SPLIT[Split by block_builder_commission_bps]
         SPLIT --> OLD[validator_fee → old_tip_receiver]
@@ -142,11 +142,11 @@ flowchart TD
 | Step | Instruction | Who |
 |------|-------------|-----|
 | Deploy | `initialize_rakurai_tip_manager` | payer (once) |
-| Drain + rotate | `change_tip_receiver` | Rakurai-enabled validator |
+| Drain + rotate | `change_rakurai_tip_receiver` (preferred) or legacy `change_tip_receiver` | Rakurai-enabled validator |
 | Rotate builder | `change_block_builder` | config authority |
 | Shutdown | `close_rakurai_tip_manager` | config authority |
 
-**Corner cases:** Current drain credits `old_tip_receiver`, not `new_tip_receiver`. First drain after tip-manager init credits init payer until config already points at the revenue-share PDA. Revenue-share vault must exist before `change_tip_receiver` succeeds.
+**Corner cases:** Current drain credits `old_tip_receiver`, not `new_tip_receiver`. First drain after tip-manager init credits init payer until config already points at TCA. TCA must exist before `change_rakurai_tip_receiver` succeeds.
 
 ---
 
@@ -159,12 +159,12 @@ sequenceDiagram
     participant TM as rakurai_tip_manager
 
     Note over Act: RAA enabled (2/2)
-    RD->>RD: initialize_reward_collection_account
+    RD->>RD: initialize_reward_collection_account_v1
     RD->>RD: initialize_revenue_share_account (Tip, Rakurai)
     loop Leader turns
         RD->>RD: transfer_staker_rewards
         RD->>RD: record_revenue
-        TM->>TM: change_tip_receiver → revenue-share PDA
+        TM->>TM: change_rakurai_tip_receiver → TCA PDA
     end
     Note over RD: Post-epoch
     RD->>RD: upload_merkle_root + claim

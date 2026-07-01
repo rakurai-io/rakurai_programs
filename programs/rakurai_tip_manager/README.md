@@ -64,7 +64,7 @@ These accounts are empty state accounts that hold SOL (lamports). When tips are 
 
 1. **Users send tips** → Tips are sent to any of the eight tip accounts via standard SOL transfers
 2. **Tips accumulate** → Tips accumulate in the tip accounts until claimed
-3. **Validator claims tips** → Validator calls `change_tip_receiver` to drain all accounts and rotate config receiver to their Rakurai Tips Collection Account (TCA) PDA
+3. **Validator claims tips** → `change_tip_receiver_v1` (or legacy `change_tip_receiver`) drains tips and rotates config receiver to TCA
 4. **Automatic split** → Tips are automatically split:
    - Block builder commission → `block_builder_commission_account`
    - Remaining tips → `old_tip_receiver` (current config receiver)
@@ -74,7 +74,7 @@ These accounts are empty state accounts that hold SOL (lamports). When tips are 
 
 ## Integration with Reward Distribution
 
-Tips land on the **TCA** (`TipsCollectionAccount`) PDA via `change_tip_receiver`. Validator `record_revenue` each turn; Rakurai `claim_revenue` post-epoch.
+Tips land on the **TCA** via `change_tip_receiver_v1` (preferred). Legacy `change_tip_receiver` remains for existing clients.
 
 Prerequisite: `initialize_revenue_share_account` (`share_kind = Tip`, name `"Rakurai"`) before the first drain. PDA: `[REVENUE_SHARE, "TIP", "Rakurai", validator_vote]`.
 

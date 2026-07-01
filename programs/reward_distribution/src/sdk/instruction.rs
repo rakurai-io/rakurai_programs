@@ -69,17 +69,16 @@ pub struct InitializeRewardCollectionAccountArgs {
     pub bump: u8,
 }
 
-/// Accounts needed to initialize the reward collection account.
+/// Accounts needed to initialize the reward collection account (legacy).
 pub struct InitializeRewardCollectionAccountAccounts {
     pub config: Pubkey,
+    pub reward_collection_account: Pubkey,
+    pub validator_vote_account: Pubkey,
     pub signer: Pubkey,
     pub system_program: Pubkey,
-    pub reward_collection_account: Pubkey,
-    pub rakurai_activation_account: Pubkey,
-    pub validator_vote_account: Pubkey,
 }
 
-/// Builds the instruction to initialize the reward collection account.
+/// Builds the instruction to initialize the reward collection account (legacy).
 pub fn initialize_reward_collection_account_ix(
     program_id: Pubkey,
     args: InitializeRewardCollectionAccountArgs,
@@ -96,10 +95,9 @@ pub fn initialize_reward_collection_account_ix(
     let InitializeRewardCollectionAccountAccounts {
         config,
         reward_collection_account,
-        rakurai_activation_account,
-        system_program,
         validator_vote_account,
         signer,
+        system_program,
     } = accounts;
 
     Instruction {
@@ -114,11 +112,65 @@ pub fn initialize_reward_collection_account_ix(
         .data(),
         accounts: crate::accounts::InitializeRewardCollectionAccount {
             config,
+            reward_collection_account,
+            validator_vote_account,
             signer,
             system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+/// Accounts needed to initialize the reward collection account with RAA checks.
+pub struct InitializeRewardCollectionAccountV1Accounts {
+    pub config: Pubkey,
+    pub reward_collection_account: Pubkey,
+    pub rakurai_activation_account: Pubkey,
+    pub validator_vote_account: Pubkey,
+    pub signer: Pubkey,
+    pub system_program: Pubkey,
+}
+
+/// Builds the instruction to initialize the reward collection account with RAA checks.
+pub fn initialize_reward_collection_account_v1_ix(
+    program_id: Pubkey,
+    args: InitializeRewardCollectionAccountArgs,
+    accounts: InitializeRewardCollectionAccountV1Accounts,
+) -> Instruction {
+    let InitializeRewardCollectionAccountArgs {
+        merkle_root_upload_authority,
+        block_reward_commission_bps,
+        block_builder_commission_account,
+        block_builder_commission_bps,
+        bump,
+    } = args;
+
+    let InitializeRewardCollectionAccountV1Accounts {
+        config,
+        reward_collection_account,
+        rakurai_activation_account,
+        validator_vote_account,
+        signer,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::InitializeRewardCollectionAccountV1 {
+            merkle_root_upload_authority,
+            block_reward_commission_bps,
+            block_builder_commission_account,
+            block_builder_commission_bps,
+            bump,
+        }
+        .data(),
+        accounts: crate::accounts::InitializeRewardCollectionAccountV1 {
+            config,
             reward_collection_account,
             rakurai_activation_account,
             validator_vote_account,
+            signer,
+            system_program,
         }
         .to_account_metas(None),
     }

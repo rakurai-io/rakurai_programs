@@ -60,7 +60,8 @@ Vote binding (where applicable): vote account owned by vote program; `VoteState`
 
 | Instruction | Signer | Vote account | Extra auth |
 |-------------|--------|--------------|------------|
-| initialize_reward_collection_account | validator identity | required | Enabled RAA PDA; vote node == signer |
+| initialize_reward_collection_account | validator identity | required | vote node == signer (legacy; no RAA) |
+| initialize_reward_collection_account_v1 | validator identity | required | Enabled RAA PDA; vote node == signer |
 | upload_merkle_root | merkle_root_upload_authority | — | — |
 | claim_revenue | manager_authority | — | — |
 | update_revenue_share_config | manager_authority | — | — |
@@ -77,7 +78,9 @@ Vote binding (where applicable): vote account owned by vote program; `VoteState`
 
 ## Instruction Accounts (RCA)
 
-**initialize_reward_collection_account**: config, reward_collection_account (init), rakurai_activation_account, validator_vote_account, signer, system_program.
+**initialize_reward_collection_account** (legacy): config, reward_collection_account (init), validator_vote_account, signer, system_program.
+
+**initialize_reward_collection_account_v1**: config, reward_collection_account (init), rakurai_activation_account, validator_vote_account, signer, system_program.
 
 **transfer_staker_rewards**: validator_vote_account, block_builder_commission_account (mut), reward_collection_account (mut), system_program, signer (mut).
 

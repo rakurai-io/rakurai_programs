@@ -1,6 +1,7 @@
 //! This module contains functions that build instructions to interact with the block-reward-distribution program.
 use anchor_lang::{
-    prelude::Pubkey, solana_program::instruction::Instruction, InstructionData, ToAccountMetas,
+    prelude::Pubkey, solana_program::instruction::AccountMeta,
+    solana_program::instruction::Instruction, InstructionData, ToAccountMetas,
 };
 
 use crate::RakuraiTipManagerBumps;
@@ -123,12 +124,10 @@ pub fn close_rakurai_tip_manager_ix(
 
 pub struct ChangeTipReceiverArgs;
 
+/// Legacy account list (unchanged for existing clients).
 pub struct ChangeTipReceiverAccounts {
     pub tip_manager_config: Pubkey,
-    pub rakurai_activation_account: Pubkey,
-    pub validator_vote_account: Pubkey,
     pub old_tip_receiver: Pubkey,
-    pub reward_distribution_program: Pubkey,
     pub new_tip_receiver: Pubkey,
     pub block_builder_commission_account: Pubkey,
     pub rakurai_tip_account_0: Pubkey,
@@ -142,7 +141,7 @@ pub struct ChangeTipReceiverAccounts {
     pub signer: Pubkey,
 }
 
-/// Builds the instruction to drain pending tips and rotate the tip receiver.
+/// Builds the legacy instruction to drain pending tips and rotate the tip receiver.
 pub fn change_tip_receiver_ix(
     program_id: Pubkey,
     _args: ChangeTipReceiverArgs,
@@ -150,10 +149,7 @@ pub fn change_tip_receiver_ix(
 ) -> Instruction {
     let ChangeTipReceiverAccounts {
         tip_manager_config,
-        rakurai_activation_account,
-        validator_vote_account,
         old_tip_receiver,
-        reward_distribution_program,
         new_tip_receiver,
         block_builder_commission_account,
         rakurai_tip_account_0,
@@ -172,10 +168,7 @@ pub fn change_tip_receiver_ix(
         data: crate::instruction::ChangeTipReceiver {}.data(),
         accounts: crate::accounts::ChangeTipReceiver {
             tip_manager_config,
-            rakurai_activation_account,
-            validator_vote_account,
             old_tip_receiver,
-            reward_distribution_program,
             new_tip_receiver,
             block_builder_commission_account,
             rakurai_tip_account_0,
@@ -189,6 +182,74 @@ pub fn change_tip_receiver_ix(
             signer,
         }
         .to_account_metas(None),
+    }
+}
+
+pub struct ChangeTipReceiverV1Args;
+
+pub struct ChangeTipReceiverV1Accounts {
+    pub tip_manager_config: Pubkey,
+    pub old_tip_receiver: Pubkey,
+    pub new_tip_receiver: Pubkey,
+    pub block_builder_commission_account: Pubkey,
+    pub rakurai_tip_account_0: Pubkey,
+    pub rakurai_tip_account_1: Pubkey,
+    pub rakurai_tip_account_2: Pubkey,
+    pub rakurai_tip_account_3: Pubkey,
+    pub rakurai_tip_account_4: Pubkey,
+    pub rakurai_tip_account_5: Pubkey,
+    pub rakurai_tip_account_6: Pubkey,
+    pub rakurai_tip_account_7: Pubkey,
+    pub signer: Pubkey,
+    /// Appended as `remaining_accounts[0]` (enabled RAA PDA for signer).
+    pub rakurai_activation_account: Pubkey,
+}
+
+/// Drains pending tips and rotates config to the TCA PDA (RAA + vote + TCA validation).
+pub fn change_tip_receiver_v1_ix(
+    program_id: Pubkey,
+    _args: ChangeTipReceiverV1Args,
+    accounts: ChangeTipReceiverV1Accounts,
+) -> Instruction {
+    let ChangeTipReceiverV1Accounts {
+        tip_manager_config,
+        old_tip_receiver,
+        new_tip_receiver,
+        block_builder_commission_account,
+        rakurai_tip_account_0,
+        rakurai_tip_account_1,
+        rakurai_tip_account_2,
+        rakurai_tip_account_3,
+        rakurai_tip_account_4,
+        rakurai_tip_account_5,
+        rakurai_tip_account_6,
+        rakurai_tip_account_7,
+        signer,
+        rakurai_activation_account,
+    } = accounts;
+
+    let mut account_metas = crate::accounts::ChangeTipReceiverV1 {
+        tip_manager_config,
+        old_tip_receiver,
+        new_tip_receiver,
+        block_builder_commission_account,
+        rakurai_tip_account_0,
+        rakurai_tip_account_1,
+        rakurai_tip_account_2,
+        rakurai_tip_account_3,
+        rakurai_tip_account_4,
+        rakurai_tip_account_5,
+        rakurai_tip_account_6,
+        rakurai_tip_account_7,
+        signer,
+    }
+    .to_account_metas(None);
+    account_metas.push(AccountMeta::new_readonly(rakurai_activation_account, false));
+
+    Instruction {
+        program_id,
+        data: crate::instruction::ChangeTipReceiverV1 {}.data(),
+        accounts: account_metas,
     }
 }
 
