@@ -23,10 +23,10 @@ Revenue-share PDA (reward_distribution, Tip kind): `[REVENUE_SHARE, "TIP", "Raku
 
 | Field | Type | Notes |
 |-------|------|-------|
-| authority | Pubkey | `close`, `change_block_builder` |
+| authority | Pubkey | `close`, `change_client` |
 | validator_tip_receiver_account | Pubkey | Updated on `change_tip_receiver` → tip revenue-share PDA |
-| block_builder_commission_account | Pubkey | Commission destination |
-| block_builder_commission_bps | u64 | 0–10000 |
+| client_commission_account | Pubkey | Commission destination |
+| client_commission_bps | u64 | 0–10000 |
 | bumps | RakuraiTipManagerBumps | config + 8 tip bumps |
 
 ### RakuraiTipAccount
@@ -47,13 +47,13 @@ tip_manager_config (mut, close→signer), rakurai_tip_account_0..7 (mut, close�
 
 ### ChangeTipReceiver (legacy)
 
-tip_manager_config (mut), old_tip_receiver (mut), new_tip_receiver (mut), block_builder_commission_account (mut), rakurai_tip_account_0..7 (mut), signer (mut, signer)
+tip_manager_config (mut), old_tip_receiver (mut), new_tip_receiver (mut), client_commission_account (mut), rakurai_tip_account_0..7 (mut), signer (mut, signer)
 
 No RAA, vote, or TCA validation. `new_tip_receiver` is any writable account.
 
 ### ChangeTipReceiverV1
 
-tip_manager_config (mut), old_tip_receiver (mut), **new_tip_receiver** (mut, `TipsCollectionAccount` / TCA), block_builder_commission_account (mut), rakurai_tip_account_0..7 (mut), signer (mut, signer)
+tip_manager_config (mut), old_tip_receiver (mut), **new_tip_receiver** (mut, `TipsCollectionAccount` / TCA), client_commission_account (mut), rakurai_tip_account_0..7 (mut), signer (mut, signer)
 
 **remaining_accounts:** `[0]` RAA PDA (readonly), `[1]` vote account matching TCA `validator_vote` (readonly)
 
@@ -64,16 +64,16 @@ tip_manager_config (mut), old_tip_receiver (mut), **new_tip_receiver** (mut, `Ti
 
 **auth** (manual deserialize): RAA enabled + `validator_authority == signer`; vote node == signer; vote key == TCA `validator_vote`
 
-### ChangeBlockBuilder
+### ChangeClient
 
-tip_manager_config (mut), validator_tip_receiver_account (mut), old_block_builder (mut), new_block_builder (mut), rakurai_tip_account_0..7 (mut), signer (mut, signer)
+tip_manager_config (mut), validator_tip_receiver_account (mut), old_client (mut), new_client (mut), rakurai_tip_account_0..7 (mut), signer (mut, signer)
 
 ---
 
 ## Drain Logic
 
 1. Drain 8 PDAs → `total_tips` (preserve rent each)
-2. `block_builder_fee = total * bps / 10000`
+2. `client_fee = total * bps / 10000`
 3. Credit **old** tip receiver + commission accounts (not `new_tip_receiver`)
 4. `change_tip_receiver` / `change_rakurai_tip_receiver`: update `validator_tip_receiver_account` to `new_tip_receiver`
 

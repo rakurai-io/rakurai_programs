@@ -35,7 +35,7 @@ Auth: signer = vote node pubkey. `reconfirm_commission` if bps < 10000.
 | `--disable_scheduler` | `-d` | no | enable |
 | `--hash` | `-s` | no | — |
 
-Auth: identity OR `block_builder_authority`. `grant_approval` ix arg = `disable_scheduler` CLI field.
+Auth: identity OR `client_authority`. `grant_approval` ix arg = `disable_scheduler` CLI field.
 
 ### `update-commission`
 
@@ -44,7 +44,7 @@ Auth: identity OR `block_builder_authority`. `grant_approval` ix arg = `disable_
 | `--identity_pubkey` | `-i` | yes |
 | `--block_reward_commission_bps` | `-c`, `--commission_bps` | yes |
 
-Auth: validator OR block builder. Aborts if unchanged.
+Auth: validator OR client. Aborts if unchanged.
 
 ### `show`
 
@@ -64,7 +64,7 @@ Read-only fetch; no signer required.
 |------|-------|----------|---------|
 | `--commission_bps` | `-c` | yes |
 | `--commission_account` | `-a` | yes |
-| `--authority` | `-b` | yes (block builder) |
+| `--authority` | `-b` | yes (client) |
 | `--config_authority` | `-x` | yes |
 
 ### `show-config`
@@ -77,7 +77,7 @@ No extra args.
 |------|-------|----------|---------|
 | `--identity_pubkey` | `-i` | yes |
 
-Auth: `block_builder_authority`.
+Auth: `client_authority`.
 
 ---
 
@@ -117,8 +117,8 @@ Anchor ix → Solana ix: map `ix.accounts` to `AccountMeta` with `Pubkey::new_fr
 
 ## Tip Manager & RCA CLI Accounts (reference)
 
-**change_tip_receiver**: config, rakurai_activation_account (PDA `[RAA_SEED, signer]`), validator_vote_account, old_tip_receiver, new_tip_receiver, block_builder_commission_account, 8 tip PDAs, validator identity signer.
+**change_tip_receiver**: config, rakurai_activation_account (PDA `[RAA_SEED, signer]`), validator_vote_account, old_tip_receiver, new_tip_receiver, client_commission_account, 8 tip PDAs, validator identity signer.
 
-**transfer_staker_rewards** (RD): validator_vote_account, block_builder_commission_account, reward_collection_account, system_program, validator identity signer.
+**transfer_staker_rewards** (RD): validator_vote_account, client_commission_account, reward_collection_account, system_program, validator identity signer.
 
 RCA credit after drain: separate off-chain lamport transfer using `derive_reward_collection_account_address(rd_id, vote, epoch)`.

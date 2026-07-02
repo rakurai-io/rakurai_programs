@@ -3,7 +3,7 @@ name: reward-distribution
 description: >-
   Rakurai Reward Distribution program (RCA, Merkle claims, revenue-share
   tip/backrun PDAs). Use for reward distribution, RCA, revenue-share vaults,
-  Merkle claims, block builder commission, or reward-distribution CLI work.
+  Merkle claims, client commission, or reward-distribution CLI work.
 ---
 
 # Rakurai Reward Distribution
@@ -43,7 +43,7 @@ RevenueShareAccount (share_kind = Tip | Backrun) ── per (kind, revenue label
 | Category | Instructions |
 |----------|-------------|
 | Config | `initialize`, `update_config`, `close_config` |
-| RCA | `initialize_reward_collection_account` (legacy), `initialize_reward_collection_account_v1` (preferred), `upload_merkle_root`, `transfer_staker_rewards`, `transfer_block_builder_commission_on_mev_commission`, `close_reward_collection_account` |
+| RCA | `initialize_reward_collection_account` (legacy), `initialize_reward_collection_account_v1` (preferred), `upload_merkle_root`, `transfer_staker_rewards`, `transfer_client_commission_on_mev_commission`, `close_reward_collection_account` |
 | Claims | `claim`, `close_claim_status` |
 | Revenue share (unified; `share_kind` arg/stored) | `initialize_revenue_share_account` (takes `share_kind`), `record_revenue`, `claim_revenue`, `update_revenue_share_config`, `update_epoch_converted_to_block_reward`, `close_revenue_share_account` |
 

@@ -33,7 +33,7 @@ flowchart TD
 
     subgraph ongoing [Ongoing]
         C1[Validator: update_rakurai_activation_commission]
-        X1[Block builder: close_rakurai_activation_account]
+        X1[Client: close_rakurai_activation_account]
     end
 
     setup --> perValidator
@@ -49,7 +49,7 @@ flowchart TD
 | Enable | `update_rakurai_activation_approval` (propose → approve) | validator + Rakurai |
 | Disable | `update_rakurai_activation_approval` | validator **or** Rakurai |
 | Commission | `update_rakurai_activation_commission` | validator |
-| Close RAA | `close_rakurai_activation_account` | block builder authority |
+| Close RAA | `close_rakurai_activation_account` | client authority |
 
 ---
 
@@ -123,14 +123,14 @@ flowchart TD
         PRE[Prerequisite: revenue-share PDA Tip kind initialized on reward_distribution]
         V1[change_rakurai_tip_receiver]
         V1 -->|RAA enabled + vote auth| DRAIN[Drain 8 tip PDAs]
-        DRAIN --> SPLIT[Split by block_builder_commission_bps]
+        DRAIN --> SPLIT[Split by client_commission_bps]
         SPLIT --> OLD[validator_fee → old_tip_receiver]
-        SPLIT --> BB[block_builder_fee → commission account]
+        SPLIT --> BB[client_fee → commission account]
         V1 --> CFG2[config.validator_tip_receiver = tip revenue-share PDA]
     end
 
     subgraph admin [Admin]
-        A1[change_block_builder]
+        A1[change_client]
         A2[close_rakurai_tip_manager]
     end
 
@@ -143,7 +143,7 @@ flowchart TD
 |------|-------------|-----|
 | Deploy | `initialize_rakurai_tip_manager` | payer (once) |
 | Drain + rotate | `change_rakurai_tip_receiver` (preferred) or legacy `change_tip_receiver` | Rakurai-enabled validator |
-| Rotate builder | `change_block_builder` | config authority |
+| Rotate client | `change_client` | config authority |
 | Shutdown | `close_rakurai_tip_manager` | config authority |
 
 **Corner cases:** Current drain credits `old_tip_receiver`, not `new_tip_receiver`. First drain after tip-manager init credits init payer until config already points at TCA. TCA must exist before `change_rakurai_tip_receiver` succeeds.

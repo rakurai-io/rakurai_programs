@@ -8,24 +8,24 @@
   },
   "docs": [
     "Rakurai Tip Manager Program: users send tips to one of eight tip accounts, validators periodically drain them",
-    "and tips are split between the configured tip receiver and an block builder commission account."
+    "and tips are split between the configured tip receiver and an client commission account."
   ],
   "instructions": [
     {
-      "name": "change_block_builder",
+      "name": "change_client",
       "docs": [
-        "Changes the block builder and its commission by first draining all pending tips (distributing shares to the tip receiver",
-        "and old block builder) and then setting the new block builder and its commission."
+        "Changes the client and its commission by first draining all pending tips (distributing shares to the tip receiver",
+        "and old client) and then setting the new client and its commission."
       ],
       "discriminator": [
-        134,
-        80,
-        38,
-        137,
-        165,
-        21,
-        114,
-        123
+        110,
+        15,
+        229,
+        83,
+        227,
+        101,
+        115,
+        245
       ],
       "accounts": [
         {
@@ -72,11 +72,11 @@
           "writable": true
         },
         {
-          "name": "old_block_builder",
+          "name": "old_client",
           "writable": true
         },
         {
-          "name": "new_block_builder",
+          "name": "new_client",
           "writable": true
         },
         {
@@ -359,7 +359,7 @@
       ],
       "args": [
         {
-          "name": "block_builder_commission_bps",
+          "name": "client_commission_bps",
           "type": "u64"
         }
       ]
@@ -429,7 +429,7 @@
           "writable": true
         },
         {
-          "name": "block_builder_commission_account",
+          "name": "client_commission_account",
           "writable": true
         },
         {
@@ -779,7 +779,7 @@
           "writable": true
         },
         {
-          "name": "block_builder_commission_account",
+          "name": "client_commission_account",
           "writable": true
         },
         {
@@ -1836,7 +1836,7 @@
     {
       "code": 6001,
       "name": "MaxCommissionBpsExceeded",
-      "msg": "Block Builder commission basis points must be less than or equal to 10_000"
+      "msg": "Client commission basis points must be less than or equal to 10_000"
     },
     {
       "code": 6002,
@@ -2099,14 +2099,14 @@
             "type": "pubkey"
           },
           {
-            "name": "block_builder_commission_account",
+            "name": "client_commission_account",
             "docs": [
-              "Block builder commission account"
+              "Client commission account"
             ],
             "type": "pubkey"
           },
           {
-            "name": "block_builder_commission_bps",
+            "name": "client_commission_bps",
             "docs": [
               "Commission in basis points"
             ],
@@ -2143,11 +2143,11 @@
             "type": "u64"
           },
           {
-            "name": "block_builder_commission_account",
+            "name": "client_commission_account",
             "type": "pubkey"
           },
           {
-            "name": "block_builder_amount",
+            "name": "client_amount",
             "type": "u64"
           }
         ]

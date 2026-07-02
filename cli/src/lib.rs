@@ -176,7 +176,7 @@ pub fn display_activation_config_account(
         "💰".green(),
         "Commission:",
         activation_config_account
-            .block_builder_commission_bps
+            .client_commission_bps
             .to_string()
             .magenta()
     );
@@ -185,7 +185,7 @@ pub fn display_activation_config_account(
         "🏦".cyan(),
         "Commission Account:",
         activation_config_account
-            .block_builder_commission_account
+            .client_commission_account
             .to_string()
     );
     println!(
@@ -193,7 +193,7 @@ pub fn display_activation_config_account(
         "🔑".red(),
         "Authority:",
         activation_config_account
-            .block_builder_authority
+            .client_authority
             .to_string()
             .magenta()
     );

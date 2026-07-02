@@ -22,9 +22,9 @@ SDK: `derive_config_account_address`, `derive_activation_account_address`.
 | Field | Type | Notes |
 |-------|------|-------|
 | authority | Pubkey | `update_config` |
-| block_builder_authority | Pubkey | Scheduler co-signer; block-builder commission updates |
-| block_builder_commission_bps | u16 | 0–10000 |
-| block_builder_commission_account | Pubkey | Non-default required |
+| client_authority | Pubkey | Scheduler co-signer; client commission updates |
+| client_commission_bps | u16 | 0–10000 |
+| client_commission_account | Pubkey | Non-default required |
 | bump | u8 | |
 
 ### RakuraiActivationAccount
@@ -35,9 +35,9 @@ SDK: `derive_config_account_address`, `derive_activation_account_address`.
 | proposer | Option\<Pubkey\> | Pending multisig proposer |
 | validator_authority | Pubkey | Identity |
 | block_reward_commission_bps | u16 | Validator retention |
-| block_builder_commission_bps | u16 | Per-RAA; block builder can update |
+| client_commission_bps | u16 | Per-RAA; client can update |
 | bump | u8 | |
-| hash | Option\<[u8; 64]\> | Block builder scheduler hash |
+| hash | Option\<[u8; 64]\> | Client scheduler hash |
 
 ---
 
@@ -48,9 +48,9 @@ SDK: `derive_config_account_address`, `derive_activation_account_address`.
 | initialize | initializer (payer) |
 | update_config | authority |
 | initialize_rakurai_activation_account | validator identity |
-| update_rakurai_activation_approval | validator or block builder |
-| update_rakurai_activation_commission | validator or block builder |
-| close_rakurai_activation_account | block_builder_authority |
+| update_rakurai_activation_approval | validator or client |
+| update_rakurai_activation_commission | validator or client |
+| close_rakurai_activation_account | client_authority |
 
 ---
 
@@ -79,12 +79,12 @@ SDK: `derive_config_account_address`, `derive_activation_account_address`.
 | proposer | Signer | Effect |
 |----------|--------|--------|
 | None | validator | `proposer = signer` |
-| None | block builder | `proposer = signer`, hash required |
+| None | client | `proposer = signer`, hash required |
 | Some(s) == signer | either | no-op ("Proposal Pending") |
 | Some(s) != signer | validator | `proposer = None`, `is_enabled = true` |
-| Some(s) != signer | block builder | hash required; then enable |
+| Some(s) != signer | client | hash required; then enable |
 
-`grant_approval = true`, `is_enabled = true`, block builder signer: updates `hash` only.
+`grant_approval = true`, `is_enabled = true`, client signer: updates `hash` only.
 
 ---
 
@@ -94,7 +94,7 @@ SDK: `derive_config_account_address`, `derive_activation_account_address`.
 |------|------|
 | AccountValidationFailure | Invalid pubkeys / validate() |
 | MaxCommissionBpsExceeded | bps > 10_000 |
-| MissingHashForEnable | Block builder enable without hash |
+| MissingHashForEnable | Client enable without hash |
 | Unauthorized | Wrong signer / vote owner mismatch |
 | ArithmeticError | Lamport overflow on close |
 

@@ -3,13 +3,13 @@ name: rakurai-activation
 description: >-
   Rakurai Activation on-chain program (RAA, config PDA), multisig scheduler
   enable/disable, and validator commission settings. Use for rakurai activation,
-  RAA, scheduler control, validator commission, block builder authority, or the
+  RAA, scheduler control, validator commission, client authority, or the
   rakurai-activation CLI.
 ---
 
 # Rakurai Activation
 
-`programs/rakurai_activation/`. Gates Rakurai scheduler use; stores per-validator commission. **RAA** PDA per validator identity; singleton **config PDA** for global block-builder settings.
+`programs/rakurai_activation/`. Gates Rakurai scheduler use; stores per-validator commission. **RAA** PDA per validator identity; singleton **config PDA** for global client settings.
 
 **Source**: `lib.rs`, `state.rs`, `sdk/`. **Tables**: [reference.md](reference.md).
 
@@ -19,7 +19,7 @@ description: >-
 
 ```
 RakuraiActivationConfigAccount (singleton)
-  authority, block_builder_authority, commission account/bps
+  authority, client_authority, commission account/bps
         │
         ▼ read at RAA init
 RakuraiActivationAccount per validator_identity
@@ -34,7 +34,7 @@ RakuraiActivationAccount per validator_identity
 | Disable | 1/2 — either party revokes |
 | Re-enable | 2/2 again |
 
-Block builder must pass `hash: Some([u8;64])` on final enable accept.
+Client must pass `hash: Some([u8;64])` on final enable accept.
 
 **Commission**: `block_reward_commission_bps` independent of Solana vote commission. Updates apply current epoch if no RCA yet, else next epoch (client convention).
 
@@ -44,7 +44,7 @@ Block builder must pass `hash: Some([u8;64])` on final enable accept.
 
 | Account | Role |
 |---------|------|
-| `RakuraiActivationConfigAccount` | Singleton; block builder authority, commission |
+| `RakuraiActivationConfigAccount` | Singleton; client authority, commission |
 | `RakuraiActivationAccount` | Per-validator; scheduler, commissions, proposer, hash |
 
 | Category | Instructions |
@@ -57,10 +57,10 @@ Block builder must pass `hash: Some([u8;64])` on final enable accept.
 ## Activation Flow
 
 1. **Config** (once): `initialize` — admin CLI `init-config`.
-2. **RAA init**: identity signs (must match vote node pubkey); `is_enabled = false`; copies block-builder bps from config.
+2. **RAA init**: identity signs (must match vote node pubkey); `is_enabled = false`; copies client bps from config.
 3. **Enable** (2 txs): party A `update_rakurai_activation_approval(true)` → proposer; party B same ix → `is_enabled = true`.
 4. **Disable** (1 tx): either party `grant_approval: false` — clears enabled/proposer/hash.
-5. **Commission**: `update_rakurai_activation_commission` — validator updates `block_reward_commission_bps`; block builder updates `block_builder_commission_bps`.
+5. **Commission**: `update_rakurai_activation_commission` — validator updates `block_reward_commission_bps`; client updates `client_commission_bps`.
 
 ---
 

@@ -1,6 +1,6 @@
 # Rakurai Tip Manager Program
 
-A Solana smart contract for managing tips sent to validators. The program maintains **eight tip accounts** to reduce write-lock contention and automatically splits tips between the validator's tip receiver account and the block builder commission account.
+A Solana smart contract for managing tips sent to validators. The program maintains **eight tip accounts** to reduce write-lock contention and automatically splits tips between the validator's tip receiver account and the client commission account.
 
 ➤ For more details, refer to the [IDL File](./idl/rakurai_tip_manager.json).
 
@@ -34,8 +34,8 @@ A Solana smart contract for managing tips sent to validators. The program mainta
 
 The Rakurai Tip Manager Program uses a **singleton configuration account** (`TipManagerConfigAccount`) that controls:
 - The **validator tip receiver account** — where validator tips are sent
-- The **block builder commission account** — where block builder commission is sent
-- The **block builder commission rate** (in basis points, 0–10000)
+- The **client commission account** — where client commission is sent
+- The **client commission rate** (in basis points, 0–10000)
 
 The program maintains **eight separate tip accounts** (PDAs) to minimize account write-lock contention when multiple transactions send tips simultaneously. Users can send tips to any of these eight accounts.
 
@@ -50,8 +50,8 @@ A singleton PDA that stores the program configuration:
 - **Fields**:
   - `authority` — Authorized updater of the config
   - `validator_tip_receiver_account` — Account receiving validator tips
-  - `block_builder_commission_account` — Block builder commission account
-  - `block_builder_commission_bps` — Commission in basis points (0–10000)
+  - `client_commission_account` — client commission account
+  - `client_commission_bps` — Commission in basis points (0–10000)
   - `bumps` — PDA bump seeds for all tip accounts
 
 ### RakuraiTipAccounts
@@ -66,7 +66,7 @@ These accounts are empty state accounts that hold SOL (lamports). When tips are 
 2. **Tips accumulate** → Tips accumulate in the tip accounts until claimed
 3. **Validator claims tips** → `change_tip_receiver_v1` (or legacy `change_tip_receiver`) drains tips and rotates config receiver to TCA
 4. **Automatic split** → Tips are automatically split:
-   - Block builder commission → `block_builder_commission_account`
+   - client commission → `client_commission_account`
    - Remaining tips → `old_tip_receiver` (current config receiver)
 5. **Config update** → `validator_tip_receiver_account` set to the Rakurai Tips Collection Account (TCA) PDA for this validator vote
 

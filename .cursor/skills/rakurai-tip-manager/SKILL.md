@@ -3,12 +3,12 @@ name: rakurai-tip-manager
 description: >-
   Rakurai Tip Manager on-chain program (8 tip PDAs, config singleton), tip draining,
   and commission split. Use for tip manager, change_tip_receiver, tip
-  accounts, block builder commission on tips, or integrating tips with revenue-share vaults.
+  accounts, client commission on tips, or integrating tips with revenue-share vaults.
 ---
 
 # Rakurai Tip Manager
 
-`programs/rakurai_tip_manager/`. Users send SOL to **8 tip PDAs** (write-lock sharding). Validators drain via **`change_tip_receiver`** (Rakurai-enabled validator + vote) or **`change_block_builder`** (authority rotates block builder).
+`programs/rakurai_tip_manager/`. Users send SOL to **8 tip PDAs** (write-lock sharding). Validators drain via **`change_tip_receiver`** (Rakurai-enabled validator + vote) or **`change_client`** (authority rotates client).
 
 **Source**: `lib.rs`, `sdk/`. **Tables**: [reference.md](reference.md).
 
@@ -24,7 +24,7 @@ Users ──SOL──► any tip PDA
 
 change_tip_receiver: drain → old_tip_receiver + commission; config → tip receiver (legacy)
 change_rakurai_tip_receiver: same drain; RAA + vote + TCA validation; config → TCA PDA
-change_block_builder: drain → validator receiver + old builder; update builder (authority)
+change_client: drain → validator receiver + old client; update client (authority)
 ```
 
 No reward_distribution CPI. Drained lamports land on `old_tip_receiver`; config `validator_tip_receiver_account` is set to the Rakurai **TCA** PDA for subsequent drains.
@@ -39,7 +39,7 @@ No reward_distribution CPI. Drained lamports land on `old_tip_receiver`; config 
 | `close_rakurai_tip_manager` | authority | Close all; reclaim rent |
 | `change_tip_receiver` | Rakurai validator identity | Legacy drain + rotate (no RAA/vote/TCA checks) |
 | `change_rakurai_tip_receiver` | Rakurai-enabled validator | Drain + rotate; RAA enabled, vote auth, TCA PDA enforced |
-| `change_block_builder` | authority | Drain → validator receiver + old builder; update builder |
+| `change_client` | authority | Drain → validator receiver + old client; update client |
 
 `change_tip_receiver` auth: signer only (legacy). `change_rakurai_tip_receiver` auth: enabled RAA PDA; vote node == signer; `new_tip_receiver` must be `[REVENUE_SHARE, "TIP", "Rakurai", vote]` PDA (pass `reward_distribution_program`).
 
@@ -66,7 +66,7 @@ use rakurai_tip_manager::sdk::{
 };
 ```
 
-Builders: `initialize_rakurai_tip_manager_ix`, `close_rakurai_tip_manager_ix`, `change_tip_receiver_ix`, `change_rakurai_tip_receiver_ix`, `change_block_builder_ix`.
+Builders: `initialize_rakurai_tip_manager_ix`, `close_rakurai_tip_manager_ix`, `change_tip_receiver_ix`, `change_rakurai_tip_receiver_ix`, `change_client_ix`.
 
 ---
 

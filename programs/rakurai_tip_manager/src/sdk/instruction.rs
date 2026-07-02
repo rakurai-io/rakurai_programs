@@ -129,7 +129,7 @@ pub struct ChangeTipReceiverAccounts {
     pub tip_manager_config: Pubkey,
     pub old_tip_receiver: Pubkey,
     pub new_tip_receiver: Pubkey,
-    pub block_builder_commission_account: Pubkey,
+    pub client_commission_account: Pubkey,
     pub rakurai_tip_account_0: Pubkey,
     pub rakurai_tip_account_1: Pubkey,
     pub rakurai_tip_account_2: Pubkey,
@@ -151,7 +151,7 @@ pub fn change_tip_receiver_ix(
         tip_manager_config,
         old_tip_receiver,
         new_tip_receiver,
-        block_builder_commission_account,
+        client_commission_account,
         rakurai_tip_account_0,
         rakurai_tip_account_1,
         rakurai_tip_account_2,
@@ -170,7 +170,7 @@ pub fn change_tip_receiver_ix(
             tip_manager_config,
             old_tip_receiver,
             new_tip_receiver,
-            block_builder_commission_account,
+            client_commission_account,
             rakurai_tip_account_0,
             rakurai_tip_account_1,
             rakurai_tip_account_2,
@@ -191,7 +191,7 @@ pub struct ChangeTipReceiverV1Accounts {
     pub tip_manager_config: Pubkey,
     pub old_tip_receiver: Pubkey,
     pub new_tip_receiver: Pubkey,
-    pub block_builder_commission_account: Pubkey,
+    pub client_commission_account: Pubkey,
     pub rakurai_tip_account_0: Pubkey,
     pub rakurai_tip_account_1: Pubkey,
     pub rakurai_tip_account_2: Pubkey,
@@ -217,7 +217,7 @@ pub fn change_tip_receiver_v1_ix(
         tip_manager_config,
         old_tip_receiver,
         new_tip_receiver,
-        block_builder_commission_account,
+        client_commission_account,
         rakurai_tip_account_0,
         rakurai_tip_account_1,
         rakurai_tip_account_2,
@@ -235,7 +235,7 @@ pub fn change_tip_receiver_v1_ix(
         tip_manager_config,
         old_tip_receiver,
         new_tip_receiver,
-        block_builder_commission_account,
+        client_commission_account,
         rakurai_tip_account_0,
         rakurai_tip_account_1,
         rakurai_tip_account_2,
@@ -259,15 +259,15 @@ pub fn change_tip_receiver_v1_ix(
     }
 }
 
-pub struct ChangeBlockBuilderArgs {
-    pub block_builder_commission_bps: u64,
+pub struct ChangeClientArgs {
+    pub client_commission_bps: u64,
 }
 
-pub struct ChangeBlockBuilderAccounts {
+pub struct ChangeClientAccounts {
     pub tip_manager_config: Pubkey,
     pub validator_tip_receiver_account: Pubkey,
-    pub old_block_builder: Pubkey,
-    pub new_block_builder: Pubkey,
+    pub old_client: Pubkey,
+    pub new_client: Pubkey,
     pub rakurai_tip_account_0: Pubkey,
     pub rakurai_tip_account_1: Pubkey,
     pub rakurai_tip_account_2: Pubkey,
@@ -280,20 +280,20 @@ pub struct ChangeBlockBuilderAccounts {
 }
 
 /// Builds the instruction to initialize tip manager program.
-pub fn change_block_builder_ix(
+pub fn change_client_ix(
     program_id: Pubkey,
-    args: ChangeBlockBuilderArgs,
-    accounts: ChangeBlockBuilderAccounts,
+    args: ChangeClientArgs,
+    accounts: ChangeClientAccounts,
 ) -> Instruction {
-    let ChangeBlockBuilderArgs {
-        block_builder_commission_bps,
+    let ChangeClientArgs {
+        client_commission_bps,
     } = args;
 
-    let ChangeBlockBuilderAccounts {
+    let ChangeClientAccounts {
         tip_manager_config,
         validator_tip_receiver_account,
-        old_block_builder,
-        new_block_builder,
+        old_client,
+        new_client,
         rakurai_tip_account_0,
         rakurai_tip_account_1,
         rakurai_tip_account_2,
@@ -307,15 +307,15 @@ pub fn change_block_builder_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::ChangeBlockBuilder {
-            block_builder_commission_bps,
+        data: crate::instruction::ChangeClient {
+            client_commission_bps,
         }
         .data(),
-        accounts: crate::accounts::ChangeBlockBuilder {
+        accounts: crate::accounts::ChangeClient {
             tip_manager_config,
             validator_tip_receiver_account,
-            old_block_builder,
-            new_block_builder,
+            old_client,
+            new_client,
             rakurai_tip_account_0,
             rakurai_tip_account_1,
             rakurai_tip_account_2,

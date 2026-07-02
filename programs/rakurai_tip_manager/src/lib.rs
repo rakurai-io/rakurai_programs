@@ -56,7 +56,7 @@ pub const RAKURAI_REVENUE_NAME: [u8; 32] = {
 };
 
 /// Rakurai Tip Manager Program: users send tips to one of eight tip accounts, validators periodically drain them
-/// and tips are split between the configured tip receiver and an block builder commission account.
+/// and tips are split between the configured tip receiver and an client commission account.
 #[program]
 pub mod rakurai_tip_manager {
     use super::*;
@@ -70,8 +70,8 @@ pub mod rakurai_tip_manager {
         let cfg = &mut ctx.accounts.tip_manager_config;
 
         cfg.validator_tip_receiver_account = ctx.accounts.payer.key();
-        cfg.block_builder_commission_account = ctx.accounts.payer.key();
-        cfg.block_builder_commission_bps = MAX_COMMISSION_BPS;
+        cfg.client_commission_account = ctx.accounts.payer.key();
+        cfg.client_commission_bps = MAX_COMMISSION_BPS;
         cfg.authority = ctx.accounts.payer.key();
 
         cfg.bumps = bumps;
@@ -148,7 +148,7 @@ pub mod rakurai_tip_manager {
             &mut ctx.accounts.tip_manager_config,
             &ctx.accounts.old_tip_receiver,
             &ctx.accounts.new_tip_receiver,
-            &ctx.accounts.block_builder_commission_account,
+            &ctx.accounts.client_commission_account,
             tip_accounts,
         )?;
         Ok(())
@@ -163,7 +163,7 @@ pub mod rakurai_tip_manager {
             &mut ctx.accounts.tip_manager_config,
             &ctx.accounts.old_tip_receiver,
             &new_tip_receiver,
-            &ctx.accounts.block_builder_commission_account,
+            &ctx.accounts.client_commission_account,
             tip_accounts,
         )?;
         if validator_fee > 0 {
@@ -189,28 +189,28 @@ pub mod rakurai_tip_manager {
         Ok(())
     }
 
-    /// Changes the block builder and its commission by first draining all pending tips (distributing shares to the tip receiver
-    /// and old block builder) and then setting the new block builder and its commission.
-    pub fn change_block_builder(
-        ctx: Context<ChangeBlockBuilder>,
-        block_builder_commission_bps: u64,
+    /// Changes the client and its commission by first draining all pending tips (distributing shares to the tip receiver
+    /// and old client) and then setting the new client and its commission.
+    pub fn change_client(
+        ctx: Context<ChangeClient>,
+        client_commission_bps: u64,
     ) -> Result<()> {
-        ChangeBlockBuilder::auth(&ctx)?;
+        ChangeClient::auth(&ctx)?;
         require_gte!(
             MAX_COMMISSION_BPS,
-            block_builder_commission_bps,
+            client_commission_bps,
             RakuraiTipManagerError::MaxCommissionBpsExceeded
         );
         let total_tips = RakuraiTipAccount::drain_accounts(ctx.accounts.get_tip_accounts())?;
 
-        let block_builder_fee = total_tips
-            .checked_mul(ctx.accounts.tip_manager_config.block_builder_commission_bps)
+        let client_fee = total_tips
+            .checked_mul(ctx.accounts.tip_manager_config.client_commission_bps)
             .ok_or(ArithmeticError)?
             .checked_div(MAX_COMMISSION_BPS)
             .ok_or(ArithmeticError)?;
 
         let validator_fee = total_tips
-            .checked_sub(block_builder_fee)
+            .checked_sub(client_fee)
             .ok_or(ArithmeticError)?;
 
         if validator_fee > 0 {
@@ -220,23 +220,23 @@ pub mod rakurai_tip_manager {
                 .try_borrow_mut_lamports()? += validator_fee;
         }
 
-        if block_builder_fee > 0 {
-            **ctx.accounts.old_block_builder.try_borrow_mut_lamports()? += block_builder_fee;
+        if client_fee > 0 {
+            **ctx.accounts.old_client.try_borrow_mut_lamports()? += client_fee;
         }
 
-        if block_builder_fee > 0 || validator_fee > 0 {
+        if client_fee > 0 || validator_fee > 0 {
             emit!(TipsClaimedEvent {
                 validator_tip_receiver_account: ctx.accounts.validator_tip_receiver_account.key(),
                 tip_receiver_amount: validator_fee,
-                block_builder_commission_account: ctx.accounts.old_block_builder.key(),
-                block_builder_amount: block_builder_fee,
+                client_commission_account: ctx.accounts.old_client.key(),
+                client_amount: client_fee,
             });
         }
 
         ctx.accounts
             .tip_manager_config
-            .block_builder_commission_account = ctx.accounts.new_block_builder.key();
-        ctx.accounts.tip_manager_config.block_builder_commission_bps = block_builder_commission_bps;
+            .client_commission_account = ctx.accounts.new_client.key();
+        ctx.accounts.tip_manager_config.client_commission_bps = client_commission_bps;
 
         Ok(())
     }
@@ -246,35 +246,35 @@ fn change_tip_receiver_inner(
     tip_manager_config: &mut TipManagerConfigAccount,
     old_tip_receiver: &AccountInfo,
     new_tip_receiver: &AccountInfo,
-    block_builder_commission_account: &AccountInfo,
+    client_commission_account: &AccountInfo,
     tip_accounts: Vec<AccountInfo>,
 ) -> Result<u64> {
     let total_tips = RakuraiTipAccount::drain_accounts(tip_accounts)?;
 
-    let block_builder_fee = total_tips
-        .checked_mul(tip_manager_config.block_builder_commission_bps)
+    let client_fee = total_tips
+        .checked_mul(tip_manager_config.client_commission_bps)
         .ok_or(ArithmeticError)?
         .checked_div(MAX_COMMISSION_BPS)
         .ok_or(ArithmeticError)?;
 
     let validator_fee = total_tips
-        .checked_sub(block_builder_fee)
+        .checked_sub(client_fee)
         .ok_or(ArithmeticError)?;
 
     if validator_fee > 0 {
         **old_tip_receiver.try_borrow_mut_lamports()? += validator_fee;
     }
 
-    if block_builder_fee > 0 {
-        **block_builder_commission_account.try_borrow_mut_lamports()? += block_builder_fee;
+    if client_fee > 0 {
+        **client_commission_account.try_borrow_mut_lamports()? += client_fee;
     }
 
-    if block_builder_fee > 0 || validator_fee > 0 {
+    if client_fee > 0 || validator_fee > 0 {
         emit!(TipsClaimedEvent {
             validator_tip_receiver_account: old_tip_receiver.key(),
             tip_receiver_amount: validator_fee,
-            block_builder_commission_account: block_builder_commission_account.key(),
-            block_builder_amount: block_builder_fee,
+            client_commission_account: client_commission_account.key(),
+            client_amount: client_fee,
         });
     }
 
@@ -289,7 +289,7 @@ pub enum RakuraiTipManagerError {
     #[msg("Encountered an arithmetic under/overflow error.")]
     ArithmeticError,
 
-    #[msg("Block Builder commission basis points must be less than or equal to 10_000")]
+    #[msg("Client commission basis points must be less than or equal to 10_000")]
     MaxCommissionBpsExceeded,
 
     #[msg("Unauthorized signer.")]
@@ -517,9 +517,9 @@ pub struct ChangeTipReceiver<'info> {
     #[account(mut)]
     pub new_tip_receiver: AccountInfo<'info>,
 
-    /// CHECK: old_block_builder receives a % of funds in the RakuraiTipAccount accounts
-    #[account(mut, constraint = block_builder_commission_account.key() == tip_manager_config.block_builder_commission_account)]
-    pub block_builder_commission_account: AccountInfo<'info>,
+    /// CHECK: old_client receives a % of funds in the RakuraiTipAccount accounts
+    #[account(mut, constraint = client_commission_account.key() == tip_manager_config.client_commission_account)]
+    pub client_commission_account: AccountInfo<'info>,
 
     #[account(
         mut,
@@ -622,9 +622,9 @@ pub struct ChangeTipReceiverV1<'info> {
     #[account(mut, owner = reward_distribution::ID)]
     pub new_tip_receiver: Account<'info, TipsCollectionAccount>,
 
-    /// CHECK: old_block_builder receives a % of funds in the RakuraiTipAccount accounts
-    #[account(mut, constraint = block_builder_commission_account.key() == tip_manager_config.block_builder_commission_account)]
-    pub block_builder_commission_account: AccountInfo<'info>,
+    /// CHECK: old_client receives a % of funds in the RakuraiTipAccount accounts
+    #[account(mut, constraint = client_commission_account.key() == tip_manager_config.client_commission_account)]
+    pub client_commission_account: AccountInfo<'info>,
 
     #[account(
         mut,
@@ -769,7 +769,7 @@ impl<'info> ChangeTipReceiverV1<'info> {
 }
 
 #[derive(Accounts)]
-pub struct ChangeBlockBuilder<'info> {
+pub struct ChangeClient<'info> {
     #[account(
         mut,
         seeds = [TIP_MANAGER_CONFIG_ACCOUNT_SEED],
@@ -782,13 +782,13 @@ pub struct ChangeBlockBuilder<'info> {
     #[account(mut, constraint = validator_tip_receiver_account.key() == tip_manager_config.validator_tip_receiver_account)]
     pub validator_tip_receiver_account: AccountInfo<'info>,
 
-    /// CHECK: old_block_builder receives a % of funds in the RakuraiTipAccount accounts
-    #[account(mut, constraint = old_block_builder.key() == tip_manager_config.block_builder_commission_account)]
-    pub old_block_builder: AccountInfo<'info>,
+    /// CHECK: old_client receives a % of funds in the RakuraiTipAccount accounts
+    #[account(mut, constraint = old_client.key() == tip_manager_config.client_commission_account)]
+    pub old_client: AccountInfo<'info>,
 
-    /// CHECK: any new, writable account is allowed as block builder
+    /// CHECK: any new, writable account is allowed as client
     #[account(mut)]
-    pub new_block_builder: AccountInfo<'info>,
+    pub new_client: AccountInfo<'info>,
 
     #[account(
         mut,
@@ -858,8 +858,8 @@ pub struct ChangeBlockBuilder<'info> {
     pub signer: Signer<'info>,
 }
 
-impl ChangeBlockBuilder<'_> {
-    fn auth(ctx: &Context<ChangeBlockBuilder>) -> Result<()> {
+impl ChangeClient<'_> {
+    fn auth(ctx: &Context<ChangeClient>) -> Result<()> {
         if ctx.accounts.tip_manager_config.authority != ctx.accounts.signer.key() {
             Err(Unauthorized.into())
         } else {
@@ -867,7 +867,7 @@ impl ChangeBlockBuilder<'_> {
         }
     }
 }
-impl<'info> ChangeBlockBuilder<'info> {
+impl<'info> ChangeClient<'info> {
     fn get_tip_accounts(&self) -> Vec<AccountInfo<'info>> {
         vec![
             self.rakurai_tip_account_0.to_account_info(),
@@ -894,11 +894,11 @@ pub struct TipManagerConfigAccount {
     /// Account receiving validator tips
     pub validator_tip_receiver_account: Pubkey,
 
-    /// Block builder commission account
-    pub block_builder_commission_account: Pubkey,
+    /// Client commission account
+    pub client_commission_account: Pubkey,
 
     /// Commission in basis points
-    pub block_builder_commission_bps: u64,
+    pub client_commission_bps: u64,
 
     /// PDA bump seeds
     pub bumps: RakuraiTipManagerBumps,
@@ -958,8 +958,8 @@ impl RakuraiTipAccount {
 pub struct TipsClaimedEvent {
     pub validator_tip_receiver_account: Pubkey,
     pub tip_receiver_amount: u64,
-    pub block_builder_commission_account: Pubkey,
-    pub block_builder_amount: u64,
+    pub client_commission_account: Pubkey,
+    pub client_amount: u64,
 }
 
 #[event]

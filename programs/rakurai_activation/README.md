@@ -1,6 +1,6 @@
 # Rakurai Activation Program
 
-A multisig-based Solana smart contract for enabling or disabling the Rakurai scheduler. It also governs the commission on block rewards for both the block builder (i.e., Rakurai), which is currently set to 0, and the validator.
+A multisig-based Solana smart contract for enabling or disabling the Rakurai scheduler. It also governs the commission on block rewards for both the Client (i.e., Rakurai), which is currently set to 0, and the validator.
 
 Note: The remaining block rewards after the deduction of commission are distributed to stakers via the [`RewardDistributionProgram`](../reward_distribution/README.md).
 
@@ -44,7 +44,7 @@ This program implements a 2-party asynchronous multisig:
   - A seed constant.
 - During creation, the validator specifies:
   - `validator_commission_bps` (0–10000) — validator wants to retain from total block rewards.
-  - Block Builder's (i.e: Rakurai) commission is fetched from a global config account (**Rakurai Activation Config Account**), a PDA under the same program. This value is currently 0 bps, though Rakurai plans to charge a small commission on the block rewards in the future.
+  - Client's (i.e: Rakurai) commission is fetched from a global config account (**Rakurai Activation Config Account**), a PDA under the same program. This value is currently 0 bps, though Rakurai plans to charge a small commission on the block rewards in the future.
 
 Once created, this account:
 - Authorizes Rakurai reward logic on-chain.

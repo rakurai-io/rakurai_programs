@@ -4,13 +4,13 @@
     "name": "rakurai_activation",
     "version": "0.1.0",
     "spec": "0.1.0",
-    "description": "A multisig-based Solana smart contract for enabling or disabling the Rakurai scheduler. It also governs the commission on block rewards for both, the block builder (i.e: Rakurai) and the validator. Note: The remaining block rewards after deducting the two commissions are distributed to stakers via the RewardDistributionProgram."
+    "description": "A multisig-based Solana smart contract for enabling or disabling the Rakurai scheduler. It also governs the commission on block rewards for both, the Client (i.e: Rakurai) and the validator. Note: The remaining block rewards after deducting the two commissions are distributed to stakers via the RewardDistributionProgram."
   },
   "instructions": [
     {
       "name": "close_rakurai_activation_account",
       "docs": [
-        "Closes the Rakurai activation account and claims any remaining lamports to validator identity account. This can only be done by the block builder authority."
+        "Closes the Rakurai activation account and claims any remaining lamports to validator identity account. This can only be done by the client authority."
       ],
       "discriminator": [
         9,
@@ -82,7 +82,7 @@
         {
           "name": "signer",
           "docs": [
-            "Signer authorized to close activation accounts (must match block_builder_authority)."
+            "Signer authorized to close activation accounts (must match client_authority)."
           ],
           "writable": true,
           "signer": true
@@ -169,15 +169,15 @@
           "type": "pubkey"
         },
         {
-          "name": "block_builder_authority",
+          "name": "client_authority",
           "type": "pubkey"
         },
         {
-          "name": "block_builder_commission_account",
+          "name": "client_commission_account",
           "type": "pubkey"
         },
         {
-          "name": "block_builder_commission_bps",
+          "name": "client_commission_bps",
           "type": "u16"
         },
         {
@@ -334,7 +334,7 @@
     {
       "name": "update_rakurai_activation_approval",
       "docs": [
-        "Updates rakurai activation account approval. This can be done either by the Validator or the block builder."
+        "Updates rakurai activation account approval. This can be done either by the Validator or the client."
       ],
       "discriminator": [
         203,
@@ -405,7 +405,7 @@
         {
           "name": "signer",
           "docs": [
-            "Signer must match either validator authority or block builder authority"
+            "Signer must match either validator authority or client authority"
           ],
           "writable": true,
           "signer": true
@@ -432,7 +432,7 @@
     {
       "name": "update_rakurai_activation_commission",
       "docs": [
-        "Updates commission BPS for either Validator or block builder based on signer authority."
+        "Updates commission BPS for either Validator or client based on signer authority."
       ],
       "discriminator": [
         159,
@@ -504,7 +504,7 @@
         {
           "name": "signer",
           "docs": [
-            "Signer who must be either validator authority or block builder authority."
+            "Signer who must be either validator authority or client authority."
           ],
           "writable": true,
           "signer": true
@@ -632,7 +632,7 @@
     {
       "code": 6003,
       "name": "MissingHashForEnable",
-      "msg": "Hash must be provided when enabling the account as block builder."
+      "msg": "Hash must be provided when enabling the account as client."
     },
     {
       "code": 6004,
@@ -695,9 +695,9 @@
             "type": "u16"
           },
           {
-            "name": "block_builder_commission_bps",
+            "name": "client_commission_bps",
             "docs": [
-              "Block builder commission in basis points."
+              "Client commission in basis points."
             ],
             "type": "u16"
           },
@@ -781,21 +781,21 @@
             "type": "pubkey"
           },
           {
-            "name": "block_builder_authority",
+            "name": "client_authority",
             "docs": [
               "Co-signer authority required to update Rakurai activation status."
             ],
             "type": "pubkey"
           },
           {
-            "name": "block_builder_commission_bps",
+            "name": "client_commission_bps",
             "docs": [
-              "Commission charged by block builder (in basis points)."
+              "Commission charged by the client (in basis points)."
             ],
             "type": "u16"
           },
           {
-            "name": "block_builder_commission_account",
+            "name": "client_commission_account",
             "docs": [
               "Account where the commission is sent."
             ],

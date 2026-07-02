@@ -20,10 +20,10 @@ Each **validator**, for each **epoch**, creates a unique PDA called `RewardColle
 - When creating the account, the validator must specify:
   - `reward_merkle_root_authority` — Authority responsible for uploading the Merkle root post-epoch.
   - `block_reward_commission_bps` — Commission (in basis points) that the validator retains from block rewards.
-  - `block_builder_commission_bps` — Commission (in basis points) for block builder (i.e: Rakurai) from block rewards.
-  - `block_builder_commission_account` — Destination account for block builder commission.
+  - `client_commission_bps` — Commission (in basis points) for client (i.e: Rakurai) from block rewards.
+  - `client_commission_account` — Destination account for client commission.
 
-> The values for `block_builder_commission_bps`, `block_reward_commission_bps`, and `block_builder_commission_account` are pulled from the [RakuraiActivationAccount](../rakurai_activation/README.md#rakuraiactivationaccount-account-creation), a validator-specific PDA (not epoch-specific), part of the [`rakurai_activation`](../rakurai_activation/README.md) program. This account controls whether the validator is running the Rakurai scheduler (and should be charged commission).
+> The values for `client_commission_bps`, `block_reward_commission_bps`, and `client_commission_account` are pulled from the [RakuraiActivationAccount](../rakurai_activation/README.md#rakuraiactivationaccount-account-creation), a validator-specific PDA (not epoch-specific), part of the [`rakurai_activation`](../rakurai_activation/README.md) program. This account controls whether the validator is running the Rakurai scheduler (and should be charged commission).
 
 ---
 
@@ -39,7 +39,7 @@ On the first turn of each epoch, the `RewardCollectionAccount` is automatically 
 ### 2. Per-Turn Transfers
 During every leader turn:
 - The **previous turn's block reward** is processed:
-  - **Block Builder commission** → transferred to block builder (i.e: Rakurai) account.
+  - **Client commission** → transferred to client (i.e: Rakurai) account.
   - **Validator commission** → remains in the validator's identity account.
   - **Staker share** → accumulated into the `RewardCollectionAccount`.
 
@@ -75,9 +75,9 @@ When set to **Rakurai**, the rakurai will automatically:
 
 ---
 
-### Block Builder Commission on MEV Rewards
+### Client Commission on MEV Rewards
 
-Block Builder charges commission on MEV Rewards **only** if the following conditions are met:
+client charges commission on MEV Rewards **only** if the following conditions are met:
 
 - The validator is actively running **Rakurai during that epoch**.  
 - The validator has set a non-zero **MEV commission** in their **Tip Distribution Account**.
@@ -92,7 +92,7 @@ Block Builder charges commission on MEV Rewards **only** if the following condit
 2. A `ClaimStatus` account is created to track that the validator has received MEV rewards.  
 3. Rakurai client monitors the `ClaimStatus` account; once it is created, then it is eligible to deduct commission.  
 4. Rakurai cannot deduct directly from the vote account, so the **same commission amount** is deducted from the validator’s **identity account** instead.  
-5. The deduction is performed by invoking the `transfer_block_builder_commission_on_mev_commission` instruction in the **Reward Distribution Program**.  
+5. The deduction is performed by invoking the `transfer_client_commission_on_mev_commission` instruction in the **Reward Distribution Program**.  
 6. The commission rate is defined in the **Reward Distribution Config account**.
 
 ---

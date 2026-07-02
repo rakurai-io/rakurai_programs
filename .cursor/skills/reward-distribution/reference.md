@@ -51,7 +51,7 @@ Space: `RevenueShareAccount::space_for(max_epoch_entries)`. `max_epoch_entries` 
 | initializer | Validator identity; receives revenue-share remainder after commission |
 | expires_at | Claims deadline |
 | merkle_root | Optional Merkle metadata |
-| block_reward_commission_bps / block_builder_commission_* | Block reward path only |
+| block_reward_commission_bps / client_commission_* | Block reward path only |
 
 ---
 
@@ -68,7 +68,7 @@ Vote binding (where applicable): vote account owned by vote program; `VoteState`
 | update_revenue_share_config | manager_authority | — | — |
 | update_epoch_converted_to_block_reward | manager_authority **or** record_authority **or** validator identity (vote node) | required for validator path | account `convert_to_block_rewards`; entry claimed; entry flag false |
 | transfer_staker_rewards | initializer | required | vote == `RCA.validator_vote_account`; vote node == signer |
-| transfer_block_builder_commission_on_mev_commission | initializer | — | — |
+| transfer_client_commission_on_mev_commission | initializer | — | — |
 | initialize_revenue_share_account | any payer | required | enabled RAA; vote node == RAA `validator_authority`; `manager_authority` from config |
 | record_revenue | record_authority | — | — |
 | close_revenue_share_account | `initializer` **or** `manager_authority` | — | rent to `initializer` |
@@ -83,7 +83,7 @@ Vote binding (where applicable): vote account owned by vote program; `VoteState`
 
 **initialize_reward_collection_account_v1**: config, reward_collection_account (init), rakurai_activation_account, validator_vote_account, signer, system_program.
 
-**transfer_staker_rewards**: validator_vote_account, block_builder_commission_account (mut), reward_collection_account (mut), system_program, signer (mut).
+**transfer_staker_rewards**: validator_vote_account, client_commission_account (mut), reward_collection_account (mut), system_program, signer (mut).
 
 ---
 

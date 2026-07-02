@@ -8,6 +8,104 @@
   },
   "instructions": [
     {
+      "name": "claim",
+      "docs": [
+        "Claims rewards for a staker from the [RewardCollectionAccount] according to their merkle proof."
+      ],
+      "discriminator": [
+        62,
+        198,
+        214,
+        193,
+        213,
+        159,
+        108,
+        210
+      ],
+      "accounts": [
+        {
+          "name": "reward_collection_account",
+          "writable": true
+        },
+        {
+          "name": "claim_status",
+          "docs": [
+            "Status of the claim. Used to prevent the same party from claiming multiple times."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  67,
+                  76,
+                  65,
+                  73,
+                  77,
+                  95,
+                  83,
+                  84,
+                  65,
+                  84,
+                  85,
+                  83
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "claimant"
+              },
+              {
+                "kind": "account",
+                "path": "reward_collection_account"
+              }
+            ]
+          }
+        },
+        {
+          "name": "claimant",
+          "docs": [
+            "Receiver of the funds."
+          ],
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Fee payer for the claim transaction."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "bump",
+          "type": "u8"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "proof",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "claim_revenue",
       "docs": [
         "Claims revenue for a completed epoch."
@@ -406,7 +504,7 @@
           "type": "u16"
         },
         {
-          "name": "block_builder_commission_on_mev_commission_enabled",
+          "name": "client_commission_on_mev_commission_enabled",
           "type": "bool"
         },
         {
@@ -736,11 +834,11 @@
           "type": "u16"
         },
         {
-          "name": "block_builder_commission_account",
+          "name": "client_commission_account",
           "type": "pubkey"
         },
         {
-          "name": "block_builder_commission_bps",
+          "name": "client_commission_bps",
           "type": "u16"
         },
         {
@@ -928,11 +1026,11 @@
           "type": "u16"
         },
         {
-          "name": "block_builder_commission_account",
+          "name": "client_commission_account",
           "type": "pubkey"
         },
         {
-          "name": "block_builder_commission_bps",
+          "name": "client_commission_bps",
           "type": "u16"
         },
         {
@@ -974,23 +1072,23 @@
       ]
     },
     {
-      "name": "transfer_block_builder_commission_on_mev_commission",
+      "name": "transfer_client_commission_on_mev_commission",
       "docs": [
-        "Deducts block builder commission from MEV rewards earned by the validator."
+        "Deducts client commission from MEV rewards earned by the validator."
       ],
       "discriminator": [
-        238,
-        153,
-        39,
-        251,
-        136,
-        90,
-        230,
-        17
+        225,
+        149,
+        25,
+        68,
+        216,
+        215,
+        219,
+        121
       ],
       "accounts": [
         {
-          "name": "block_builder_commission_account",
+          "name": "client_commission_account",
           "writable": true
         },
         {
@@ -1015,107 +1113,9 @@
       ]
     },
     {
-      "name": "claim",
-      "docs": [
-        "Claims rewards for a staker from the [RewardCollectionAccount] according to their merkle proof."
-      ],
-      "discriminator": [
-        62,
-        198,
-        214,
-        193,
-        213,
-        159,
-        108,
-        210
-      ],
-      "accounts": [
-        {
-          "name": "reward_collection_account",
-          "writable": true
-        },
-        {
-          "name": "claim_status",
-          "docs": [
-            "Status of the claim. Used to prevent the same party from claiming multiple times."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  67,
-                  76,
-                  65,
-                  73,
-                  77,
-                  95,
-                  83,
-                  84,
-                  65,
-                  84,
-                  85,
-                  83
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "claimant"
-              },
-              {
-                "kind": "account",
-                "path": "reward_collection_account"
-              }
-            ]
-          }
-        },
-        {
-          "name": "claimant",
-          "docs": [
-            "Receiver of the funds."
-          ],
-          "writable": true
-        },
-        {
-          "name": "payer",
-          "docs": [
-            "Fee payer for the claim transaction."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "bump",
-          "type": "u8"
-        },
-        {
-          "name": "amount",
-          "type": "u64"
-        },
-        {
-          "name": "proof",
-          "type": {
-            "vec": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          }
-        }
-      ]
-    },
-    {
       "name": "transfer_staker_rewards",
       "docs": [
-        "Transfers staker rewards to the [RewardCollectionAccount] and block builder commission to commission account from `total_rewards`.",
+        "Transfers staker rewards to the [RewardCollectionAccount] and client commission to commission account from `total_rewards`.",
         "Invoked every leader turn."
       ],
       "discriminator": [
@@ -1130,7 +1130,7 @@
       ],
       "accounts": [
         {
-          "name": "block_builder_commission_account",
+          "name": "client_commission_account",
           "writable": true
         },
         {
@@ -1679,8 +1679,8 @@
     },
     {
       "code": 6014,
-      "name": "InvalidBlockBuilderCommissionAccount",
-      "msg": "Block Builder commission account must be equal to the RewardCollectionAccount account's block_builder_commission_account."
+      "name": "InvalidClientCommissionAccount",
+      "msg": "Client commission account must be equal to the RewardCollectionAccount account's client_commission_account."
     },
     {
       "code": 6015,
@@ -2000,7 +2000,7 @@
     {
       "name": "MevCommissionTransferredEvent",
       "docs": [
-        "Emitted when block builder commission on MEV rewards is transferred."
+        "Emitted when client commission on MEV rewards is transferred."
       ],
       "type": {
         "kind": "struct",
@@ -2052,9 +2052,9 @@
             "type": "u16"
           },
           {
-            "name": "block_builder_commission_bps",
+            "name": "client_commission_bps",
             "docs": [
-              "Block builder commission in basis points."
+              "Client commission in basis points."
             ],
             "type": "u16"
           },
@@ -2454,16 +2454,16 @@
             "type": "u16"
           },
           {
-            "name": "block_builder_commission_bps",
+            "name": "client_commission_bps",
             "docs": [
               "Commission on block rewards & MEV tips specified in basis points; deducted if enabled."
             ],
             "type": "u16"
           },
           {
-            "name": "block_builder_commission_account",
+            "name": "client_commission_account",
             "docs": [
-              "Account receiving block builder commission."
+              "Account receiving client commission."
             ],
             "type": "pubkey"
           },
@@ -2489,9 +2489,9 @@
             "type": "u8"
           },
           {
-            "name": "block_builder_mev_commission_deducted",
+            "name": "client_mev_commission_deducted",
             "docs": [
-              "Amount of MEV commission deducted by Block Builder (if enabled)."
+              "Amount of MEV commission deducted by Client (if enabled)."
             ],
             "type": {
               "option": "u64"
@@ -2581,9 +2581,9 @@
             "type": "u8"
           },
           {
-            "name": "block_builder_commission_on_mev_commission_enabled",
+            "name": "client_commission_on_mev_commission_enabled",
             "docs": [
-              "If enabled, Block Builder will also deduct its commission from the validator’s MEV commission."
+              "If enabled, Client will also deduct its commission from the validator’s MEV commission."
             ],
             "type": {
               "option": "bool"
@@ -2614,7 +2614,7 @@
             "type": "u64"
           },
           {
-            "name": "block_builder_commission_amount",
+            "name": "client_commission_amount",
             "type": "u64"
           },
           {

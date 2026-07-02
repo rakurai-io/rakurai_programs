@@ -8,7 +8,7 @@ use crate::{
         validate_commission, ClaimStatus, MerkleRoot, RevenueKind, RevenueShareAccount,
         RewardCollectionAccount, RewardDistributionConfigAccount,
     },
-    ErrorCode::{InvalidBlockBuilderCommissionAccount, RakuraiSchedulerNotEnabled, Unauthorized},
+    ErrorCode::{InvalidClientCommissionAccount, RakuraiSchedulerNotEnabled, Unauthorized},
 };
 use rakurai_activation::state::RakuraiActivationAccount;
 
@@ -42,7 +42,7 @@ pub mod reward_distribution {
         authority: Pubkey,
         num_epochs_valid: u64,
         max_commission_bps: u16,
-        block_builder_commission_on_mev_commission_enabled: bool,
+        client_commission_on_mev_commission_enabled: bool,
         revenue_manager_authority: Pubkey,
         bump: u8,
     ) -> Result<()> {
@@ -50,7 +50,7 @@ pub mod reward_distribution {
         cfg.authority = authority;
         cfg.num_epochs_valid = num_epochs_valid;
         cfg.max_commission_bps = max_commission_bps;
-        cfg.set_mev_commission_enabled(block_builder_commission_on_mev_commission_enabled);
+        cfg.set_mev_commission_enabled(client_commission_on_mev_commission_enabled);
         cfg.revenue_manager_authority = Some(revenue_manager_authority); // slot reserved in SIZE; set later via update_config
         cfg.bump = bump;
         cfg.validate()?;
@@ -64,8 +64,8 @@ pub mod reward_distribution {
         ctx: Context<InitializeRewardCollectionAccount>,
         merkle_root_upload_authority: Pubkey,
         block_reward_commission_bps: u16,
-        block_builder_commission_account: Pubkey,
-        block_builder_commission_bps: u16,
+        client_commission_account: Pubkey,
+        client_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
         initialize_reward_collection_account_inner(
@@ -76,8 +76,8 @@ pub mod reward_distribution {
             ctx.accounts.signer.key,
             merkle_root_upload_authority,
             block_reward_commission_bps,
-            block_builder_commission_account,
-            block_builder_commission_bps,
+            client_commission_account,
+            client_commission_bps,
             bump,
         )
     }
@@ -87,8 +87,8 @@ pub mod reward_distribution {
         ctx: Context<InitializeRewardCollectionAccountV1>,
         merkle_root_upload_authority: Pubkey,
         block_reward_commission_bps: u16,
-        block_builder_commission_account: Pubkey,
-        block_builder_commission_bps: u16,
+        client_commission_account: Pubkey,
+        client_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
         initialize_reward_collection_account_inner(
@@ -99,8 +99,8 @@ pub mod reward_distribution {
             ctx.accounts.signer.key,
             merkle_root_upload_authority,
             block_reward_commission_bps,
-            block_builder_commission_account,
-            block_builder_commission_bps,
+            client_commission_account,
+            client_commission_bps,
             bump,
         )
     }
@@ -205,7 +205,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Transfers staker rewards to the [RewardCollectionAccount] and block builder commission to commission account from `total_rewards`.
+    /// Transfers staker rewards to the [RewardCollectionAccount] and client commission to commission account from `total_rewards`.
     /// Invoked every leader turn.
     pub fn transfer_staker_rewards(
         ctx: Context<TransferStakerRewards>,
@@ -219,29 +219,29 @@ pub mod reward_distribution {
 
         let reward_collection_acc = &ctx.accounts.reward_collection_account;
 
-        // Calculate block builder commission (basis points)
-        let block_builder_commission_amount = total_rewards
-            .checked_mul(reward_collection_acc.block_builder_commission_bps as u64)
+        // Calculate client commission (basis points)
+        let client_commission_amount = total_rewards
+            .checked_mul(reward_collection_acc.client_commission_bps as u64)
             .ok_or(ArithmeticError)?
             .checked_div(10_000)
             .ok_or(ArithmeticError)?;
 
         let staker_rewards = total_rewards
-            .checked_sub(block_builder_commission_amount)
+            .checked_sub(client_commission_amount)
             .ok_or(ArithmeticError)?;
 
-        // Transfer block builder commission if applicable
-        if block_builder_commission_amount > 0 {
+        // Transfer client commission if applicable
+        if client_commission_amount > 0 {
             invoke(
                 &system_instruction::transfer(
                     &ctx.accounts.signer.key(),
-                    &ctx.accounts.block_builder_commission_account.key(),
-                    block_builder_commission_amount,
+                    &ctx.accounts.client_commission_account.key(),
+                    client_commission_amount,
                 ),
                 &[
                     ctx.accounts.signer.to_account_info(),
                     ctx.accounts
-                        .block_builder_commission_account
+                        .client_commission_account
                         .to_account_info(),
                     ctx.accounts.system_program.to_account_info(),
                 ],
@@ -266,19 +266,19 @@ pub mod reward_distribution {
 
         emit!(StakerRewardsTransferredEvent {
             staker_rewards,
-            block_builder_commission_amount,
+            client_commission_amount,
             total_rewards,
         });
 
         Ok(())
     }
 
-    /// Deducts block builder commission from MEV rewards earned by the validator.
-    pub fn transfer_block_builder_commission_on_mev_commission(
-        ctx: Context<TransferBlockBuilderCommissionOnMevCommission>,
+    /// Deducts client commission from MEV rewards earned by the validator.
+    pub fn transfer_client_commission_on_mev_commission(
+        ctx: Context<TransferClientCommissionOnMevCommission>,
         mev_rewards: u64,
     ) -> Result<()> {
-        TransferBlockBuilderCommissionOnMevCommission::auth(&ctx)?;
+        TransferClientCommissionOnMevCommission::auth(&ctx)?;
 
         if mev_rewards == 0 {
             return Err(RewardsTooLow.into());
@@ -287,44 +287,44 @@ pub mod reward_distribution {
         let reward_collection_acc = &mut ctx.accounts.reward_collection_account;
 
         // Prevent double deduction
-        if let Some(amount) = reward_collection_acc.block_builder_mev_commission_deducted {
+        if let Some(amount) = reward_collection_acc.client_mev_commission_deducted {
             if amount > 0 {
                 return Err(MevCommissionAlreadyDeducted.into());
             }
         }
 
-        // Calculate block builder commission
-        let block_builder_mev_commission = mev_rewards
-            .checked_mul(reward_collection_acc.block_builder_commission_bps as u64)
+        // Calculate client commission
+        let client_mev_commission = mev_rewards
+            .checked_mul(reward_collection_acc.client_commission_bps as u64)
             .ok_or(ArithmeticError)?
             .checked_div(10_000)
             .ok_or(ArithmeticError)?;
 
         // Transfer commission if > 0
-        if block_builder_mev_commission > 0 {
+        if client_mev_commission > 0 {
             invoke(
                 &system_instruction::transfer(
                     &ctx.accounts.signer.key(),
-                    &ctx.accounts.block_builder_commission_account.key(),
-                    block_builder_mev_commission,
+                    &ctx.accounts.client_commission_account.key(),
+                    client_mev_commission,
                 ),
                 &[
                     ctx.accounts.signer.to_account_info(),
                     ctx.accounts
-                        .block_builder_commission_account
+                        .client_commission_account
                         .to_account_info(),
                     ctx.accounts.system_program.to_account_info(),
                 ],
             )?;
 
-            reward_collection_acc.block_builder_mev_commission_deducted =
-                Some(block_builder_mev_commission);
+            reward_collection_acc.client_mev_commission_deducted =
+                Some(client_mev_commission);
         }
 
         // Emit event
         emit!(MevCommissionTransferredEvent {
             mev_rewards,
-            commission_amount: block_builder_mev_commission,
+            commission_amount: client_mev_commission,
         });
 
         Ok(())
@@ -617,14 +617,14 @@ fn initialize_reward_collection_account_inner(
     signer: &Pubkey,
     merkle_root_upload_authority: Pubkey,
     block_reward_commission_bps: u16,
-    block_builder_commission_account: Pubkey,
-    block_builder_commission_bps: u16,
+    client_commission_account: Pubkey,
+    client_commission_bps: u16,
     bump: u8,
 ) -> Result<()> {
     use rakurai_vote_state::VoteState;
 
     if block_reward_commission_bps > config.max_commission_bps
-        || block_builder_commission_bps > config.max_commission_bps
+        || client_commission_bps > config.max_commission_bps
     {
         return Err(ErrorCode::MaxCommissionFeeBpsExceeded.into());
     }
@@ -643,8 +643,8 @@ fn initialize_reward_collection_account_inner(
     reward_collection_account.validator_vote_account = validator_vote_account.key();
     reward_collection_account.creation_epoch = current_epoch;
     reward_collection_account.block_reward_commission_bps = block_reward_commission_bps;
-    reward_collection_account.block_builder_commission_bps = block_builder_commission_bps;
-    reward_collection_account.block_builder_commission_account = block_builder_commission_account;
+    reward_collection_account.client_commission_bps = client_commission_bps;
+    reward_collection_account.client_commission_account = client_commission_account;
     reward_collection_account.merkle_root_upload_authority = merkle_root_upload_authority;
     reward_collection_account.merkle_root = None;
     reward_collection_account.expires_at = current_epoch
@@ -654,9 +654,9 @@ fn initialize_reward_collection_account_inner(
     reward_collection_account.bump = bump;
 
     if config.is_mev_commission_enabled() {
-        reward_collection_account.block_builder_mev_commission_deducted = Some(0);
+        reward_collection_account.client_mev_commission_deducted = Some(0);
     } else {
-        reward_collection_account.block_builder_mev_commission_deducted = None;
+        reward_collection_account.client_mev_commission_deducted = None;
     }
 
     reward_collection_account.validate()?;
@@ -713,8 +713,8 @@ pub enum ErrorCode {
     #[msg("Total rewards must be greater than 0.")]
     RewardsTooLow,
 
-    #[msg("Block Builder commission account must be equal to the RewardCollectionAccount account's block_builder_commission_account.")]
-    InvalidBlockBuilderCommissionAccount,
+    #[msg("Client commission account must be equal to the RewardCollectionAccount account's client_commission_account.")]
+    InvalidClientCommissionAccount,
 
     #[msg("MEV commission has already been deducted for this epoch")]
     MevCommissionAlreadyDeducted,
@@ -1026,12 +1026,12 @@ impl UploadMerkleRoot<'_> {
     }
 }
 
-/// Accounts required to transfer staker rewards with block builder commission applied.
+/// Accounts required to transfer staker rewards with client commission applied.
 #[derive(Accounts)]
 pub struct TransferStakerRewards<'info> {
     /// CHECK:
     #[account(mut)]
-    pub block_builder_commission_account: AccountInfo<'info>,
+    pub client_commission_account: AccountInfo<'info>,
 
     #[account(mut, rent_exempt = enforce)]
     pub reward_collection_account: Account<'info, RewardCollectionAccount>,
@@ -1046,25 +1046,25 @@ impl TransferStakerRewards<'_> {
     fn auth(ctx: &Context<TransferStakerRewards>) -> Result<()> {
         if ctx.accounts.signer.key() != ctx.accounts.reward_collection_account.initializer {
             Err(Unauthorized.into())
-        } else if ctx.accounts.block_builder_commission_account.key()
+        } else if ctx.accounts.client_commission_account.key()
             != ctx
                 .accounts
                 .reward_collection_account
-                .block_builder_commission_account
+                .client_commission_account
         {
-            Err(InvalidBlockBuilderCommissionAccount.into())
+            Err(InvalidClientCommissionAccount.into())
         } else {
             Ok(())
         }
     }
 }
 
-/// Accounts required to transfer mev commission with block builder commission applied.
+/// Accounts required to transfer mev commission with client commission applied.
 #[derive(Accounts)]
-pub struct TransferBlockBuilderCommissionOnMevCommission<'info> {
+pub struct TransferClientCommissionOnMevCommission<'info> {
     /// CHECK:
     #[account(mut)]
-    pub block_builder_commission_account: AccountInfo<'info>,
+    pub client_commission_account: AccountInfo<'info>,
 
     #[account(mut, rent_exempt = enforce)]
     pub reward_collection_account: Account<'info, RewardCollectionAccount>,
@@ -1075,17 +1075,17 @@ pub struct TransferBlockBuilderCommissionOnMevCommission<'info> {
     pub signer: Signer<'info>,
 }
 
-impl TransferBlockBuilderCommissionOnMevCommission<'_> {
-    fn auth(ctx: &Context<TransferBlockBuilderCommissionOnMevCommission>) -> Result<()> {
+impl TransferClientCommissionOnMevCommission<'_> {
+    fn auth(ctx: &Context<TransferClientCommissionOnMevCommission>) -> Result<()> {
         if ctx.accounts.signer.key() != ctx.accounts.reward_collection_account.initializer {
             Err(Unauthorized.into())
-        } else if ctx.accounts.block_builder_commission_account.key()
+        } else if ctx.accounts.client_commission_account.key()
             != ctx
                 .accounts
                 .reward_collection_account
-                .block_builder_commission_account
+                .client_commission_account
         {
-            Err(InvalidBlockBuilderCommissionAccount.into())
+            Err(InvalidClientCommissionAccount.into())
         } else {
             Ok(())
         }
@@ -1376,18 +1376,18 @@ pub struct MerkleRootUploadedEvent {
 pub struct StakerRewardsTransferredEvent {
     // Total rewards for the last leader turn
     pub total_rewards: u64,
-    // Commission amount sent to block builder
-    pub block_builder_commission_amount: u64,
+    // Commission amount sent to client
+    pub client_commission_amount: u64,
     // Remaining rewards sent to [RewardCollectionAccount]
     pub staker_rewards: u64,
 }
 
-/// Emitted when block builder commission on MEV rewards is transferred.
+/// Emitted when client commission on MEV rewards is transferred.
 #[event]
 pub struct MevCommissionTransferredEvent {
     // Total MEV rewards earned
     pub mev_rewards: u64,
-    // Amount deducted as block builder commission for total mev rewards.
+    // Amount deducted as client commission for total mev rewards.
     pub commission_amount: u64,
 }
 

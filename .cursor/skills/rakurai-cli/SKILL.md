@@ -91,7 +91,7 @@ cargo run --bin rakurai-activation -- -p pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM
 
 **Suggested v1 — reward_distribution**: `init-rca`, `show-rca`, `upload-merkle-root`, `claim`, revenue-share init/record/claim.
 
-**Suggested v1 — tip_manager**: `show-config`, `claim-tips`, `change-tip-receiver`, `change-block-builder`. Optional `--reward-distribution-program-id` only if CLI also credits RCA off-chain.
+**Suggested v1 — tip_manager**: `show-config`, `claim-tips`, `change-tip-receiver`, `change-client`. Optional `--reward-distribution-program-id` only if CLI also credits RCA off-chain.
 
 ---
 

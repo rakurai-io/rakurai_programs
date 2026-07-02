@@ -10,7 +10,7 @@ pub struct InitializeArgs {
     pub authority: Pubkey,
     pub num_epochs_valid: u64,
     pub max_commission_bps: u16,
-    pub block_builder_commission_on_mev_commission_enabled: bool,
+    pub client_commission_on_mev_commission_enabled: bool,
     pub revenue_manager_authority: Pubkey,
     pub bump: u8,
 }
@@ -32,7 +32,7 @@ pub fn initialize_ix(
         authority,
         num_epochs_valid,
         max_commission_bps,
-        block_builder_commission_on_mev_commission_enabled,
+        client_commission_on_mev_commission_enabled,
         revenue_manager_authority,
         bump,
     } = args;
@@ -49,7 +49,7 @@ pub fn initialize_ix(
             authority,
             num_epochs_valid,
             max_commission_bps,
-            block_builder_commission_on_mev_commission_enabled,
+            client_commission_on_mev_commission_enabled,
             revenue_manager_authority,
             bump,
         }
@@ -67,8 +67,8 @@ pub fn initialize_ix(
 pub struct InitializeRewardCollectionAccountArgs {
     pub merkle_root_upload_authority: Pubkey,
     pub block_reward_commission_bps: u16,
-    pub block_builder_commission_account: Pubkey,
-    pub block_builder_commission_bps: u16,
+    pub client_commission_account: Pubkey,
+    pub client_commission_bps: u16,
     pub bump: u8,
 }
 
@@ -90,8 +90,8 @@ pub fn initialize_reward_collection_account_ix(
     let InitializeRewardCollectionAccountArgs {
         merkle_root_upload_authority,
         block_reward_commission_bps,
-        block_builder_commission_account,
-        block_builder_commission_bps,
+        client_commission_account,
+        client_commission_bps,
         bump,
     } = args;
 
@@ -108,8 +108,8 @@ pub fn initialize_reward_collection_account_ix(
         data: crate::instruction::InitializeRewardCollectionAccount {
             merkle_root_upload_authority,
             block_reward_commission_bps,
-            block_builder_commission_account,
-            block_builder_commission_bps,
+            client_commission_account,
+            client_commission_bps,
             bump,
         }
         .data(),
@@ -143,8 +143,8 @@ pub fn initialize_reward_collection_account_v1_ix(
     let InitializeRewardCollectionAccountArgs {
         merkle_root_upload_authority,
         block_reward_commission_bps,
-        block_builder_commission_account,
-        block_builder_commission_bps,
+        client_commission_account,
+        client_commission_bps,
         bump,
     } = args;
 
@@ -162,8 +162,8 @@ pub fn initialize_reward_collection_account_v1_ix(
         data: crate::instruction::InitializeRewardCollectionAccountV1 {
             merkle_root_upload_authority,
             block_reward_commission_bps,
-            block_builder_commission_account,
-            block_builder_commission_bps,
+            client_commission_account,
+            client_commission_bps,
             bump,
         }
         .data(),
@@ -321,7 +321,7 @@ pub struct TransferStakerRewardsArgs {
 
 /// Accounts required to transfer rewards to stakers.
 pub struct TransferStakerRewardsAccounts {
-    pub block_builder_commission_account: Pubkey,
+    pub client_commission_account: Pubkey,
     pub reward_collection_account: Pubkey,
     pub system_program: Pubkey,
     pub signer: Pubkey,
@@ -336,7 +336,7 @@ pub fn transfer_staker_rewards_ix(
     let TransferStakerRewardsArgs { total_rewards } = args;
 
     let TransferStakerRewardsAccounts {
-        block_builder_commission_account,
+        client_commission_account,
         reward_collection_account,
         system_program,
         signer,
@@ -346,7 +346,7 @@ pub fn transfer_staker_rewards_ix(
         program_id,
         data: crate::instruction::TransferStakerRewards { total_rewards }.data(),
         accounts: crate::accounts::TransferStakerRewards {
-            block_builder_commission_account,
+            client_commission_account,
             reward_collection_account,
             system_program,
             signer,
@@ -356,28 +356,28 @@ pub fn transfer_staker_rewards_ix(
 }
 
 /// Total MEV rewards earned by the validator in the epoch (if MEV commission is set by validator in TipDistributionAccount).
-pub struct TransferBlockBuilderCommissionOnMevCommissionArgs {
+pub struct TransferClientCommissionOnMevCommissionArgs {
     pub mev_rewards: u64,
 }
 
-/// Accounts required to transfer MEV commission to the block builder commission account.
-pub struct TransferBlockBuilderCommissionOnMevCommissionAccounts {
-    pub block_builder_commission_account: Pubkey,
+/// Accounts required to transfer MEV commission to the client commission account.
+pub struct TransferClientCommissionOnMevCommissionAccounts {
+    pub client_commission_account: Pubkey,
     pub reward_collection_account: Pubkey,
     pub system_program: Pubkey,
     pub signer: Pubkey,
 }
 
-/// Builds the instruction to deduct block builder commission from the validator’s MEV rewards.
-pub fn transfer_block_builder_commission_on_mev_commission_ix(
+/// Builds the instruction to deduct client commission from the validator’s MEV rewards.
+pub fn transfer_client_commission_on_mev_commission_ix(
     program_id: Pubkey,
-    args: TransferBlockBuilderCommissionOnMevCommissionArgs,
-    accounts: TransferBlockBuilderCommissionOnMevCommissionAccounts,
+    args: TransferClientCommissionOnMevCommissionArgs,
+    accounts: TransferClientCommissionOnMevCommissionAccounts,
 ) -> Instruction {
-    let TransferBlockBuilderCommissionOnMevCommissionArgs { mev_rewards } = args;
+    let TransferClientCommissionOnMevCommissionArgs { mev_rewards } = args;
 
-    let TransferBlockBuilderCommissionOnMevCommissionAccounts {
-        block_builder_commission_account,
+    let TransferClientCommissionOnMevCommissionAccounts {
+        client_commission_account,
         reward_collection_account,
         system_program,
         signer,
@@ -385,10 +385,10 @@ pub fn transfer_block_builder_commission_on_mev_commission_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::TransferBlockBuilderCommissionOnMevCommission { mev_rewards }
+        data: crate::instruction::TransferClientCommissionOnMevCommission { mev_rewards }
             .data(),
-        accounts: crate::accounts::TransferBlockBuilderCommissionOnMevCommission {
-            block_builder_commission_account,
+        accounts: crate::accounts::TransferClientCommissionOnMevCommission {
+            client_commission_account,
             reward_collection_account,
             system_program,
             signer,
