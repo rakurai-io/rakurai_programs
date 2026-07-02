@@ -146,7 +146,8 @@ pub mod rakurai_tip_manager {
             &ctx.accounts.new_tip_receiver,
             &ctx.accounts.block_builder_commission_account,
             tip_accounts,
-        )
+        )?;
+        Ok(())
     }
 
     /// Changes the active tip receiver with Rakurai activation, vote, and TCA checks.
@@ -154,13 +155,34 @@ pub mod rakurai_tip_manager {
         ChangeTipReceiverV1::auth(&ctx)?;
         let tip_accounts = ctx.accounts.get_tip_accounts();
         let new_tip_receiver = ctx.accounts.new_tip_receiver.to_account_info();
-        change_tip_receiver_inner(
+        let validator_fee = change_tip_receiver_inner(
             &mut ctx.accounts.tip_manager_config,
             &ctx.accounts.old_tip_receiver,
             &new_tip_receiver,
             &ctx.accounts.block_builder_commission_account,
             tip_accounts,
-        )
+        )?;
+        if validator_fee > 0 {
+            use anchor_lang::solana_program::program::invoke;
+            use reward_distribution::sdk::instruction::{
+                record_revenue_ix, RecordRevenueArgs, RecordRevenueShareAccounts,
+            };
+            let record_ix = record_revenue_ix(
+                ctx.remaining_accounts[1].key(),
+                RecordRevenueArgs {
+                    amount: validator_fee,
+                },
+                RecordRevenueShareAccounts {
+                    revenue_share_account: new_tip_receiver.key(),
+                    record_authority: ctx.accounts.signer.key(),
+                },
+            );
+            invoke(
+                &record_ix,
+                &[new_tip_receiver, ctx.accounts.signer.to_account_info()],
+            )?;
+        }
+        Ok(())
     }
 
     /// Changes the block builder and its commission by first draining all pending tips (distributing shares to the tip receiver
@@ -222,7 +244,7 @@ fn change_tip_receiver_inner(
     new_tip_receiver: &AccountInfo,
     block_builder_commission_account: &AccountInfo,
     tip_accounts: Vec<AccountInfo>,
-) -> Result<()> {
+) -> Result<u64> {
     let total_tips = RakuraiTipAccount::drain_accounts(tip_accounts)?;
 
     let block_builder_fee = total_tips
@@ -254,7 +276,7 @@ fn change_tip_receiver_inner(
 
     tip_manager_config.validator_tip_receiver_account = new_tip_receiver.key();
 
-    Ok(())
+    Ok(validator_fee)
 }
 
 /// Errors
@@ -664,13 +686,15 @@ pub struct ChangeTipReceiverV1<'info> {
     )]
     pub rakurai_tip_account_7: Account<'info, RakuraiTipAccount>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = signer.key() == new_tip_receiver.record_authority @ RakuraiTipManagerError::Unauthorized
+    )]
     pub signer: Signer<'info>,
 }
 
 impl ChangeTipReceiverV1<'_> {
-    /// RAA and vote accounts are passed via `remaining_accounts` (not in the main account list):
-    /// `[0]` enabled RAA PDA for signer; `[1]` vote account matching `new_tip_receiver.validator_vote`.
+    /// Remaining accounts: `[0]` enabled RAA PDA; `[1]` reward distribution program id;
     fn auth(ctx: &Context<ChangeTipReceiverV1>) -> Result<()> {
         use anchor_lang::AccountDeserialize;
         let (expected, _) = crate::sdk::derive_rakurai_tip_collection_address(
@@ -683,7 +707,7 @@ impl ChangeTipReceiverV1<'_> {
 
         require_gte!(
             ctx.remaining_accounts.len(),
-            1,
+            2,
             RakuraiTipManagerError::Unauthorized
         );
 
@@ -713,6 +737,12 @@ impl ChangeTipReceiverV1<'_> {
         require!(
             raa.is_enabled,
             RakuraiTipManagerError::RakuraiSchedulerNotEnabled
+        );
+
+        let reward_distribution_program = &ctx.remaining_accounts[1];
+        require!(
+            reward_distribution_program.key() == reward_distribution::ID,
+            RakuraiTipManagerError::Unauthorized
         );
 
         Ok(())

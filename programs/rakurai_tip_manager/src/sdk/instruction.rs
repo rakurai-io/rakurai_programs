@@ -203,6 +203,8 @@ pub struct ChangeTipReceiverV1Accounts {
     pub signer: Pubkey,
     /// Appended as `remaining_accounts[0]` (enabled RAA PDA for signer).
     pub rakurai_activation_account: Pubkey,
+    /// Appended as `remaining_accounts[1]` (reward distribution program id).
+    pub reward_distribution_program: Pubkey,
 }
 
 /// Drains pending tips and rotates config to the TCA PDA (RAA + vote + TCA validation).
@@ -226,6 +228,7 @@ pub fn change_tip_receiver_v1_ix(
         rakurai_tip_account_7,
         signer,
         rakurai_activation_account,
+        reward_distribution_program,
     } = accounts;
 
     let mut account_metas = crate::accounts::ChangeTipReceiverV1 {
@@ -245,7 +248,10 @@ pub fn change_tip_receiver_v1_ix(
     }
     .to_account_metas(None);
     account_metas.push(AccountMeta::new_readonly(rakurai_activation_account, false));
-
+    account_metas.push(AccountMeta::new_readonly(
+        reward_distribution_program,
+        false,
+    ));
     Instruction {
         program_id,
         data: crate::instruction::ChangeTipReceiverV1 {}.data(),
