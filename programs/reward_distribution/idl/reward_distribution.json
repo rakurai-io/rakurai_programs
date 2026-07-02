@@ -2,486 +2,47 @@
   "address": "A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB",
   "metadata": {
     "name": "reward_distribution",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "spec": "0.1.0",
     "description": "Solana program to distribute block rewards amongst Rakurai, validator, and stakers. Staker rewards accumulate in a collection account and are distributed post-epoch using a merkle root."
   },
   "instructions": [
-        {
-      "name": "initialize",
-      "docs": [
-        "Sets up the singleton [RewardDistributionConfigAccount] to store global configuration settings for Rakurai."
-      ],
-      "discriminator": [
-        175,
-        175,
-        109,
-        31,
-        13,
-        152,
-        155,
-        237
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "docs": [
-            "The global configuration account for Reward Distribution settings."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  82,
-                  68,
-                  95,
-                  67,
-                  79,
-                  78,
-                  70,
-                  73,
-                  71,
-                  95,
-                  65,
-                  67,
-                  67,
-                  79,
-                  85,
-                  78,
-                  84
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "initializer",
-          "docs": [
-            "Fee payer for the initialize transaction"
-          ],
-          "writable": true,
-          "signer": true
-        }
-      ],
-      "args": [
-        {
-          "name": "authority",
-          "type": "pubkey"
-        },
-        {
-          "name": "num_epochs_valid",
-          "type": "u64"
-        },
-        {
-          "name": "max_commission_bps",
-          "type": "u16"
-        },
-        {
-          "name": "block_builder_commission_on_mev_commission_enabled",
-          "type": "bool"
-        },
-        {
-          "name": "bump",
-          "type": "u8"
-        }
-      ]
-    },
     {
-      "name": "update_config",
+      "name": "claim_revenue",
       "docs": [
-        "Update config fields. Only the [RewardDistributionConfigAccount] authority can invoke this."
+        "Claims revenue for a completed epoch."
       ],
       "discriminator": [
-        29,
-        158,
-        252,
-        191,
-        10,
-        83,
-        219,
-        99
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "docs": [
-            "The global configuration account for Reward Distribution settings."
-          ],
-          "writable": true
-        },
-        {
-          "name": "authority",
-          "writable": true,
-          "signer": true
-        }
-      ],
-      "args": [
-        {
-          "name": "new_config",
-          "type": {
-            "defined": {
-              "name": "RewardDistributionConfigAccount"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "close_config",
-      "docs": [
-        "Closes the reward distribution config account and reclaims rent.",
-        "Only the config authority can invoke this instruction."
-      ],
-      "discriminator": [
-        145,
-        9,
-        72,
-        157,
-        95,
-        125,
-        61,
-        85
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "docs": [
-            "The global configuration account for Reward Distribution settings to be closed."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  82,
-                  68,
-                  95,
-                  67,
-                  79,
-                  78,
-                  70,
-                  73,
-                  71,
-                  95,
-                  65,
-                  67,
-                  67,
-                  79,
-                  85,
-                  78,
-                  84
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "signer",
-          "docs": [
-            "The authority that can close the config account."
-          ],
-          "writable": true,
-          "signer": true
-        }
-      ],
-      "args": []
-    },
-    {
-      "name": "initialize_reward_collection_account",
-      "docs": [
-        "Initialize a new [RewardCollectionAccount] associated with the given validator vote key",
-        "and current epoch."
-      ],
-      "discriminator": [
-        202,
-        216,
-        172,
-        90,
-        142,
-        218,
-        173,
-        132
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "docs": [
-            "The global configuration account for Reward Distribution settings."
-          ]
-        },
-        {
-          "name": "reward_collection_account",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  82,
-                  69,
-                  87,
-                  65,
-                  82,
-                  68,
-                  95,
-                  67,
-                  79,
-                  76,
-                  76,
-                  69,
-                  67,
-                  84,
-                  73,
-                  79,
-                  78,
-                  95,
-                  65,
-                  67,
-                  67,
-                  79,
-                  85,
-                  78,
-                  84
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "validator_vote_account"
-              },
-              {
-                "kind": "account",
-                "path": "Clock.epoch"
-              }
-            ]
-          }
-        },
-        {
-          "name": "validator_vote_account"
-        },
-        {
-          "name": "signer",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "merkle_root_upload_authority",
-          "type": "pubkey"
-        },
-        {
-          "name": "block_reward_commission_bps",
-          "type": "u16"
-        },
-        {
-          "name": "block_builder_commission_account",
-          "type": "pubkey"
-        },
-        {
-          "name": "block_builder_commission_bps",
-          "type": "u16"
-        },
-        {
-          "name": "bump",
-          "type": "u8"
-        }
-      ]
-    },
-    {
-      "name": "transfer_staker_rewards",
-      "docs": [
-        "Transfers staker rewards to the [RewardCollectionAccount] and block builder commission to commission account from `total_rewards`.",
-        "Invoked every leader turn."
-      ],
-      "discriminator": [
-        114,
-        182,
+        4,
+        22,
+        151,
+        70,
+        183,
+        79,
         73,
-        5,
-        49,
-        3,
-        248,
-        141
+        189
       ],
       "accounts": [
         {
-          "name": "block_builder_commission_account",
+          "name": "revenue_share_account",
           "writable": true
         },
         {
-          "name": "reward_collection_account",
+          "name": "commission_account",
           "writable": true
         },
         {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
+          "name": "validator_identity"
         },
         {
-          "name": "signer",
-          "writable": true,
+          "name": "manager_authority",
           "signer": true
         }
       ],
       "args": [
         {
-          "name": "total_rewards",
+          "name": "epoch",
           "type": "u64"
-        }
-      ]
-    },
-    {
-      "name": "transfer_block_builder_commission_on_mev_commission",
-      "docs": [
-        "Deducts block builder commission from MEV rewards earned by the validator."
-      ],
-      "discriminator": [
-        238,
-        153,
-        39,
-        251,
-        136,
-        90,
-        230,
-        17
-      ],
-      "accounts": [
-        {
-          "name": "block_builder_commission_account",
-          "writable": true
-        },
-        {
-          "name": "reward_collection_account",
-          "writable": true
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "signer",
-          "writable": true,
-          "signer": true
-        }
-      ],
-      "args": [
-        {
-          "name": "mev_rewards",
-          "type": "u64"
-        }
-      ]
-    },
-    {
-      "name": "claim",
-      "docs": [
-        "Claims rewards for a staker from the [RewardCollectionAccount] according to their merkle proof."
-      ],
-      "discriminator": [
-        62,
-        198,
-        214,
-        193,
-        213,
-        159,
-        108,
-        210
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "docs": [
-            "The global configuration account for Reward Distribution settings."
-          ]
-        },
-        {
-          "name": "reward_collection_account",
-          "writable": true
-        },
-        {
-          "name": "claim_status",
-          "docs": [
-            "Status of the claim. Used to prevent the same party from claiming multiple times."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  67,
-                  76,
-                  65,
-                  73,
-                  77,
-                  95,
-                  83,
-                  84,
-                  65,
-                  84,
-                  85,
-                  83
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "claimant"
-              },
-              {
-                "kind": "account",
-                "path": "reward_collection_account"
-              }
-            ]
-          }
-        },
-        {
-          "name": "claimant",
-          "docs": [
-            "Receiver of the funds."
-          ],
-          "writable": true
-        },
-        {
-          "name": "payer",
-          "docs": [
-            "Fee payer for the claim transaction."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "bump",
-          "type": "u8"
-        },
-        {
-          "name": "amount",
-          "type": "u64"
-        },
-        {
-          "name": "proof",
-          "type": {
-            "vec": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          }
         }
       ]
     },
@@ -546,6 +107,135 @@
             "Account that receives the closed account's lamports."
           ],
           "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_config",
+      "docs": [
+        "Closes the reward distribution config account and reclaims rent.",
+        "Only the config authority can invoke this instruction."
+      ],
+      "discriminator": [
+        145,
+        9,
+        72,
+        157,
+        95,
+        125,
+        61,
+        85
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "The global configuration account for Reward Distribution settings to be closed."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  68,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "signer",
+          "docs": [
+            "The authority that can close the config account."
+          ],
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_revenue_share_account",
+      "docs": [
+        "Closes a revenue share account; rent is returned to the original initializer."
+      ],
+      "discriminator": [
+        179,
+        211,
+        190,
+        226,
+        254,
+        87,
+        101,
+        174
+      ],
+      "accounts": [
+        {
+          "name": "revenue_share_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  69,
+                  86,
+                  69,
+                  78,
+                  85,
+                  69,
+                  95,
+                  83,
+                  72,
+                  65,
+                  82,
+                  69
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "revenue_share_account.share_kind",
+                "account": "RevenueShareAccount"
+              },
+              {
+                "kind": "account",
+                "path": "revenue_share_account.name",
+                "account": "RevenueShareAccount"
+              },
+              {
+                "kind": "account",
+                "path": "revenue_share_account.validator_vote",
+                "account": "RevenueShareAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "initializer",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true
         }
       ],
       "args": []
@@ -641,6 +331,978 @@
       ]
     },
     {
+      "name": "initialize",
+      "docs": [
+        "Sets up the singleton [RewardDistributionConfigAccount] to store global configuration settings for Rakurai."
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "The global configuration account for Reward Distribution settings."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  68,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "initializer",
+          "docs": [
+            "Fee payer for the initialize transaction"
+          ],
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "num_epochs_valid",
+          "type": "u64"
+        },
+        {
+          "name": "max_commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "block_builder_commission_on_mev_commission_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "revenue_manager_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "bump",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "initialize_revenue_share_account",
+      "docs": [
+        "Initializes a revenue share vault (tip or backrun) for a validator."
+      ],
+      "discriminator": [
+        80,
+        208,
+        181,
+        59,
+        51,
+        75,
+        43,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "revenue_share_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  69,
+                  86,
+                  69,
+                  78,
+                  85,
+                  69,
+                  95,
+                  83,
+                  72,
+                  65,
+                  82,
+                  69
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "share_kind"
+              },
+              {
+                "kind": "arg",
+                "path": "name"
+              },
+              {
+                "kind": "account",
+                "path": "validator_vote_account"
+              }
+            ]
+          }
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  68,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_activation_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  65,
+                  67,
+                  84,
+                  73,
+                  86,
+                  65,
+                  84,
+                  73,
+                  79,
+                  78,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rakurai_activation_account.validator_authority",
+                "account": "RakuraiActivationAccount"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                12,
+                60,
+                128,
+                187,
+                214,
+                125,
+                126,
+                30,
+                88,
+                247,
+                67,
+                5,
+                34,
+                125,
+                155,
+                212,
+                195,
+                183,
+                226,
+                16,
+                225,
+                153,
+                164,
+                87,
+                14,
+                231,
+                156,
+                211,
+                10,
+                11,
+                25,
+                123
+              ]
+            }
+          }
+        },
+        {
+          "name": "validator_vote_account"
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "share_kind",
+          "type": {
+            "defined": {
+              "name": "RevenueKind"
+            }
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "record_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "max_epoch_entries",
+          "type": "u8"
+        },
+        {
+          "name": "commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "commission_account",
+          "type": "pubkey"
+        },
+        {
+          "name": "bump",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "initialize_reward_collection_account",
+      "docs": [
+        "Initialize a new [RewardCollectionAccount] (legacy account list).",
+        "Prefer `initialize_reward_collection_account_v1` for enabled RAA validation."
+      ],
+      "discriminator": [
+        202,
+        216,
+        172,
+        90,
+        142,
+        218,
+        173,
+        132
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "The global configuration account for Reward Distribution settings."
+          ]
+        },
+        {
+          "name": "reward_collection_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  69,
+                  87,
+                  65,
+                  82,
+                  68,
+                  95,
+                  67,
+                  79,
+                  76,
+                  76,
+                  69,
+                  67,
+                  84,
+                  73,
+                  79,
+                  78,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "validator_vote_account"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "validator_vote_account"
+        },
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "merkle_root_upload_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "block_reward_commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "block_builder_commission_account",
+          "type": "pubkey"
+        },
+        {
+          "name": "block_builder_commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "bump",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "initialize_reward_collection_account_v1",
+      "docs": [
+        "Initialize a new [RewardCollectionAccount] with Rakurai activation checks."
+      ],
+      "discriminator": [
+        243,
+        219,
+        172,
+        124,
+        156,
+        106,
+        150,
+        40
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "The global configuration account for Reward Distribution settings."
+          ]
+        },
+        {
+          "name": "reward_collection_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  69,
+                  87,
+                  65,
+                  82,
+                  68,
+                  95,
+                  67,
+                  79,
+                  76,
+                  76,
+                  69,
+                  67,
+                  84,
+                  73,
+                  79,
+                  78,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "validator_vote_account"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_activation_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  65,
+                  67,
+                  84,
+                  73,
+                  86,
+                  65,
+                  84,
+                  73,
+                  79,
+                  78,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "signer"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                12,
+                60,
+                128,
+                187,
+                214,
+                125,
+                126,
+                30,
+                88,
+                247,
+                67,
+                5,
+                34,
+                125,
+                155,
+                212,
+                195,
+                183,
+                226,
+                16,
+                225,
+                153,
+                164,
+                87,
+                14,
+                231,
+                156,
+                211,
+                10,
+                11,
+                25,
+                123
+              ]
+            }
+          }
+        },
+        {
+          "name": "validator_vote_account"
+        },
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "merkle_root_upload_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "block_reward_commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "block_builder_commission_account",
+          "type": "pubkey"
+        },
+        {
+          "name": "block_builder_commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "bump",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "record_revenue",
+      "docs": [
+        "Records revenue for the current epoch (accounting only)."
+      ],
+      "discriminator": [
+        151,
+        73,
+        203,
+        54,
+        152,
+        227,
+        65,
+        240
+      ],
+      "accounts": [
+        {
+          "name": "revenue_share_account",
+          "writable": true
+        },
+        {
+          "name": "record_authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "transfer_block_builder_commission_on_mev_commission",
+      "docs": [
+        "Deducts block builder commission from MEV rewards earned by the validator."
+      ],
+      "discriminator": [
+        238,
+        153,
+        39,
+        251,
+        136,
+        90,
+        230,
+        17
+      ],
+      "accounts": [
+        {
+          "name": "block_builder_commission_account",
+          "writable": true
+        },
+        {
+          "name": "reward_collection_account",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "mev_rewards",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "claim",
+      "docs": [
+        "Claims rewards for a staker from the [RewardCollectionAccount] according to their merkle proof."
+      ],
+      "discriminator": [
+        62,
+        198,
+        214,
+        193,
+        213,
+        159,
+        108,
+        210
+      ],
+      "accounts": [
+        {
+          "name": "reward_collection_account",
+          "writable": true
+        },
+        {
+          "name": "claim_status",
+          "docs": [
+            "Status of the claim. Used to prevent the same party from claiming multiple times."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  67,
+                  76,
+                  65,
+                  73,
+                  77,
+                  95,
+                  83,
+                  84,
+                  65,
+                  84,
+                  85,
+                  83
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "claimant"
+              },
+              {
+                "kind": "account",
+                "path": "reward_collection_account"
+              }
+            ]
+          }
+        },
+        {
+          "name": "claimant",
+          "docs": [
+            "Receiver of the funds."
+          ],
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Fee payer for the claim transaction."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "bump",
+          "type": "u8"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "proof",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "transfer_staker_rewards",
+      "docs": [
+        "Transfers staker rewards to the [RewardCollectionAccount] and block builder commission to commission account from `total_rewards`.",
+        "Invoked every leader turn."
+      ],
+      "discriminator": [
+        114,
+        182,
+        73,
+        5,
+        49,
+        3,
+        248,
+        141
+      ],
+      "accounts": [
+        {
+          "name": "block_builder_commission_account",
+          "writable": true
+        },
+        {
+          "name": "reward_collection_account",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "total_rewards",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update_config",
+      "docs": [
+        "Update config fields. Only the [RewardDistributionConfigAccount] authority can invoke this.",
+        "Grows legacy config accounts to the current [`RewardDistributionConfigAccount::SIZE`]",
+        "(e.g. to persist `revenue_manager_authority`) before applying updates."
+      ],
+      "discriminator": [
+        29,
+        158,
+        252,
+        191,
+        10,
+        83,
+        219,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "The global configuration account for Reward Distribution settings."
+          ],
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_config",
+          "type": {
+            "defined": {
+              "name": "RewardDistributionConfigAccount"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "update_epoch_converted_to_block_reward",
+      "docs": [
+        "Marks a claimed epoch ledger entry as `converted_to_block_reward`.",
+        "Requires account `convert_to_block_rewards`, entry claimed, and entry flag still false.",
+        "Callable by manager, record authority, or validator identity (vote node signer)."
+      ],
+      "discriminator": [
+        253,
+        246,
+        191,
+        22,
+        238,
+        34,
+        129,
+        236
+      ],
+      "accounts": [
+        {
+          "name": "revenue_share_account",
+          "writable": true
+        },
+        {
+          "name": "validator_vote_account"
+        },
+        {
+          "name": "signer",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update_revenue_share_config",
+      "docs": [
+        "Updates revenue share config (`commission_bps`, `commission_account`, `convert_to_block_rewards`). Manager authority only."
+      ],
+      "discriminator": [
+        47,
+        140,
+        90,
+        252,
+        24,
+        196,
+        197,
+        22
+      ],
+      "accounts": [
+        {
+          "name": "revenue_share_account",
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  68,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "manager_authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "commission_account",
+          "type": "pubkey"
+        },
+        {
+          "name": "convert_to_block_rewards",
+          "type": "bool"
+        }
+      ]
+    },
+    {
       "name": "upload_merkle_root",
       "docs": [
         "Uploads a merkle root to the [RewardCollectionAccount]. Only the `merkle_root_upload_authority` can invoke this instruction."
@@ -705,6 +1367,32 @@
         95,
         150,
         96
+      ]
+    },
+    {
+      "name": "RakuraiActivationAccount",
+      "discriminator": [
+        23,
+        29,
+        221,
+        229,
+        148,
+        135,
+        217,
+        153
+      ]
+    },
+    {
+      "name": "RevenueShareAccount",
+      "discriminator": [
+        208,
+        67,
+        189,
+        177,
+        228,
+        142,
+        105,
+        231
       ]
     },
     {
@@ -788,19 +1476,6 @@
       ]
     },
     {
-      "name": "MerkleRootUploadAuthorityUpdatedEvent",
-      "discriminator": [
-        83,
-        157,
-        58,
-        165,
-        200,
-        171,
-        8,
-        106
-      ]
-    },
-    {
       "name": "MerkleRootUploadedEvent",
       "discriminator": [
         94,
@@ -824,6 +1499,71 @@
         205,
         182,
         85
+      ]
+    },
+    {
+      "name": "RevenueClaimedEvent",
+      "discriminator": [
+        3,
+        254,
+        199,
+        131,
+        59,
+        87,
+        87,
+        232
+      ]
+    },
+    {
+      "name": "RevenueEpochConvertedToBlockRewardUpdatedEvent",
+      "discriminator": [
+        197,
+        119,
+        129,
+        75,
+        205,
+        61,
+        231,
+        195
+      ]
+    },
+    {
+      "name": "RevenueRecordedEvent",
+      "discriminator": [
+        155,
+        16,
+        120,
+        54,
+        254,
+        66,
+        87,
+        243
+      ]
+    },
+    {
+      "name": "RevenueShareAccountInitializedEvent",
+      "discriminator": [
+        20,
+        146,
+        159,
+        154,
+        109,
+        76,
+        168,
+        126
+      ]
+    },
+    {
+      "name": "RevenueShareConfigUpdatedEvent",
+      "discriminator": [
+        252,
+        41,
+        32,
+        94,
+        117,
+        172,
+        185,
+        193
       ]
     },
     {
@@ -863,19 +1603,6 @@
         128,
         19,
         230
-      ]
-    },
-    {
-      "name": "ValidatorCommissionBpsUpdatedEvent",
-      "discriminator": [
-        4,
-        34,
-        92,
-        25,
-        228,
-        88,
-        51,
-        206
       ]
     }
   ],
@@ -959,6 +1686,56 @@
       "code": 6015,
       "name": "MevCommissionAlreadyDeducted",
       "msg": "MEV commission has already been deducted for this epoch"
+    },
+    {
+      "code": 6016,
+      "name": "InvalidRevenueName",
+      "msg": "Revenue label must be non-empty."
+    },
+    {
+      "code": 6017,
+      "name": "InvalidRevenueEpochCapacity",
+      "msg": "Revenue ledger capacity must be between 1 and the program cap."
+    },
+    {
+      "code": 6018,
+      "name": "EpochEntryNotFound",
+      "msg": "Epoch entry not found in revenue ledger."
+    },
+    {
+      "code": 6019,
+      "name": "EpochAlreadyClaimed",
+      "msg": "Revenue for this epoch has already been claimed."
+    },
+    {
+      "code": 6020,
+      "name": "PrematureRevenueClaim",
+      "msg": "Revenue can only be claimed after the epoch has ended."
+    },
+    {
+      "code": 6021,
+      "name": "ConvertToBlockRewardsNotEnabled",
+      "msg": "Account convert_to_block_rewards must be enabled."
+    },
+    {
+      "code": 6022,
+      "name": "EpochNotClaimed",
+      "msg": "Revenue for this epoch has not been claimed yet."
+    },
+    {
+      "code": 6023,
+      "name": "EpochAlreadyConvertedToBlockReward",
+      "msg": "Revenue for this epoch is already marked converted to block rewards."
+    },
+    {
+      "code": 6024,
+      "name": "RevenueManagerNotConfigured",
+      "msg": "Tip/backrun revenue manager is not configured on the reward distribution config."
+    },
+    {
+      "code": 6025,
+      "name": "RakuraiSchedulerNotEnabled",
+      "msg": "Rakurai scheduler is not enabled for this validator."
     }
   ],
   "types": [
@@ -1118,6 +1895,36 @@
       }
     },
     {
+      "name": "EpochAmountEntry",
+      "docs": [
+        "Per-epoch attributed amount."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "claimed",
+            "type": "bool"
+          },
+          {
+            "name": "converted_to_block_reward",
+            "docs": [
+              "When true, this epoch's share is converted to block rewards on claim."
+            ],
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
       "name": "MerkleRoot",
       "docs": [
         "Metadata about the Merkle root used for claims."
@@ -1169,22 +1976,6 @@
       }
     },
     {
-      "name": "MerkleRootUploadAuthorityUpdatedEvent",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "old_authority",
-            "type": "pubkey"
-          },
-          {
-            "name": "new_authority",
-            "type": "pubkey"
-          }
-        ]
-      }
-    },
-    {
       "name": "MerkleRootUploadedEvent",
       "type": {
         "kind": "struct",
@@ -1221,6 +2012,394 @@
           {
             "name": "commission_amount",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RakuraiActivationAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "is_enabled",
+            "docs": [
+              "Whether the rakurai scheduler is enabled."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "proposer",
+            "docs": [
+              "Who proposed this change (optional)."
+            ],
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "validator_authority",
+            "docs": [
+              "Main validator's signing authority."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "block_reward_commission_bps",
+            "docs": [
+              "Validator commission on Block Rewards in basis points."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "block_builder_commission_bps",
+            "docs": [
+              "Block builder commission in basis points."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "Bump seed for PDA."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "hash",
+            "docs": [
+              "Optional hash."
+            ],
+            "type": {
+              "option": {
+                "array": [
+                  "u8",
+                  64
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "RevenueClaimedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "revenue_share_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "share_kind",
+            "type": {
+              "defined": {
+                "name": "RevenueKind"
+              }
+            }
+          },
+          {
+            "name": "validator_identity",
+            "type": "pubkey"
+          },
+          {
+            "name": "commission_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "commission_amount",
+            "type": "u64"
+          },
+          {
+            "name": "validator_amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RevenueEpochConvertedToBlockRewardUpdatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "revenue_share_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "share_kind",
+            "type": {
+              "defined": {
+                "name": "RevenueKind"
+              }
+            }
+          },
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RevenueKind",
+      "docs": [
+        "Revenue share vault kind; included in PDA seeds after [`RevenueShareAccount::SEED`]."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Tip"
+          },
+          {
+            "name": "Backrun"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RevenueLedger",
+      "docs": [
+        "Per-account epoch revenue ledger; grows until `max_epoch_entries` then overrides oldest epoch."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "entries",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "EpochAmountEntry"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "RevenueRecordedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "revenue_share_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "share_kind",
+            "type": {
+              "defined": {
+                "name": "RevenueKind"
+              }
+            }
+          },
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RevenueShareAccount",
+      "docs": [
+        "Tip/backrun revenue share vault per validator (accounting + lamport vault)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "share_kind",
+            "docs": [
+              "Tip vs backrun; part of the PDA seeds with `name` and `validator_vote`."
+            ],
+            "type": {
+              "defined": {
+                "name": "RevenueKind"
+              }
+            }
+          },
+          {
+            "name": "name",
+            "docs": [
+              "UTF-8 padded label (used in PDA seeds)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "validator_vote",
+            "type": "pubkey"
+          },
+          {
+            "name": "initializer",
+            "docs": [
+              "Who paid to create this account; receives rent on close."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "manager_authority",
+            "docs": [
+              "Claims revenue, updates config, and closes the account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "record_authority",
+            "docs": [
+              "Signs `record_revenue`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "max_epoch_entries",
+            "docs": [
+              "Max distinct epochs in `ledger`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "commission_bps",
+            "docs": [
+              "Commission on revenue claims (basis points); remainder goes to validator identity."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "commission_account",
+            "docs": [
+              "Receives the commission portion on claim."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "convert_to_block_rewards",
+            "docs": [
+              "When true, recorded share is converted to block rewards on claim."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "ledger",
+            "type": {
+              "defined": {
+                "name": "RevenueLedger"
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RevenueShareAccountInitializedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "revenue_share_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "share_kind",
+            "type": {
+              "defined": {
+                "name": "RevenueKind"
+              }
+            }
+          },
+          {
+            "name": "name",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "validator_vote",
+            "type": "pubkey"
+          },
+          {
+            "name": "initializer",
+            "type": "pubkey"
+          },
+          {
+            "name": "manager_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "record_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "max_epoch_entries",
+            "type": "u8"
+          },
+          {
+            "name": "commission_bps",
+            "type": "u16"
+          },
+          {
+            "name": "commission_account",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RevenueShareConfigUpdatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "revenue_share_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "share_kind",
+            "type": {
+              "defined": {
+                "name": "RevenueKind"
+              }
+            }
+          },
+          {
+            "name": "commission_bps",
+            "type": "u16"
+          },
+          {
+            "name": "commission_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "convert_to_block_rewards",
+            "type": "bool"
           }
         ]
       }
@@ -1409,6 +2588,15 @@
             "type": {
               "option": "bool"
             }
+          },
+          {
+            "name": "revenue_manager_authority",
+            "docs": [
+              "Authority that may create tip/backrun revenue share accounts and manage claims. `None` disables revenue share account creation."
+            ],
+            "type": {
+              "option": "pubkey"
+            }
           }
         ]
       }
@@ -1432,26 +2620,6 @@
           {
             "name": "staker_rewards",
             "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "ValidatorCommissionBpsUpdatedEvent",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "reward_collection_account",
-            "type": "pubkey"
-          },
-          {
-            "name": "old_commission_bps",
-            "type": "u16"
-          },
-          {
-            "name": "new_commission_bps",
-            "type": "u16"
           }
         ]
       }

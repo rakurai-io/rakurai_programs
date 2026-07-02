@@ -8,6 +8,89 @@
   },
   "instructions": [
     {
+      "name": "close_rakurai_activation_account",
+      "docs": [
+        "Closes the Rakurai activation account and claims any remaining lamports to validator identity account. This can only be done by the block builder authority."
+      ],
+      "discriminator": [
+        9,
+        199,
+        29,
+        48,
+        129,
+        165,
+        216,
+        112
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "The global configuration account for Rakurai settings."
+          ]
+        },
+        {
+          "name": "activation_account",
+          "docs": [
+            "PDA storing validator-specific Rakurai activation state; closed during this instruction."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  65,
+                  67,
+                  84,
+                  73,
+                  86,
+                  65,
+                  84,
+                  73,
+                  79,
+                  78,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "validator_identity_account"
+              }
+            ]
+          }
+        },
+        {
+          "name": "validator_identity_account",
+          "writable": true
+        },
+        {
+          "name": "signer",
+          "docs": [
+            "Signer authorized to close activation accounts (must match block_builder_authority)."
+          ],
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "initialize",
       "docs": [
         "Sets up the singleton [RakuraiActivationConfigAccount] to store global configuration settings for Rakurai."
@@ -100,49 +183,6 @@
         {
           "name": "bump",
           "type": "u8"
-        }
-      ]
-    },
-    {
-      "name": "update_config",
-      "docs": [
-        "Update config fields. Only the [RakuraiActivationConfigAccount] authority can invoke this."
-      ],
-      "discriminator": [
-        29,
-        158,
-        252,
-        191,
-        10,
-        83,
-        219,
-        99
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "docs": [
-            "Mutable config account storing Rakurai activation settings."
-          ],
-          "writable": true
-        },
-        {
-          "name": "authority",
-          "docs": [
-            "Authorized signer allowed to update the config."
-          ],
-          "writable": true,
-          "signer": true
-        }
-      ],
-      "args": [
-        {
-          "name": "new_config",
-          "type": {
-            "defined": {
-              "name": "RakuraiActivationConfigAccount"
-            }
-          }
         }
       ]
     },
@@ -245,6 +285,49 @@
         {
           "name": "bump",
           "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "update_config",
+      "docs": [
+        "Update config fields. Only the [RakuraiActivationConfigAccount] authority can invoke this."
+      ],
+      "discriminator": [
+        29,
+        158,
+        252,
+        191,
+        10,
+        83,
+        219,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "Mutable config account storing Rakurai activation settings."
+          ],
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "docs": [
+            "Authorized signer allowed to update the config."
+          ],
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_config",
+          "type": {
+            "defined": {
+              "name": "RakuraiActivationConfigAccount"
+            }
+          }
         }
       ]
     },
@@ -433,89 +516,6 @@
           "type": "u16"
         }
       ]
-    },
-    {
-      "name": "close_rakurai_activation_account",
-      "docs": [
-        "Closes the Rakurai activation account and claims any remaining lamports to validator identity account. This can only be done by the block builder authority."
-      ],
-      "discriminator": [
-        9,
-        199,
-        29,
-        48,
-        129,
-        165,
-        216,
-        112
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "docs": [
-            "The global configuration account for Rakurai settings."
-          ]
-        },
-        {
-          "name": "activation_account",
-          "docs": [
-            "PDA storing validator-specific Rakurai activation state; closed during this instruction."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  82,
-                  65,
-                  75,
-                  85,
-                  82,
-                  65,
-                  73,
-                  95,
-                  65,
-                  67,
-                  84,
-                  73,
-                  86,
-                  65,
-                  84,
-                  73,
-                  79,
-                  78,
-                  95,
-                  65,
-                  67,
-                  67,
-                  79,
-                  85,
-                  78,
-                  84
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "validator_identity_account"
-              }
-            ]
-          }
-        },
-        {
-          "name": "validator_identity_account",
-          "writable": true
-        },
-        {
-          "name": "signer",
-          "docs": [
-            "Signer authorized to close activation accounts (must match block_builder_authority)."
-          ],
-          "writable": true,
-          "signer": true
-        }
-      ],
-      "args": []
     }
   ],
   "accounts": [
@@ -642,44 +642,19 @@
   ],
   "types": [
     {
-      "name": "RakuraiActivationConfigAccount",
+      "name": "ConfigUpdatedEvent",
+      "docs": [
+        "Emitted when the global config is updated."
+      ],
       "type": {
         "kind": "struct",
         "fields": [
           {
             "name": "authority",
             "docs": [
-              "Primary authority over this PDA."
+              "The authority that performed the update."
             ],
             "type": "pubkey"
-          },
-          {
-            "name": "block_builder_authority",
-            "docs": [
-              "Co-signer authority required to update Rakurai activation status."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "block_builder_commission_bps",
-            "docs": [
-              "Commission charged by block builder (in basis points)."
-            ],
-            "type": "u16"
-          },
-          {
-            "name": "block_builder_commission_account",
-            "docs": [
-              "Account where the commission is sent."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "Bump seed for PDA."
-            ],
-            "type": "u8"
           }
         ]
       }
@@ -751,6 +726,31 @@
       }
     },
     {
+      "name": "RakuraiActivationAccountClosedEvent",
+      "docs": [
+        "Emitted when a Rakurai activation account is closed and funds are claimed."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "activation_account",
+            "docs": [
+              "The closed activation account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "amount_claimed",
+            "docs": [
+              "Total lamports claimed during closure."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "RakuraiActivationAccountInitializedEvent",
       "docs": [
         "Emitted when a new Rakurai activation account is initialized."
@@ -764,6 +764,49 @@
               "The newly initialized activation account."
             ],
             "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RakuraiActivationConfigAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "docs": [
+              "Primary authority over this PDA."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "block_builder_authority",
+            "docs": [
+              "Co-signer authority required to update Rakurai activation status."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "block_builder_commission_bps",
+            "docs": [
+              "Commission charged by block builder (in basis points)."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "block_builder_commission_account",
+            "docs": [
+              "Account where the commission is sent."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "Bump seed for PDA."
+            ],
+            "type": "u8"
           }
         ]
       }
@@ -814,49 +857,6 @@
               "The new operator commission (basis points or percent, depending on program logic)."
             ],
             "type": "u16"
-          }
-        ]
-      }
-    },
-    {
-      "name": "RakuraiActivationAccountClosedEvent",
-      "docs": [
-        "Emitted when a Rakurai activation account is closed and funds are claimed."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "activation_account",
-            "docs": [
-              "The closed activation account."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "amount_claimed",
-            "docs": [
-              "Total lamports claimed during closure."
-            ],
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "ConfigUpdatedEvent",
-      "docs": [
-        "Emitted when the global config is updated."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "authority",
-            "docs": [
-              "The authority that performed the update."
-            ],
-            "type": "pubkey"
           }
         ]
       }

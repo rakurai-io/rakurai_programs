@@ -10,10 +10,14 @@ use reward_distribution::state::TipsCollectionAccount;
 
 #[cfg(not(feature = "no-entrypoint"))]
 security_txt! {
+    // Required fields
     name: "Rakurai Tip Manager Program",
-    project_url: "https://github.com/rakurai-io/rakurai-validator",
-    contacts: "https://rakurai.io/company",
-    policy: "https://rakurai.io/faqs"
+    project_url: "https://rakurai.io/",
+    contacts: "link:https://rakurai.io/company,link:https://github.com/rakurai-io/rakurai-validator,link:https://docs.rakurai.io,discord:https://discord.gg/QzqQVBAMpp,telegram:https://t.me/rakurai_official",
+    policy: "https://rakurai.io/faqs",
+    // Optional fields
+    preferred_languages: "en",
+    source_code: "https://github.com/rakurai-io/rakurai_programs"
 }
 
 pub mod sdk;

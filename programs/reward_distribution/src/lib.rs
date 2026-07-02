@@ -17,8 +17,11 @@ security_txt! {
     // Required fields
     name: "Rakurai Block Reward Distribution Program",
     project_url: "https://rakurai.io/",
-    contacts: "https://rakurai.io/company",
-    policy: "https://rakurai.io/faqs"
+    contacts: "link:https://rakurai.io/company,link:https://github.com/rakurai-io/rakurai-validator,link:https://docs.rakurai.io,discord:https://discord.gg/QzqQVBAMpp,telegram:https://t.me/rakurai_official",
+    policy: "https://rakurai.io/faqs",
+    // Optional fields
+    preferred_languages: "en",
+    source_code: "https://github.com/rakurai-io/rakurai_programs"
 }
 pub mod merkle_proof;
 pub mod sdk;
@@ -805,7 +808,7 @@ pub struct InitializeRewardCollectionAccount<'info> {
         seeds = [
             RewardCollectionAccount::SEED,
             validator_vote_account.key().as_ref(),
-            Clock::get().unwrap().epoch.to_le_bytes().as_ref(),
+            Clock::get().map(|c| c.epoch).unwrap_or_default().to_le_bytes().as_ref(),
         ],
         bump,
         payer = signer,
@@ -840,7 +843,7 @@ pub struct InitializeRewardCollectionAccountV1<'info> {
         seeds = [
             RewardCollectionAccount::SEED,
             validator_vote_account.key().as_ref(),
-            Clock::get().unwrap().epoch.to_le_bytes().as_ref(),
+            Clock::get().map(|c| c.epoch).unwrap_or_default().to_le_bytes().as_ref(),
         ],
         bump,
         payer = signer,
