@@ -453,7 +453,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Initializes a revenue share vault (tip or backrun) for a validator.
+    /// Initializes a revenue share vault (tip or mev-share) for a validator.
     pub fn initialize_revenue_share_account(
         ctx: Context<InitializeRevenueShareAccount>,
         share_kind: RevenueKind,
@@ -746,7 +746,7 @@ pub enum ErrorCode {
     #[msg("Revenue for this epoch is already marked converted to block rewards.")]
     EpochAlreadyConvertedToBlockReward,
 
-    #[msg("Tip/backrun revenue manager is not configured on the reward distribution config.")]
+    #[msg("Tip/mev-share revenue manager is not configured on the reward distribution config.")]
     RevenueManagerNotConfigured,
 
     #[msg("Rakurai scheduler is not enabled for this validator.")]
@@ -1095,7 +1095,7 @@ impl TransferClientCommissionOnMevCommission<'_> {
     }
 }
 
-/// Initializes a revenue share vault PDA (tip or backrun).
+/// Initializes a revenue share vault PDA (tip or mev-share).
 #[derive(Accounts)]
 #[instruction(share_kind: RevenueKind, name: [u8; 32], _record_authority: Pubkey, max_epoch_entries: u8, _commission_bps: u16, _commission_account: Pubkey, _bump: u8)]
 pub struct InitializeRevenueShareAccount<'info> {

@@ -55,7 +55,7 @@ flowchart TD
 
 ## 2. Reward Distribution — RCA & Revenue-Share Accounts
 
-Per-epoch **RCA** for block rewards (Merkle staker claims) and per-validator **revenue-share vaults** for tip/backrun attribution.
+Per-epoch **RCA** for block rewards (Merkle staker claims) and per-validator **revenue-share vaults** for tip/mev-share attribution.
 
 ```mermaid
 flowchart TD
@@ -74,7 +74,7 @@ flowchart TD
     end
 
     subgraph revenue [Revenue-share vaults per share_kind + label + vote]
-        P0[Rakurai: initialize_revenue_share_account share_kind = Tip or Backrun]
+        P0[Rakurai: initialize_revenue_share_account share_kind = Tip or MevShare]
         P0 --> PTS[RevenueShareAccount share_kind in PDA seeds]
         P1[Leader turn: record_revenue]
         P1 -->|accounting only| LEDGER[Epoch ledger + convert_to_block_rewards snapshot]
@@ -98,7 +98,7 @@ flowchart TD
 | Revenue | Post-epoch | `claim_revenue` |
 | Revenue | Admin | `update_revenue_share_config`, `close_revenue_share_account` |
 
-Revenue-share PDA seeds: `[REVENUE_SHARE, share_kind ("TIP" \| "BACKRUN"), name, validator_vote]`. One unified `RevenueShareAccount` (aliases `TipsCollectionAccount` (TCA) / `BackrunCollectionAccount` (BCA)); `share_kind` selects Tip vs Backrun. Claim requires revenue-share PDA lamports ≥ ledger amount.
+Revenue-share PDA seeds: `[REVENUE_SHARE, share_kind ("TIP" \| "MEV_SHARE"), name, validator_vote]`. One unified `RevenueShareAccount` (aliases `TipsCollectionAccount` (TCA) / `MevShareCollectionAccount` (MCA)); `share_kind` selects Tip vs MevShare. Claim requires revenue-share PDA lamports ≥ ledger amount.
 
 ---
 

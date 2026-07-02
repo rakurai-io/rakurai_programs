@@ -21,7 +21,7 @@ pub struct RewardDistributionConfigAccount {
     pub bump: u8,
     /// If enabled, Client will also deduct its commission from the validator’s MEV commission.
     pub client_commission_on_mev_commission_enabled: Option<bool>,
-    /// Authority that may create tip/backrun revenue share accounts and manage claims. `None` disables revenue share account creation.
+    /// Authority that may create tip/mev-share revenue share accounts and manage claims. `None` disables revenue share account creation.
     pub revenue_manager_authority: Option<Pubkey>,
 }
 
@@ -90,25 +90,25 @@ pub struct RevenueLedger {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RevenueKind {
     Tip,
-    Backrun,
+    MevShare,
 }
 
 impl RevenueKind {
     pub const TIP_SEED: &'static [u8] = b"TIP";
-    pub const BACKRUN_SEED: &'static [u8] = b"BACKRUN";
+    pub const MEV_SHARE_SEED: &'static [u8] = b"MEV_SHARE";
 
     pub fn seed(self) -> &'static [u8] {
         match self {
             Self::Tip => Self::TIP_SEED,
-            Self::Backrun => Self::BACKRUN_SEED,
+            Self::MevShare => Self::MEV_SHARE_SEED,
         }
     }
 }
 
-/// Tip/backrun revenue share vault per validator (accounting + lamport vault).
+/// Tip/mev-share revenue share vault per validator (accounting + lamport vault).
 #[account]
 pub struct RevenueShareAccount {
-    /// Tip vs backrun; part of the PDA seeds with `name` and `validator_vote`.
+    /// Tip vs mev-share; part of the PDA seeds with `name` and `validator_vote`.
     pub share_kind: RevenueKind,
     /// UTF-8 padded label (used in PDA seeds).
     pub name: [u8; 32],
@@ -134,9 +134,9 @@ pub struct RevenueShareAccount {
 /// Tips Collection Account (TCA): a [`RevenueShareAccount`] with `share_kind = Tip`.
 /// Collects the validator's tip revenue (settled from a custom tip account).
 pub type TipsCollectionAccount = RevenueShareAccount;
-/// Backrun Collection Account (BCA): a [`RevenueShareAccount`] with `share_kind = Backrun`.
-/// Collects the agreed backrun/arbitrage revenue.
-pub type BackrunCollectionAccount = RevenueShareAccount;
+/// Mev Share Collection Account (MCA): a [`RevenueShareAccount`] with `share_kind = MevShare`.
+/// Collects the agreed MEV / arbitrage revenue share.
+pub type MevShareCollectionAccount = RevenueShareAccount;
 
 const HEADER_SIZE: usize = 8;
 const MAX_COMMISSION_BPS: u16 = 10000;
@@ -179,7 +179,7 @@ impl RewardDistributionConfigAccount {
             .is_some()
     }
 
-    /// Returns the configured tip/backrun revenue manager, if revenue share account creation is enabled.
+    /// Returns the configured tip/mev-share revenue manager, if revenue share account creation is enabled.
     pub fn require_revenue_manager_authority(&self) -> Result<Pubkey> {
         self.revenue_manager_authority
             .filter(|key| *key != Pubkey::default())
@@ -651,11 +651,11 @@ mod tests {
         let program = Pubkey::new_unique();
 
         let tip_seeds = RevenueShareAccount::pda_seeds(RevenueKind::Tip, &name, &vote);
-        let backrun_seeds = RevenueShareAccount::pda_seeds(RevenueKind::Backrun, &name, &vote);
+        let mev_share_seeds = RevenueShareAccount::pda_seeds(RevenueKind::MevShare, &name, &vote);
 
         let tip_addr = Pubkey::find_program_address(&tip_seeds, &program).0;
-        let backrun_addr = Pubkey::find_program_address(&backrun_seeds, &program).0;
-        assert_ne!(tip_addr, backrun_addr);
+        let mev_share_addr = Pubkey::find_program_address(&mev_share_seeds, &program).0;
+        assert_ne!(tip_addr, mev_share_addr);
     }
 
     #[test]

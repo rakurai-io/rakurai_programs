@@ -60,15 +60,15 @@ pub fn derive_tip_collection_account_address(
     )
 }
 
-/// Derives the PDA for a backrun revenue share account (`BackrunCollectionAccount` / BCA).
-pub fn derive_backrun_collection_account_address(
+/// Derives the PDA for a mev-share revenue share account (`MevShareCollectionAccount` / MCA).
+pub fn derive_mev_share_collection_account_address(
     reward_distribution_program_id: &Pubkey,
     name: &[u8; 32],
     validator_vote: &Pubkey,
 ) -> (Pubkey, u8) {
     derive_revenue_share_account_address(
         reward_distribution_program_id,
-        RevenueKind::Backrun,
+        RevenueKind::MevShare,
         name,
         validator_vote,
     )

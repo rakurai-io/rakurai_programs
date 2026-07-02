@@ -11,9 +11,9 @@ Source: `programs/reward_distribution/src/` (v0.3.0).
 | Config | `RD_CONFIG_ACCOUNT` |
 | RCA | `REWARD_COLLECTION_ACCOUNT`, vote, `epoch.to_le_bytes()` |
 | ClaimStatus | `CLAIM_STATUS`, claimant, rca |
-| Revenue Share (Tip/Backrun) | `REVENUE_SHARE`, `share_kind_seed` (`TIP` \| `BACKRUN`), name[32], vote |
+| Revenue Share (Tip/MevShare) | `REVENUE_SHARE`, `share_kind_seed` (`TIP` \| `MEV_SHARE`), name[32], vote |
 
-Unified account `RevenueShareAccount` (aliases `TipsCollectionAccount` (TCA) / `BackrunCollectionAccount` (BCA)). `share_kind` selects the seed segment, so the same `(name, vote)` yields distinct Tip vs Backrun PDAs.
+Unified account `RevenueShareAccount` (aliases `TipsCollectionAccount` (TCA) / `MevShareCollectionAccount` (MCA)). `share_kind` selects the seed segment, so the same `(name, vote)` yields distinct Tip vs MevShare PDAs.
 
 Space: `RevenueShareAccount::space_for(max_epoch_entries)`. `max_epoch_entries` is ledger capacity only (not in PDA seeds). Cap: `MAX_REVENUE_EPOCH_ENTRIES_CAP = 32`.
 
@@ -23,7 +23,7 @@ Space: `RevenueShareAccount::space_for(max_epoch_entries)`. `max_epoch_entries` 
 
 | Field | Type | Notes |
 |-------|------|-------|
-| share_kind | RevenueKind | `Tip` or `Backrun`; in PDA seeds |
+| share_kind | RevenueKind | `Tip` or `MevShare`; in PDA seeds |
 | name | [u8; 32] | Revenue source / wallet label in seeds; non-empty |
 | validator_vote | Pubkey | Must match RCA vote on claim |
 | initializer | Pubkey | Payer at init; receives account rent on close |

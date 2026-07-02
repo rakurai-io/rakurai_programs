@@ -97,11 +97,11 @@ client charges commission on MEV Rewards **only** if the following conditions ar
 
 ---
 
-## Revenue Share Accounts (Tip & Backrun)
+## Revenue Share Accounts (Tip & MevShare)
 
 Most revenue flows through accounts Rakurai controls directly (the eight tip PDAs, the per-epoch RCA). **Revenue share accounts exist for the cases where the revenue lands in an account Rakurai does *not* control**, so the agreed share has to be tracked and settled separately.
 
-The unified account is `RevenueShareAccount`, parameterized by `share_kind ∈ {Tip, Backrun}`. The two kinds are exposed as type aliases: **`TipsCollectionAccount` (TCA)** and **`BackrunCollectionAccount` (BCA)**.
+The unified account is `RevenueShareAccount`, parameterized by `share_kind ∈ {Tip, MevShare}`. The two kinds are exposed as type aliases: **`TipsCollectionAccount` (TCA)** and **`MevShareCollectionAccount` (MCA)**.
 
 ### Why a **Tips Collection Account** (TCA)
 
@@ -109,9 +109,9 @@ By default, searchers tip Rakurai's [eight tip accounts](https://docs.rakurai.io
 
 In that case **the tip is received in the external account holder's own account**, not in a Rakurai-controlled PDA. So Rakurai can't just drain it — instead the validator **records** the attributed amount every leader turn, and after the epoch the external account holder **settles** their agreed share into the Tips Collection Account PDA, from which the commission is deducted.
 
-### Why a **Backrun Collection Account** (BCA)
+### Why a **Mev Share Collection Account** (MCA)
 
-Same idea for [post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations) used for backrun / arbitrage. The backrun revenue lands in the external account holder's own flow, so there's no account Rakurai can drain. We **trust the revenue source to share an agreed percentage** of backrun revenue; the validator records attribution per turn and the external account holder settles into the Backrun Collection Account — exactly the same flow as tips, just a different `share_kind`.
+Same idea for [post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations) used for MEV / arbitrage. The MEV-share revenue lands in the external account holder's own flow, so there's no account Rakurai can drain. We **trust the revenue source to share an agreed percentage** of MEV-share revenue; the validator records attribution per turn and the external account holder settles into the Mev Share Collection Account — exactly the same flow as tips, just a different `share_kind`.
 
 ### Flow
 
@@ -125,7 +125,7 @@ Same idea for [post-pack confirmations](https://docs.rakurai.io/docs/services/ra
 | **Close** | `initializer` or `manager_authority` | `close_revenue_share_account` — rent to `initializer` |
 | **Convert flag** | `manager_authority`, `record_authority`, or validator identity | `update_epoch_converted_to_block_reward(epoch)` — after claim, if account `convert_to_block_rewards` is true |
 
-PDA: `[REVENUE_SHARE, share_kind ("TIP" \| "BACKRUN"), name[32], validator_vote]`. `convert_to_block_rewards` is snapshotted into the ledger on the first `record_revenue` for each epoch.
+PDA: `[REVENUE_SHARE, share_kind ("TIP" \| "MEV_SHARE"), name[32], validator_vote]`. `convert_to_block_rewards` is snapshotted into the ledger on the first `record_revenue` for each epoch.
 
 ---
 

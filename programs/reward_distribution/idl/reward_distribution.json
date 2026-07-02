@@ -520,7 +520,7 @@
     {
       "name": "initialize_revenue_share_account",
       "docs": [
-        "Initializes a revenue share vault (tip or backrun) for a validator."
+        "Initializes a revenue share vault (tip or mev-share) for a validator."
       ],
       "discriminator": [
         80,
@@ -1736,7 +1736,7 @@
     {
       "code": 6024,
       "name": "RevenueManagerNotConfigured",
-      "msg": "Tip/backrun revenue manager is not configured on the reward distribution config."
+      "msg": "Tip/mev-share revenue manager is not configured on the reward distribution config."
     },
     {
       "code": 6025,
@@ -2168,7 +2168,7 @@
             "name": "Tip"
           },
           {
-            "name": "Backrun"
+            "name": "MevShare"
           }
         ]
       }
@@ -2225,7 +2225,7 @@
     {
       "name": "RevenueShareAccount",
       "docs": [
-        "Tip/backrun revenue share vault per validator (accounting + lamport vault)."
+        "Tip/mev-share revenue share vault per validator (accounting + lamport vault)."
       ],
       "type": {
         "kind": "struct",
@@ -2233,7 +2233,7 @@
           {
             "name": "share_kind",
             "docs": [
-              "Tip vs backrun; part of the PDA seeds with `name` and `validator_vote`."
+              "Tip vs mev-share; part of the PDA seeds with `name` and `validator_vote`."
             ],
             "type": {
               "defined": {
@@ -2602,7 +2602,7 @@
           {
             "name": "revenue_manager_authority",
             "docs": [
-              "Authority that may create tip/backrun revenue share accounts and manage claims. `None` disables revenue share account creation."
+              "Authority that may create tip/mev-share revenue share accounts and manage claims. `None` disables revenue share account creation."
             ],
             "type": {
               "option": "pubkey"

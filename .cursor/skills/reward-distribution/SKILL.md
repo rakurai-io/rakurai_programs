@@ -2,13 +2,13 @@
 name: reward-distribution
 description: >-
   Rakurai Reward Distribution program (RCA, Merkle claims, revenue-share
-  tip/backrun PDAs). Use for reward distribution, RCA, revenue-share vaults,
+  tip/mev-share PDAs). Use for reward distribution, RCA, revenue-share vaults,
   Merkle claims, client commission, or reward-distribution CLI work.
 ---
 
 # Rakurai Reward Distribution
 
-`programs/reward_distribution/` (v0.3.0). Per-epoch **RCA** vault; staker claims via Merkle. Off-path tip/backrun revenue shares tracked in per-validator PDAs (no on-chain registry).
+`programs/reward_distribution/` (v0.3.0). Per-epoch **RCA** vault; staker claims via Merkle. Off-path tip/mev-share revenue shares tracked in per-validator PDAs (no on-chain registry).
 
 **Source**: `lib.rs`, `state.rs`, `sdk/`. **Details**: [reference.md](reference.md).
 
@@ -18,7 +18,7 @@ description: >-
 
 ```
 RAA commission ──► RCA (vote, epoch) ──► Merkle staker claims
-RevenueShareAccount (share_kind = Tip | Backrun) ── per (kind, revenue label, vote, max_epochs)
+RevenueShareAccount (share_kind = Tip | MevShare) ── per (kind, revenue label, vote, max_epochs)
   record_revenue (accounting) ──► claim_revenue splits commission_bps to commission_account, rest to validator identity
 ```
 
@@ -34,7 +34,7 @@ RevenueShareAccount (share_kind = Tip | Backrun) ── per (kind, revenue label
 | `RewardDistributionConfigAccount` | Admin, `num_epochs_valid` (1–10), commission caps, MEV toggle, `revenue_manager_authority` |
 | `RewardCollectionAccount` | Per-epoch collection vault |
 | `ClaimStatus` | Per-claimant replay guard |
-| `RevenueShareAccount` | Unified revenue-share vault per `(share_kind, name, validator)`; `share_kind ∈ {Tip, Backrun}` in PDA seeds. Type aliases `TipsCollectionAccount` (TCA) / `BackrunCollectionAccount` (BCA) |
+| `RevenueShareAccount` | Unified revenue-share vault per `(share_kind, name, validator)`; `share_kind ∈ {Tip, MevShare}` in PDA seeds. Type aliases `TipsCollectionAccount` (TCA) / `MevShareCollectionAccount` (MCA) |
 
 ---
 
@@ -68,7 +68,7 @@ use reward_distribution::sdk::{
     derive_reward_collection_account_address,
     derive_revenue_share_account_address,           // (share_kind, name, vote)
     derive_tip_collection_account_address,          // wrapper: Tip
-    derive_backrun_collection_account_address,      // wrapper: Backrun
+    derive_mev_share_collection_account_address,    // wrapper: MevShare
 };
 ```
 

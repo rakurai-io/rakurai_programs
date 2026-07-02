@@ -1981,7 +1981,7 @@
             "name": "Tip"
           },
           {
-            "name": "Backrun"
+            "name": "MevShare"
           }
         ]
       }
@@ -2010,7 +2010,7 @@
     {
       "name": "RevenueShareAccount",
       "docs": [
-        "Tip/backrun revenue share vault per validator (accounting + lamport vault)."
+        "Tip/mev-share revenue share vault per validator (accounting + lamport vault)."
       ],
       "type": {
         "kind": "struct",
@@ -2018,7 +2018,7 @@
           {
             "name": "share_kind",
             "docs": [
-              "Tip vs backrun; part of the PDA seeds with `name` and `validator_vote`."
+              "Tip vs mev-share; part of the PDA seeds with `name` and `validator_vote`."
             ],
             "type": {
               "defined": {
