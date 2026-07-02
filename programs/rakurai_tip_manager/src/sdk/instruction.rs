@@ -201,6 +201,8 @@ pub struct ChangeTipReceiverV1Accounts {
     pub rakurai_tip_account_6: Pubkey,
     pub rakurai_tip_account_7: Pubkey,
     pub signer: Pubkey,
+    /// PDA (`[RECORD_AUTHORITY_SEED]`) that signs the reward_distribution record_revenue CPI.
+    pub record_authority: Pubkey,
     /// Appended as `remaining_accounts[0]` (enabled RAA PDA for signer).
     pub rakurai_activation_account: Pubkey,
     /// Appended as `remaining_accounts[1]` (reward distribution program id).
@@ -227,6 +229,7 @@ pub fn change_tip_receiver_v1_ix(
         rakurai_tip_account_6,
         rakurai_tip_account_7,
         signer,
+        record_authority,
         rakurai_activation_account,
         reward_distribution_program,
     } = accounts;
@@ -245,6 +248,7 @@ pub fn change_tip_receiver_v1_ix(
         rakurai_tip_account_6,
         rakurai_tip_account_7,
         signer,
+        record_authority,
     }
     .to_account_metas(None);
     account_metas.push(AccountMeta::new_readonly(rakurai_activation_account, false));

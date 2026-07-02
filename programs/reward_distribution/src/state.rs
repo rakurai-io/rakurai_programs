@@ -418,11 +418,15 @@ impl RevenueShareAccount {
         commission_account: Pubkey,
         convert_to_block_rewards: bool,
         manager_authority: Pubkey,
+        record_authority: Option<Pubkey>,
     ) -> Result<()> {
         self.commission_bps = commission_bps;
         self.commission_account = commission_account;
         self.convert_to_block_rewards = convert_to_block_rewards;
         self.manager_authority = manager_authority;
+        if let Some(new_record_authority) = record_authority {
+            self.record_authority = new_record_authority;
+        }
         self.validate()
     }
 

@@ -37,6 +37,10 @@ pub const RAKURAI_TIP_ACCOUNT_4_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_4";
 pub const RAKURAI_TIP_ACCOUNT_5_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_5";
 pub const RAKURAI_TIP_ACCOUNT_6_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_6";
 pub const RAKURAI_TIP_ACCOUNT_7_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_7";
+/// Seed for the PDA that signs `reward_distribution::record_revenue` CPIs. Set this PDA as a
+/// `TipsCollectionAccount` (TCA) `record_authority` so the tip manager can record drained tips
+/// against the receiving TCA.
+pub const RECORD_AUTHORITY_SEED: &[u8] = b"RECORD_AUTHORITY";
 
 /// Account discriminator size
 pub const HEADER: usize = 8;
@@ -166,8 +170,14 @@ pub mod rakurai_tip_manager {
             &ctx.accounts.client_commission_account,
             tip_accounts,
         )?;
-        if validator_fee > 0 {
-            use anchor_lang::solana_program::program::invoke;
+        // The drained validator tips are credited to `old_tip_receiver`, so the revenue record
+        // must be written against that same account. Only record when it is a reward_distribution
+        // owned TCA (skip legacy plain-wallet receivers). The tip manager authorizes the record via
+        // its own `RECORD_AUTHORITY_SEED` PDA, which must be the TCA's `record_authority`.
+        if validator_fee > 0
+            && ctx.accounts.old_tip_receiver.owner == &reward_distribution::ID
+        {
+            use anchor_lang::solana_program::program::invoke_signed;
             use reward_distribution::sdk::instruction::{
                 record_revenue_ix, RecordRevenueArgs, RecordRevenueShareAccounts,
             };
@@ -177,13 +187,17 @@ pub mod rakurai_tip_manager {
                     amount: validator_fee,
                 },
                 RecordRevenueShareAccounts {
-                    revenue_share_account: new_tip_receiver.key(),
-                    record_authority: ctx.accounts.signer.key(),
+                    revenue_share_account: ctx.accounts.old_tip_receiver.key(),
+                    record_authority: ctx.accounts.record_authority.key(),
                 },
             );
-            invoke(
+            invoke_signed(
                 &record_ix,
-                &[new_tip_receiver, ctx.accounts.signer.to_account_info()],
+                &[
+                    ctx.accounts.old_tip_receiver.to_account_info(),
+                    ctx.accounts.record_authority.to_account_info(),
+                ],
+                &[&[RECORD_AUTHORITY_SEED, &[ctx.bumps.record_authority]]],
             )?;
         }
         Ok(())
@@ -690,11 +704,13 @@ pub struct ChangeTipReceiverV1<'info> {
     )]
     pub rakurai_tip_account_7: Account<'info, RakuraiTipAccount>,
 
-    #[account(
-        mut,
-        constraint = signer.key() == new_tip_receiver.record_authority @ RakuraiTipManagerError::Unauthorized
-    )]
+    #[account(mut)]
     pub signer: Signer<'info>,
+
+    /// CHECK: PDA that signs the `reward_distribution::record_revenue` CPI. Must be set as the
+    /// receiving TCA's `record_authority`; the seeds constraint guarantees only this program can sign.
+    #[account(seeds = [RECORD_AUTHORITY_SEED], bump)]
+    pub record_authority: UncheckedAccount<'info>,
 }
 
 impl ChangeTipReceiverV1<'_> {

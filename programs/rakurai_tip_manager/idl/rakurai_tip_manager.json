@@ -1058,6 +1058,37 @@
           "name": "signer",
           "writable": true,
           "signer": true
+        },
+        {
+          "name": "record_authority",
+          "docs": [
+            "receiving TCA's `record_authority`; the seeds constraint guarantees only this program can sign."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  69,
+                  67,
+                  79,
+                  82,
+                  68,
+                  95,
+                  65,
+                  85,
+                  84,
+                  72,
+                  79,
+                  82,
+                  73,
+                  84,
+                  89
+                ]
+              }
+            ]
+          }
         }
       ],
       "args": []

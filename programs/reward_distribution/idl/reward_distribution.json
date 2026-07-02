@@ -1299,6 +1299,12 @@
         {
           "name": "convert_to_block_rewards",
           "type": "bool"
+        },
+        {
+          "name": "record_authority",
+          "type": {
+            "option": "pubkey"
+          }
         }
       ]
     },
@@ -2400,6 +2406,10 @@
           {
             "name": "convert_to_block_rewards",
             "type": "bool"
+          },
+          {
+            "name": "record_authority",
+            "type": "pubkey"
           }
         ]
       }

@@ -558,6 +558,7 @@ pub mod reward_distribution {
         commission_bps: u16,
         commission_account: Pubkey,
         convert_to_block_rewards: bool,
+        record_authority: Option<Pubkey>,
     ) -> Result<()> {
         UpdateRevenueShareConfig::auth(&ctx, commission_bps, commission_account)?;
 
@@ -567,6 +568,7 @@ pub mod reward_distribution {
             commission_account,
             convert_to_block_rewards,
             ctx.accounts.manager_authority.key(),
+            record_authority,
         )?;
 
         emit!(RevenueShareConfigUpdatedEvent {
@@ -575,6 +577,7 @@ pub mod reward_distribution {
             commission_bps,
             commission_account,
             convert_to_block_rewards,
+            record_authority: revenue_share_account.record_authority,
         });
 
         Ok(())
@@ -1454,6 +1457,7 @@ pub struct RevenueShareConfigUpdatedEvent {
     pub commission_bps: u16,
     pub commission_account: Pubkey,
     pub convert_to_block_rewards: bool,
+    pub record_authority: Pubkey,
 }
 
 #[event]
