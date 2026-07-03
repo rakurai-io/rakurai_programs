@@ -715,7 +715,8 @@
     {
       "name": "change_tip_receiver_v1",
       "docs": [
-        "Changes the active tip receiver with Rakurai activation, vote, and TCA checks."
+        "Changes the active tip receiver and drains tips to `old_tip_receiver` (wallet or TCA).",
+        "When `old_tip_receiver` is a TCA, CPIs `record_revenue` to update the ledger."
       ],
       "discriminator": [
         179,
@@ -1878,6 +1879,11 @@
       "code": 6003,
       "name": "RakuraiSchedulerNotEnabled",
       "msg": "Rakurai scheduler is not enabled for this validator."
+    },
+    {
+      "code": 6004,
+      "name": "InvalidTcaRecordAuthority",
+      "msg": "TCA record_authority does not match the tip manager's RECORD_AUTHORITY PDA."
     }
   ],
   "types": [

@@ -116,7 +116,7 @@ rakurai-activation -p <PROGRAM_ID> scheduler-control --identity_pubkey <IDENTITY
 #### Description
 Updates the validator's block reward commission.
 
-Validators can update their share of the block reward at any time, independent of Rakurai. Only the validator can change their commission, and the change will take effect starting from the next epoch. However, if the validator has not yet passed the first leader turn of the current epoch, the new commission will be applied in the following epoch.
+Validators can update their share of the block reward at any time, independent of Rakurai. Only the validator can change their commission. The updated commission applies from the **current epoch** if no [RewardCollectionAccount](../programs/reward_distribution/README.md#1-rewardcollectionaccount-account-initialization) has been initialized yet, or from the **next epoch** if one already exists.
  
 #### Usage
 
