@@ -49,7 +49,7 @@ const MAX_COMMISSION_BPS: u64 = 10_000;
 /// Rakurai label for the tip revenue share vault (`TipsCollectionAccount` / TCA; `name` field in PDA seeds).
 pub const RAKURAI_REVENUE_NAME: [u8; 32] = {
     let mut name = [0u8; 32];
-    name[0] = b'R';
+    name[0] = b'r';
     name[1] = b'a';
     name[2] = b'k';
     name[3] = b'u';
