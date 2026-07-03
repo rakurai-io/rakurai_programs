@@ -147,36 +147,85 @@ pub mod rakurai_tip_manager {
     /// Changes the active tip receiver (legacy). Drains tips and rotates config receiver.
     /// Prefer `change_tip_receiver_v1` for RAA gate, vote auth, and TCA validation.
     pub fn change_tip_receiver(ctx: Context<ChangeTipReceiver>) -> Result<()> {
+        let rent = Rent::get()?;
         let tip_accounts = ctx.accounts.get_tip_accounts();
-        change_tip_receiver_inner(
-            &mut ctx.accounts.tip_manager_config,
-            &ctx.accounts.old_tip_receiver,
-            &ctx.accounts.new_tip_receiver,
-            &ctx.accounts.client_commission_account,
-            tip_accounts,
-        )?;
+
+        let total_tips = RakuraiTipAccount::drain_accounts(&rent, &tip_accounts)?;
+
+        let client_fee = total_tips
+            .checked_mul(ctx.accounts.tip_manager_config.client_commission_bps)
+            .ok_or(ArithmeticError)?
+            .checked_div(MAX_COMMISSION_BPS)
+            .ok_or(ArithmeticError)?;
+
+        let validator_fee = total_tips.checked_sub(client_fee).ok_or(ArithmeticError)?;
+
+        if validator_fee > 0 {
+            **ctx.accounts.old_tip_receiver.try_borrow_mut_lamports()? += validator_fee;
+        }
+
+        if client_fee > 0 {
+            **ctx
+                .accounts
+                .client_commission_account
+                .try_borrow_mut_lamports()? += client_fee;
+        }
+
+        if client_fee > 0 || validator_fee > 0 {
+            emit!(TipsClaimedEvent {
+                validator_tip_receiver_account: ctx.accounts.old_tip_receiver.key(),
+                tip_receiver_amount: validator_fee,
+                client_commission_account: ctx.accounts.client_commission_account.key(),
+                client_amount: client_fee,
+            });
+        }
+
+        ctx.accounts
+            .tip_manager_config
+            .validator_tip_receiver_account = ctx.accounts.new_tip_receiver.key();
+
         Ok(())
     }
 
-    /// Changes the active tip receiver with Rakurai activation, vote, and TCA checks.
+    /// Changes the active tip receiver and drains tips to `old_tip_receiver` (wallet or TCA).
+    /// When `old_tip_receiver` is a TCA, CPIs `record_revenue` to update the ledger.
     pub fn change_tip_receiver_v1(ctx: Context<ChangeTipReceiverV1>) -> Result<()> {
         ChangeTipReceiverV1::auth(&ctx)?;
+
+        let rent = Rent::get()?;
         let tip_accounts = ctx.accounts.get_tip_accounts();
-        let new_tip_receiver = ctx.accounts.new_tip_receiver.to_account_info();
-        let validator_fee = change_tip_receiver_inner(
-            &mut ctx.accounts.tip_manager_config,
-            &ctx.accounts.old_tip_receiver,
-            &new_tip_receiver,
-            &ctx.accounts.client_commission_account,
-            tip_accounts,
-        )?;
-        // The drained validator tips are credited to `old_tip_receiver`, so the revenue record
-        // must be written against that same account. Only record when it is a reward_distribution
-        // owned TCA (skip legacy plain-wallet receivers). The tip manager authorizes the record via
-        // its own `RECORD_AUTHORITY_SEED` PDA, which must be the TCA's `record_authority`.
-        if validator_fee > 0
+
+        // 1. Collect per-account tips and total WITHOUT draining yet.
+        let (total_tips, per_account_tips) = RakuraiTipAccount::collect_tips(&rent, &tip_accounts)?;
+
+        let client_fee = total_tips
+            .checked_mul(ctx.accounts.tip_manager_config.client_commission_bps)
+            .ok_or(ArithmeticError)?
+            .checked_div(MAX_COMMISSION_BPS)
+            .ok_or(ArithmeticError)?;
+
+        let validator_fee = total_tips.checked_sub(client_fee).ok_or(ArithmeticError)?;
+
+        // 2. Record the validator's share on the TCA ledger when possible.
+        // If `old_tip_receiver` is a TCA whose `record_authority` matches our PDA,
+        // CPI `record_revenue`; otherwise skip ONLY the recording and still drain
+        // and distribute the tips (a mismatched/absent authority must not block payouts).
+        //
+        // The CPI must happen BEFORE any lamport changes: the runtime only syncs
+        // CPI-referenced accounts from VM→host before its pre-CPI balance check,
+        // so any prior mutations on non-CPI accounts appear as an imbalance.
+        let should_record = validator_fee > 0
             && ctx.accounts.old_tip_receiver.owner == &reward_distribution::ID
-        {
+            && {
+                use anchor_lang::AccountDeserialize;
+                TipsCollectionAccount::try_deserialize(
+                    &mut &ctx.accounts.old_tip_receiver.data.borrow()[..],
+                )
+                .map(|tca| tca.record_authority == ctx.accounts.record_authority.key())
+                .unwrap_or(false)
+            };
+
+        if should_record {
             use anchor_lang::solana_program::program::invoke_signed;
             use reward_distribution::sdk::instruction::{
                 record_revenue_ix, RecordRevenueArgs, RecordRevenueShareAccounts,
@@ -200,22 +249,49 @@ pub mod rakurai_tip_manager {
                 &[&[RECORD_AUTHORITY_SEED, &[ctx.bumps.record_authority]]],
             )?;
         }
+
+        // 3. Drain using precomputed per-account tips, then distribute lamports.
+        RakuraiTipAccount::drain_collected(&tip_accounts, &per_account_tips)?;
+
+        if validator_fee > 0 {
+            **ctx.accounts.old_tip_receiver.try_borrow_mut_lamports()? += validator_fee;
+        }
+        if client_fee > 0 {
+            **ctx
+                .accounts
+                .client_commission_account
+                .try_borrow_mut_lamports()? += client_fee;
+        }
+
+        if client_fee > 0 || validator_fee > 0 {
+            emit!(TipsClaimedEvent {
+                validator_tip_receiver_account: ctx.accounts.old_tip_receiver.key(),
+                tip_receiver_amount: validator_fee,
+                client_commission_account: ctx.accounts.client_commission_account.key(),
+                client_amount: client_fee,
+            });
+        }
+
+        let new_tip_receiver = ctx.accounts.new_tip_receiver.to_account_info();
+        ctx.accounts
+            .tip_manager_config
+            .validator_tip_receiver_account = new_tip_receiver.key();
+
         Ok(())
     }
 
     /// Changes the client and its commission by first draining all pending tips (distributing shares to the tip receiver
     /// and old client) and then setting the new client and its commission.
-    pub fn change_client(
-        ctx: Context<ChangeClient>,
-        client_commission_bps: u64,
-    ) -> Result<()> {
+    pub fn change_client(ctx: Context<ChangeClient>, client_commission_bps: u64) -> Result<()> {
         ChangeClient::auth(&ctx)?;
         require_gte!(
             MAX_COMMISSION_BPS,
             client_commission_bps,
             RakuraiTipManagerError::MaxCommissionBpsExceeded
         );
-        let total_tips = RakuraiTipAccount::drain_accounts(ctx.accounts.get_tip_accounts())?;
+        let rent = Rent::get()?;
+        let total_tips =
+            RakuraiTipAccount::drain_accounts(&rent, &ctx.accounts.get_tip_accounts())?;
 
         let client_fee = total_tips
             .checked_mul(ctx.accounts.tip_manager_config.client_commission_bps)
@@ -223,9 +299,7 @@ pub mod rakurai_tip_manager {
             .checked_div(MAX_COMMISSION_BPS)
             .ok_or(ArithmeticError)?;
 
-        let validator_fee = total_tips
-            .checked_sub(client_fee)
-            .ok_or(ArithmeticError)?;
+        let validator_fee = total_tips.checked_sub(client_fee).ok_or(ArithmeticError)?;
 
         if validator_fee > 0 {
             **ctx
@@ -247,54 +321,11 @@ pub mod rakurai_tip_manager {
             });
         }
 
-        ctx.accounts
-            .tip_manager_config
-            .client_commission_account = ctx.accounts.new_client.key();
+        ctx.accounts.tip_manager_config.client_commission_account = ctx.accounts.new_client.key();
         ctx.accounts.tip_manager_config.client_commission_bps = client_commission_bps;
 
         Ok(())
     }
-}
-
-fn change_tip_receiver_inner(
-    tip_manager_config: &mut TipManagerConfigAccount,
-    old_tip_receiver: &AccountInfo,
-    new_tip_receiver: &AccountInfo,
-    client_commission_account: &AccountInfo,
-    tip_accounts: Vec<AccountInfo>,
-) -> Result<u64> {
-    let total_tips = RakuraiTipAccount::drain_accounts(tip_accounts)?;
-
-    let client_fee = total_tips
-        .checked_mul(tip_manager_config.client_commission_bps)
-        .ok_or(ArithmeticError)?
-        .checked_div(MAX_COMMISSION_BPS)
-        .ok_or(ArithmeticError)?;
-
-    let validator_fee = total_tips
-        .checked_sub(client_fee)
-        .ok_or(ArithmeticError)?;
-
-    if validator_fee > 0 {
-        **old_tip_receiver.try_borrow_mut_lamports()? += validator_fee;
-    }
-
-    if client_fee > 0 {
-        **client_commission_account.try_borrow_mut_lamports()? += client_fee;
-    }
-
-    if client_fee > 0 || validator_fee > 0 {
-        emit!(TipsClaimedEvent {
-            validator_tip_receiver_account: old_tip_receiver.key(),
-            tip_receiver_amount: validator_fee,
-            client_commission_account: client_commission_account.key(),
-            client_amount: client_fee,
-        });
-    }
-
-    tip_manager_config.validator_tip_receiver_account = new_tip_receiver.key();
-
-    Ok(validator_fee)
 }
 
 /// Errors
@@ -311,6 +342,9 @@ pub enum RakuraiTipManagerError {
 
     #[msg("Rakurai scheduler is not enabled for this validator.")]
     RakuraiSchedulerNotEnabled,
+
+    #[msg("TCA record_authority does not match the tip manager's RECORD_AUTHORITY PDA.")]
+    InvalidTcaRecordAuthority,
 }
 
 /// PDA Bumps
@@ -765,6 +799,9 @@ impl ChangeTipReceiverV1<'_> {
             RakuraiTipManagerError::Unauthorized
         );
 
+        // Note: TCA `record_authority` is validated at execution time to gate the
+        // `record_revenue` CPI. A mismatch skips only recording, not the payout.
+
         Ok(())
     }
 }
@@ -933,28 +970,38 @@ pub struct RakuraiTipAccount {}
 impl RakuraiTipAccount {
     pub const SIZE: usize = 8;
 
-    /// Drains all provided tip accounts while preserving rent exemption.
-    fn drain_accounts(accounts: Vec<AccountInfo>) -> Result<u64> {
+    /// Collects per-account drainable tips without modifying lamports.
+    /// Returns `(total, per_account_tips)` so the caller can drain later
+    /// via `drain_collected` without recomputing rent.
+    fn collect_tips(rent: &Rent, accounts: &[AccountInfo]) -> Result<(u64, Vec<u64>)> {
         let mut total = 0u64;
+        let mut per_account = Vec::with_capacity(accounts.len());
         for account in accounts {
-            total = total
-                .checked_add(Self::drain_account(&account)?)
+            let tips = account
+                .lamports()
+                .checked_sub(rent.minimum_balance(account.data_len()))
                 .ok_or(ArithmeticError)?;
+            per_account.push(tips);
+            total = total.checked_add(tips).ok_or(ArithmeticError)?;
         }
-        Ok(total)
+        Ok((total, per_account))
     }
 
-    fn drain_account(account: &AccountInfo) -> Result<u64> {
-        let rent = Rent::get()?;
-        let min_rent = rent.minimum_balance(account.data_len());
+    /// Drains precomputed tip amounts from each account.
+    fn drain_collected(accounts: &[AccountInfo], per_account: &[u64]) -> Result<()> {
+        for (account, &tips) in accounts.iter().zip(per_account) {
+            if tips > 0 {
+                **account.try_borrow_mut_lamports()? -= tips;
+            }
+        }
+        Ok(())
+    }
 
-        let tips = account
-            .lamports()
-            .checked_sub(min_rent)
-            .ok_or(ArithmeticError)?;
-
-        **account.try_borrow_mut_lamports()? -= tips;
-        Ok(tips)
+    /// Single-pass collect + drain. Returns total drained.
+    fn drain_accounts(rent: &Rent, accounts: &[AccountInfo]) -> Result<u64> {
+        let (total, per_account) = Self::collect_tips(rent, accounts)?;
+        Self::drain_collected(accounts, &per_account)?;
+        Ok(total)
     }
 
     fn close_account(authority: &Signer, account: &AccountInfo) -> Result<u64> {
