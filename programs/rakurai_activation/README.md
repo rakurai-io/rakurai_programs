@@ -37,7 +37,7 @@ This program implements a 2-party asynchronous multisig:
 > Unlike traditional multisig, both parties do not sign the same transaction. Instead, actions are proposed and approved via separate transactions.
 ---
 
-## Rakurai Activation Account Account Creation
+## Rakurai Activation Account Creation
 
 - The validator initializes their **RakuraiActivationAccount** PDA using:
   - Their **identity pubkey**.

@@ -6,27 +6,11 @@ A Solana smart contract for managing tips sent to validators. The program mainta
 
 ---
 ### Deployed Program ID
-- **Mainnet**: [rKtiPTD7WuCdEEQ2JXWgAmZHHL9iZLc3niCXwtS7wSH](https://solscan.io/account/rKtiPTD7WuCdEEQ2JXWgAmZHHL9iZLc3niCXwtS7wSH)
-  - Mainnet Tip Accounts:
-    - `BjqjPHFmwr19YFmkH8CMNJFbj1wzX9k9ngr4am2nQEdq`
-    - `9CNKnAqJgLA4pL6KByzhhdY4mKoQP5wcPdhJgnvvi5Ve`
-    - `5wy4C2VMFhHE4i8PWKNS1K4SV275zjNwhLwfKBwajrro`
-    - `AgMdA97pk2i2Ry4YQ4iVPNrRiFhcH3x3ARUCiQGt3vJG`
-    - `4Qf8JFV5vmpADXNouoJriQ9KiniT5DENrz9JM2mKGH9m`
-    - `AuFAFzbzE9dzMajy4RNdyJZBTskeiuJQqT2wd9xoGSRD`
-    - `8aLaHz8595MAvgxKoBJEyZmDfqQp8CorezFGYnC7CPjy`
-    - `H6hyJo6rpBmwHbvVuWCEHExJ2bE4rcn1hTPeiBtypus4`
 
-- **Testnet**: [4qRZaFzf7MvgfBTCP9grb69cCST8UmKHPtkpGAgkJosD](https://solscan.io/account/4qRZaFzf7MvgfBTCP9grb69cCST8UmKHPtkpGAgkJosD?cluster=testnet)
-  - Testnet Tip Accounts:
-    - `3ahyXyni1jLj8kJ13VgGEFDJzB374dgQW273nJSg8cdm`
-    - `3aebD4TAn1somZfiaKRrMypUfmbDzT7XMVWRM5TFHuKW`
-    - `Hm4LFyTAbrgH4eejYmNXQJ9oejQyq8frD2qeJbmkCAWR`
-    - `AffPqNJ8jSrFGgfiouVfXcra1Vd6gHUjNhpoL8uW8dY5`
-    - `9Z4pSxRZzE1T2e6587yzMWtvo8RHKW3R5Rb2FcprUPz`
-    - `J2JdwcRrxWyCHKrgi2ipwCFXK2oRSgzPN4P7Q6Kz9XZ9`
-    - `DscP7KHpAvfnboSKEQ5KEcwuFuRWn6MTjKYYTftuqY6z`
-    - `Ur14r1oNyLvYeFLngGoEwYV4zwFVcui72vJqAavDXhZ`
+| Network | Tip Manager Program | Tip accounts |
+|---------|---------------------|--------------|
+| **Mainnet** | [rKtiPTD7WuCdEEQ2JXWgAmZHHL9iZLc3niCXwtS7wSH](https://solscan.io/account/rKtiPTD7WuCdEEQ2JXWgAmZHHL9iZLc3niCXwtS7wSH) | `BjqjPHFmwr19YFmkH8CMNJFbj1wzX9k9ngr4am2nQEdq`<br>`9CNKnAqJgLA4pL6KByzhhdY4mKoQP5wcPdhJgnvvi5Ve`<br>`5wy4C2VMFhHE4i8PWKNS1K4SV275zjNwhLwfKBwajrro`<br>`AgMdA97pk2i2Ry4YQ4iVPNrRiFhcH3x3ARUCiQGt3vJG`<br>`4Qf8JFV5vmpADXNouoJriQ9KiniT5DENrz9JM2mKGH9m`<br>`AuFAFzbzE9dzMajy4RNdyJZBTskeiuJQqT2wd9xoGSRD`<br>`8aLaHz8595MAvgxKoBJEyZmDfqQp8CorezFGYnC7CPjy`<br>`H6hyJo6rpBmwHbvVuWCEHExJ2bE4rcn1hTPeiBtypus4` |
+| **Testnet** | [4qRZaFzf7MvgfBTCP9grb69cCST8UmKHPtkpGAgkJosD](https://solscan.io/account/4qRZaFzf7MvgfBTCP9grb69cCST8UmKHPtkpGAgkJosD?cluster=testnet) | `3ahyXyni1jLj8kJ13VgGEFDJzB374dgQW273nJSg8cdm`<br>`3aebD4TAn1somZfiaKRrMypUfmbDzT7XMVWRM5TFHuKW`<br>`Hm4LFyTAbrgH4eejYmNXQJ9oejQyq8frD2qeJbmkCAWR`<br>`AffPqNJ8jSrFGgfiouVfXcra1Vd6gHUjNhpoL8uW8dY5`<br>`9Z4pSxRZzE1T2e6587yzMWtvo8RHKW3R5Rb2FcprUPz`<br>`J2JdwcRrxWyCHKrgi2ipwCFXK2oRSgzPN4P7Q6Kz9XZ9`<br>`DscP7KHpAvfnboSKEQ5KEcwuFuRWn6MTjKYYTftuqY6z`<br>`Ur14r1oNyLvYeFLngGoEwYV4zwFVcui72vJqAavDXhZ` |
 
 ---
 
@@ -68,13 +52,13 @@ These accounts are empty state accounts that hold SOL (lamports). When tips are 
 4. **Automatic split** → Tips are automatically split:
    - client commission → `client_commission_account`
    - Remaining tips → `old_tip_receiver` (current config receiver)
-5. **Config update** → `validator_tip_receiver_account` set to the Rakurai Tips Collection Account (TCA) PDA for this validator vote
+5. **Config update** → `validator_tip_receiver_account` set to the Rakurai [Tips Collection Account](../reward_distribution/README.md#why-a-tips-collection-account-tca) (TCA) PDA for this validator vote
 
 ---
 
 ## Integration with Reward Distribution
 
-Tips land on the **TCA** via `change_tip_receiver_v1` (preferred). Legacy `change_tip_receiver` remains for existing clients.
+Tips land on the **TCA** via `change_tip_receiver_v1`.
 
 Prerequisite: `initialize_revenue_share_account` (`share_kind = Tip`, name `"Rakurai"`) before the first drain. PDA: `[REVENUE_SHARE, "TIP", "Rakurai", validator_vote]`.
 

@@ -33,7 +33,7 @@ Each **validator**, for each **epoch**, creates a unique PDA called `RewardColle
 On the first turn of each epoch, the `RewardCollectionAccount` is automatically initialized by the Rakurai Solana client. This initialization includes:
 - Commission details (from validator-specific [`RakuraiActivationAccount`](../rakurai_activation/README.md)).
 - Authority to update the reward Merkle root (only this authority can upload the Merkle root to the `RewardCollectionAccount` account).
-> Account initialization logic is part of the Rakurai Solana client. The node operator must specify the following [CLI arguments](https://docs.rakurai.io/nodeoperator#step-5-add-additional-cli-args).
+> Account initialization logic is part of the Rakurai Solana client.
 
 
 ### 2. Per-Turn Transfers
@@ -59,7 +59,7 @@ At the final slot of each epoch, the following process takes place:
 
 ## Reward Distribution — Free & Automated by Rakurai
 
-- Set this authority to [**Rakurai**](https://docs.rakurai.io/nodeoperator#step-5-add-additional-cli-args) for fully automated reward distribution.
+- Set this merkle root authority to [**Rakurai**](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/validators/readme) for fully automated reward distribution.
 - Keep it yourself if you want to do the distribution yourself.
 
 When set to **Rakurai**, the rakurai will automatically:
@@ -97,43 +97,69 @@ client charges commission on MEV Rewards **only** if the following conditions ar
 
 ---
 
-## Revenue Share Accounts (Tip & MevShare)
+## Tip & MevShare Collection Accounts
 
-Most revenue flows through accounts Rakurai controls directly (the eight tip PDAs, the per-epoch RCA). **Revenue share accounts exist for the cases where the revenue lands in an account Rakurai does *not* control**, so the agreed share has to be tracked and settled separately.
+Most revenue flows through accounts controlled by the [Rakurai Tip Manager Program](../rakurai_tip_manager/README.md). **Tip & MevShare Collection Accounts exist for the cases where the revenue lands in an account Rakurai does *not* control**, so the agreed share has to be tracked and settled separately.
 
-The unified account is `RevenueShareAccount`, parameterized by `share_kind ∈ {Tip, MevShare}`. The two kinds are exposed as type aliases: **`TipsCollectionAccount` (TCA)** and **`MevShareCollectionAccount` (MCA)**.
+Both are the same underlying `RevenueShareAccount`, parameterized by `share_kind ∈ {Tip, MevShare}` and exposed as the type aliases **`TipsCollectionAccount` (TCA)** and **`MevShareCollectionAccount` (MCA)**. Each account is uniquely tied to a validator, a searcher, and a share kind (Tip/MevShare). So for a single validator, you create a TCA to use a custom commission account, and an MCA to use post-pack confirmation.
 
 ### Why a **Tips Collection Account** (TCA)
 
-By default, searchers tip Rakurai's [eight tip accounts](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/rakurai_tip_manager_faqs#4.-can-i-use-my-own-tip-account-instead-of-rakurais-eight-accounts), and `rakurai_tip_manager` drains them automatically. But an external operator/searcher can [register their own custom tip account](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/rakurai_tip_manager_faqs#4.-can-i-use-my-own-tip-account-instead-of-rakurais-eight-accounts) and agree to share a commission (e.g. 30%) with Rakurai.
+By default, searchers tip Rakurai's [eight tip accounts](../rakurai_tip_manager/README.md) , and `rakurai_tip_manager` drains them automatically. But an external operator/searcher can [register their own custom tip account](https://docs.rakurai.io) and agree to share a commission (e.g. 30%) with Rakurai.
 
-In that case **the tip is received in the external account holder's own account**, not in a Rakurai-controlled PDA. So Rakurai can't just drain it — instead the validator **records** the attributed amount every leader turn, and after the epoch the external account holder **settles** their agreed share into the Tips Collection Account PDA, from which the commission is deducted.
+In that case **the tip is received in the external account holder's own account**, not in a Rakurai tip account. So Rakurai can't just drain it — instead the validator **records** the attributed amount every leader turn, and after the epoch the external account holder **settles** their agreed share into the Tips Collection Account PDA, from which the commission is deducted.
 
 ### Why a **Mev Share Collection Account** (MCA)
 
-Same idea for [post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations) used for MEV / arbitrage. The MEV-share revenue lands in the external account holder's own flow, so there's no account Rakurai can drain. We **trust the revenue source to share an agreed percentage** of MEV-share revenue; the validator records attribution per turn and the external account holder settles into the Mev Share Collection Account — exactly the same flow as tips, just a different `share_kind`.
+Same idea for [post-pack confirmations](https://docs.rakurai.io) used for MEV / arbitrage. The MEV-share revenue lands in the external account holder's own flow, so there's no account Rakurai can drain. We **trust the revenue source to share an agreed percentage** of MEV-share revenue; the validator records attribution per turn and the external account holder settles into the Mev Share Collection Account — exactly the same flow as tips, just a different `share_kind`.
+
+### How Tip & MevShare are Distributed
+
+Distribution works the same way for both a TCA and an MCA (only the `share_kind` differs).
+
+The attributed amount is recorded in the account's ledger. After the epoch ends, the searcher transfers the recorded amount into the account. Once transferred, it is distributed in two parts:
+ - **Client** (i.e. Rakurai): the client commission is credited to its account (the commission percentage is recorded in the account).
+ - **Validator**: the remaining share is credited to its identity account.
+   - The validator further has the option to convert the credited amount into block rewards. If enabled, once claimed, the claimed amount is converted into a high-priority block reward. The high-priority transaction is sent from the validator's identity account (because the amount was credited into the identity), and the transaction is guaranteed to land within the leader turn — it is created in the first turn of the leader slot, and the blockhash protects it so that if it does not land within those slots, it expires.
+
+**Note:** if the external searcher/trader does not share revenue within 2 epochs, they will be disabled and will not be able to get custom tip prioritization or post-pack confirmation.
 
 ### Flow
 
-| Step | Who | What |
+| Step | Who | Instruction |
 |------|-----|------|
 | **Init** | anyone (payer) | `initialize_revenue_share_account` — enabled RAA for validator vote; once per `(share_kind, name, vote)` |
 | **Record** | `record_authority` | `record_revenue(amount)` each leader turn — ledger only, no lamport move |
-| **Settle** | external account holder | Post-epoch SOL transfer into the revenue-share PDA (≥ ledger amount) |
+| **Settle** | searcher/trader | Post-epoch SOL transfer into the revenue-share PDA (≥ last epoch recorded amount) |
 | **Claim** | `manager_authority` | `claim_revenue(epoch)` after epoch ends — splits `commission_bps` → `commission_account`, rest → validator identity |
 | **Config** | `manager_authority` | `update_revenue_share_config` |
-| **Close** | `initializer` or `manager_authority` | `close_revenue_share_account` — rent to `initializer` |
-| **Convert flag** | `manager_authority`, `record_authority`, or validator identity | `update_epoch_converted_to_block_reward(epoch)` — after claim, if account `convert_to_block_rewards` is true |
+| **Close** | `manager_authority` | `close_revenue_share_account` — rent to `initializer` |
 
-PDA: `[REVENUE_SHARE, share_kind ("TIP" \| "MEV_SHARE"), name[32], validator_vote]`. `convert_to_block_rewards` is snapshotted into the ledger on the first `record_revenue` for each epoch.
+### How to Check Status
+
+The same steps apply to both a TCA and an MCA; only the `share_kind` in the seeds differs.
+- The account struct is openly available, so you can decode it.
+- Using Solscan, you can derive the address of the TCA/MCA.
+- Use the Solscan PDA creation tool: https://solscan.io/tools#pda-create
+- Seed: `[REVENUE_SHARE, share_kind ("TIP" | "MEV_SHARE"), name[32], validator_vote]`
+  - Add the 4 seeds using the add button, and make sure to use the correct name and validator vote account.
+  - This will give you the account (TCA/MCA) address, which you can then explore on Solscan to see its decoded data portion.
+
+PDA: `[REVENUE_SHARE, share_kind ("TIP" \| "MEV_SHARE"), name[32], validator_vote]`.
+`convert_to_block_rewards` is snapshotted into the ledger on the first `record_revenue` for each epoch.
 
 ---
 
 ## Account Lifecycle
 
+### Reward Collection Account (RCA)
 - `RewardCollectionAccount` is valid for **2 epochs**.
 - After that:
   - Any unclaimed funds are returned to the **validator's identity account**.
   - The account is closed to reclaim rent.
+
+### Tip & MevShare Collection Accounts (TCA & MCA)
+- These accounts are created once, and only the manager authority can control them.
+- They keep records for the most recent epochs, up to a configured capacity (`max_epoch_entries`, max 32); once full, the oldest epoch is overwritten.
 
 ---
