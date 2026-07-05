@@ -1199,7 +1199,8 @@ pub struct ClaimRevenue<'info> {
     )]
     pub commission_account: AccountInfo<'info>,
 
-    /// CHECK: this is safe
+    /// CHECK: validator identity receives the non-commission share of claimed revenue.
+    #[account(mut)]
     pub validator_identity: AccountInfo<'info>,
 
     pub manager_authority: Signer<'info>,

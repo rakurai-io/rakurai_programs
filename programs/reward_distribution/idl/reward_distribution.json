@@ -130,7 +130,8 @@
           "writable": true
         },
         {
-          "name": "validator_identity"
+          "name": "validator_identity",
+          "writable": true
         },
         {
           "name": "manager_authority",
