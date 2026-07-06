@@ -1,8 +1,8 @@
 use crate::ErrorCode::{
-    AccountValidationFailure, ArithmeticError, ConvertToBlockRewardsNotEnabled,
-    EpochAlreadyClaimed, EpochAlreadyConvertedToBlockReward, EpochEntryNotFound, EpochNotClaimed,
+    AccountValidationFailure, ArithmeticError, EpochAlreadyClaimed,
+    EpochAlreadyConvertedToBlockReward, EpochEntryNotFound, EpochNotClaimed,
     InvalidRevenueEpochCapacity, InvalidRevenueName, MaxCommissionFeeBpsExceeded,
-    RevenueManagerNotConfigured,
+    RevenueManagerNotConfigured, RevenueLedgerFull,
 };
 use anchor_lang::prelude::*;
 use std::mem::size_of;
@@ -76,11 +76,11 @@ pub struct EpochAmountEntry {
     pub epoch: u64,
     pub amount: u64,
     pub claimed: bool,
-    /// When true, this epoch's share is converted to block rewards on claim.
-    pub converted_to_block_reward: bool,
+    /// Whether this epoch's block reward conversion is complete.
+    pub block_reward_converted: bool,
 }
 
-/// Per-account epoch revenue ledger; grows until `max_epoch_entries` then overrides oldest epoch.
+/// Per-account epoch revenue ledger; grows until `max_epoch_entries` then evicts oldest claimed entry (errors if all unclaimed).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Default, Debug, PartialEq, Eq)]
 pub struct RevenueLedger {
     pub entries: Vec<EpochAmountEntry>,
@@ -125,8 +125,8 @@ pub struct RevenueShareAccount {
     pub commission_bps: u16,
     /// Receives the commission portion on claim.
     pub commission_account: Pubkey,
-    /// When true, recorded share is converted to block rewards on claim.
-    pub convert_to_block_rewards: bool,
+    /// When true, epoch entries require explicit block reward conversion via `update_epoch_converted_to_block_reward`.
+    pub block_reward_conversion_enabled: bool,
     pub ledger: RevenueLedger,
     pub bump: u8,
 }
@@ -171,12 +171,6 @@ impl RewardDistributionConfigAccount {
     /// Sets MEV commission enabled status.
     pub fn set_mev_commission_enabled(&mut self, enabled: bool) {
         self.client_commission_on_mev_commission_enabled = Some(enabled);
-    }
-
-    /// Checks if MEV commission setting is configured.
-    pub fn has_mev_commission_setting(&self) -> bool {
-        self.client_commission_on_mev_commission_enabled
-            .is_some()
     }
 
     /// Returns the configured tip/mev-share revenue manager, if revenue share account creation is enabled.
@@ -276,7 +270,7 @@ impl RevenueLedger {
         epoch: u64,
         amount: u64,
         capacity: usize,
-        converted_to_block_reward: bool,
+        block_reward_converted: bool,
     ) -> Result<()> {
         if amount == 0 {
             return Ok(());
@@ -285,7 +279,6 @@ impl RevenueLedger {
         for entry in &mut self.entries {
             if entry.epoch == epoch {
                 entry.amount = entry.amount.checked_add(amount).ok_or(ArithmeticError)?;
-                entry.converted_to_block_reward = converted_to_block_reward;
                 return Ok(());
             }
         }
@@ -294,7 +287,7 @@ impl RevenueLedger {
             epoch,
             amount,
             claimed: false,
-            converted_to_block_reward,
+            block_reward_converted,
         };
 
         if self.entries.len() < capacity {
@@ -302,17 +295,17 @@ impl RevenueLedger {
             return Ok(());
         }
 
-        let len = self.entries.len();
-        let mut oldest_idx = 0usize;
-        let mut oldest_epoch = self.entries[0].epoch;
-        for i in 1..len {
-            if self.entries[i].epoch < oldest_epoch {
-                oldest_epoch = self.entries[i].epoch;
-                oldest_idx = i;
+        let mut oldest_claimed_idx: Option<usize> = None;
+        let mut oldest_claimed_epoch = u64::MAX;
+        for (i, entry) in self.entries.iter().enumerate() {
+            if entry.claimed && entry.epoch < oldest_claimed_epoch {
+                oldest_claimed_epoch = entry.epoch;
+                oldest_claimed_idx = Some(i);
             }
         }
 
-        self.entries[oldest_idx] = new_entry;
+        let evict_idx = oldest_claimed_idx.ok_or(RevenueLedgerFull)?;
+        self.entries[evict_idx] = new_entry;
         Ok(())
     }
 
@@ -353,7 +346,7 @@ impl RevenueShareAccount {
             + 1 // max_epoch_entries
             + 2 // commission_bps
             + 32 // commission_account
-            + 1 // convert_to_block_rewards
+            + 1 // block_reward_conversion_enabled
             + 4 // vec length (u32)
             + max_epoch_entries * size_of::<EpochAmountEntry>() // ledger size
             + 1 // bump
@@ -381,7 +374,7 @@ impl RevenueShareAccount {
         self.max_epoch_entries = max_epoch_entries;
         self.commission_bps = commission_bps;
         self.commission_account = commission_account;
-        self.convert_to_block_rewards = false;
+        self.block_reward_conversion_enabled = false;
         self.ledger = RevenueLedger::default();
         self.bump = bump;
         self.validate()
@@ -390,25 +383,21 @@ impl RevenueShareAccount {
     pub fn record_revenue(&mut self, epoch: u64, amount: u64) -> Result<()> {
         let capacity = self.max_epoch_entries as usize;
         self.ledger
-            .add(epoch, amount, capacity, self.convert_to_block_rewards)
+            .add(epoch, amount, capacity, !self.block_reward_conversion_enabled)
     }
 
     /// Marks a claimed epoch entry as converted to block rewards.
-    /// Requires account `convert_to_block_rewards`, entry `claimed`, and entry flag still false.
+    /// Requires entry `claimed` and entry flag still false.
     pub fn mark_epoch_converted_to_block_reward(&mut self, epoch: u64) -> Result<()> {
-        if !self.convert_to_block_rewards {
-            return Err(ConvertToBlockRewardsNotEnabled.into());
-        }
-
         let entry = self.ledger.get_mut(epoch)?;
         if !entry.claimed {
             return Err(EpochNotClaimed.into());
         }
-        if entry.converted_to_block_reward {
+        if entry.block_reward_converted {
             return Err(EpochAlreadyConvertedToBlockReward.into());
         }
 
-        entry.converted_to_block_reward = true;
+        entry.block_reward_converted = true;
         Ok(())
     }
 
@@ -416,13 +405,13 @@ impl RevenueShareAccount {
         &mut self,
         commission_bps: u16,
         commission_account: Pubkey,
-        convert_to_block_rewards: bool,
+        block_reward_conversion_enabled: bool,
         manager_authority: Pubkey,
         record_authority: Option<Pubkey>,
     ) -> Result<()> {
         self.commission_bps = commission_bps;
         self.commission_account = commission_account;
-        self.convert_to_block_rewards = convert_to_block_rewards;
+        self.block_reward_conversion_enabled = block_reward_conversion_enabled;
         self.manager_authority = manager_authority;
         if let Some(new_record_authority) = record_authority {
             self.record_authority = new_record_authority;
@@ -613,10 +602,13 @@ mod tests {
     }
 
     #[test]
-    fn revenue_ledger_fifo_evicts_oldest_epoch() {
+    fn revenue_ledger_evicts_oldest_claimed_epoch() {
         let mut ledger = RevenueLedger::default();
         for epoch in [1u64, 2, 3, 4] {
             ledger.add(epoch, 10, 4, false).unwrap();
+        }
+        for epoch in [1u64, 2, 3, 4] {
+            ledger.mark_claimed(epoch).unwrap();
         }
         ledger.add(5, 99, 4, false).unwrap();
         assert_eq!(ledger.entries.len(), 4);
@@ -625,6 +617,33 @@ mod tests {
             .entries
             .iter()
             .any(|e| e.epoch == 5 && e.amount == 99));
+    }
+
+    #[test]
+    fn revenue_ledger_skips_unclaimed_when_evicting() {
+        let mut ledger = RevenueLedger::default();
+        for epoch in [1u64, 2, 3, 4] {
+            ledger.add(epoch, 10, 4, false).unwrap();
+        }
+        // claim epochs 2, 3, 4 but leave 1 unclaimed
+        for epoch in [2u64, 3, 4] {
+            ledger.mark_claimed(epoch).unwrap();
+        }
+        ledger.add(5, 99, 4, false).unwrap();
+        assert_eq!(ledger.entries.len(), 4);
+        // epoch 1 (unclaimed) survives; epoch 2 (oldest claimed) is evicted
+        assert!(ledger.entries.iter().any(|e| e.epoch == 1 && !e.claimed));
+        assert!(!ledger.entries.iter().any(|e| e.epoch == 2));
+        assert!(ledger.entries.iter().any(|e| e.epoch == 5));
+    }
+
+    #[test]
+    fn revenue_ledger_errors_when_all_unclaimed() {
+        let mut ledger = RevenueLedger::default();
+        for epoch in [1u64, 2, 3, 4] {
+            ledger.add(epoch, 10, 4, false).unwrap();
+        }
+        assert!(ledger.add(5, 99, 4, false).is_err());
     }
 
     #[test]
@@ -669,7 +688,7 @@ mod tests {
         assert!(validate_commission(0, Pubkey::default(), 10_000).is_ok());
     }
 
-    fn test_revenue_share_account(convert_to_block_rewards: bool) -> RevenueShareAccount {
+    fn test_revenue_share_account(block_reward_conversion_enabled: bool) -> RevenueShareAccount {
         let mut name = [0u8; 32];
         name[0] = b'X';
         RevenueShareAccount {
@@ -682,34 +701,59 @@ mod tests {
             max_epoch_entries: 4,
             commission_bps: 0,
             commission_account: Pubkey::default(),
-            convert_to_block_rewards,
+            block_reward_conversion_enabled,
             ledger: RevenueLedger::default(),
             bump: 0,
         }
     }
 
     #[test]
-    fn mark_epoch_converted_to_block_reward_sets_flag_when_claimed() {
+    fn record_revenue_inits_entry_false_when_convert_flag_true() {
         let mut acc = test_revenue_share_account(true);
-        // Entry snapshotted false at record time; account flag is true at mark time.
-        acc.ledger.add(10, 100, 4, false).unwrap();
-        acc.ledger.mark_claimed(10).unwrap();
-        acc.mark_epoch_converted_to_block_reward(10).unwrap();
-        assert!(acc.ledger.entries[0].converted_to_block_reward);
+        acc.record_revenue(10, 100).unwrap();
+        assert!(!acc.ledger.entries[0].block_reward_converted);
     }
 
     #[test]
-    fn mark_epoch_converted_to_block_reward_requires_account_flag() {
+    fn record_revenue_inits_entry_true_when_convert_flag_false() {
+        let mut acc = test_revenue_share_account(false);
+        acc.record_revenue(10, 100).unwrap();
+        assert!(acc.ledger.entries[0].block_reward_converted);
+    }
+
+    #[test]
+    fn record_revenue_accumulate_does_not_overwrite_converted_flag() {
+        let mut acc = test_revenue_share_account(true);
+        acc.record_revenue(10, 100).unwrap();
+        assert!(!acc.ledger.entries[0].block_reward_converted);
+        acc.ledger.entries[0].block_reward_converted = true;
+        acc.record_revenue(10, 50).unwrap();
+        assert!(acc.ledger.entries[0].block_reward_converted);
+        assert_eq!(acc.ledger.entries[0].amount, 150);
+    }
+
+    #[test]
+    fn mark_epoch_converted_to_block_reward_sets_flag_when_claimed() {
+        let mut acc = test_revenue_share_account(true);
+        acc.record_revenue(10, 100).unwrap();
+        acc.ledger.mark_claimed(10).unwrap();
+        acc.mark_epoch_converted_to_block_reward(10).unwrap();
+        assert!(acc.ledger.entries[0].block_reward_converted);
+    }
+
+    #[test]
+    fn mark_epoch_converted_to_block_reward_works_regardless_of_account_flag() {
         let mut acc = test_revenue_share_account(false);
         acc.ledger.add(10, 100, 4, false).unwrap();
         acc.ledger.mark_claimed(10).unwrap();
-        assert!(acc.mark_epoch_converted_to_block_reward(10).is_err());
+        acc.mark_epoch_converted_to_block_reward(10).unwrap();
+        assert!(acc.ledger.entries[0].block_reward_converted);
     }
 
     #[test]
     fn mark_epoch_converted_to_block_reward_requires_claimed() {
         let mut acc = test_revenue_share_account(true);
-        acc.ledger.add(10, 100, 4, true).unwrap();
+        acc.record_revenue(10, 100).unwrap();
         assert!(acc.mark_epoch_converted_to_block_reward(10).is_err());
     }
 

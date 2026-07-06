@@ -1879,11 +1879,6 @@
       "code": 6003,
       "name": "RakuraiSchedulerNotEnabled",
       "msg": "Rakurai scheduler is not enabled for this validator."
-    },
-    {
-      "code": 6004,
-      "name": "InvalidTcaRecordAuthority",
-      "msg": "TCA record_authority does not match the tip manager's RECORD_AUTHORITY PDA."
     }
   ],
   "types": [
@@ -1908,9 +1903,9 @@
             "type": "bool"
           },
           {
-            "name": "converted_to_block_reward",
+            "name": "block_reward_converted",
             "docs": [
-              "When true, this epoch's share is converted to block rewards on claim."
+              "Whether this epoch's block reward conversion is complete."
             ],
             "type": "bool"
           }
@@ -1995,7 +1990,7 @@
     {
       "name": "RevenueLedger",
       "docs": [
-        "Per-account epoch revenue ledger; grows until `max_epoch_entries` then overrides oldest epoch."
+        "Per-account epoch revenue ledger; grows until `max_epoch_entries` then evicts oldest claimed entry (errors if all unclaimed)."
       ],
       "type": {
         "kind": "struct",
@@ -2091,9 +2086,9 @@
             "type": "pubkey"
           },
           {
-            "name": "convert_to_block_rewards",
+            "name": "block_reward_conversion_enabled",
             "docs": [
-              "When true, recorded share is converted to block rewards on claim."
+              "When true, epoch entries require explicit block reward conversion via `update_epoch_converted_to_block_reward`."
             ],
             "type": "bool"
           },

@@ -629,7 +629,7 @@ pub fn claim_revenue_ix(
 pub struct UpdateRevenueShareConfigArgs {
     pub commission_bps: u16,
     pub commission_account: Pubkey,
-    pub convert_to_block_rewards: bool,
+    pub block_reward_conversion_enabled: bool,
     pub record_authority: Option<Pubkey>,
 }
 
@@ -647,7 +647,7 @@ pub fn update_revenue_share_config_ix(
     let UpdateRevenueShareConfigArgs {
         commission_bps,
         commission_account,
-        convert_to_block_rewards,
+        block_reward_conversion_enabled,
         record_authority,
     } = args;
     let UpdateRevenueShareConfigAccounts {
@@ -661,7 +661,7 @@ pub fn update_revenue_share_config_ix(
         data: crate::instruction::UpdateRevenueShareConfig {
             commission_bps,
             commission_account,
-            convert_to_block_rewards,
+            block_reward_conversion_enabled,
             record_authority,
         }
         .data(),

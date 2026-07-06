@@ -552,12 +552,12 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Updates revenue share config (`commission_bps`, `commission_account`, `convert_to_block_rewards`). Manager authority only.
+    /// Updates revenue share config (`commission_bps`, `commission_account`, `block_reward_conversion_enabled`). Manager authority only.
     pub fn update_revenue_share_config(
         ctx: Context<UpdateRevenueShareConfig>,
         commission_bps: u16,
         commission_account: Pubkey,
-        convert_to_block_rewards: bool,
+        block_reward_conversion_enabled: bool,
         record_authority: Option<Pubkey>,
     ) -> Result<()> {
         UpdateRevenueShareConfig::auth(&ctx, commission_bps, commission_account)?;
@@ -566,7 +566,7 @@ pub mod reward_distribution {
         revenue_share_account.update_commission(
             commission_bps,
             commission_account,
-            convert_to_block_rewards,
+            block_reward_conversion_enabled,
             ctx.accounts.manager_authority.key(),
             record_authority,
         )?;
@@ -576,15 +576,15 @@ pub mod reward_distribution {
             share_kind: revenue_share_account.share_kind,
             commission_bps,
             commission_account,
-            convert_to_block_rewards,
+            block_reward_conversion_enabled,
             record_authority: revenue_share_account.record_authority,
         });
 
         Ok(())
     }
 
-    /// Marks a claimed epoch ledger entry as `converted_to_block_reward`.
-    /// Requires account `convert_to_block_rewards`, entry claimed, and entry flag still false.
+    /// Marks a claimed epoch ledger entry as `block_reward_converted`.
+    /// Requires entry claimed and entry flag still false.
     /// Callable by manager, record authority, or validator identity (vote node signer).
     pub fn update_epoch_converted_to_block_reward(
         ctx: Context<UpdateEpochConvertedToBlockReward>,
@@ -737,9 +737,6 @@ pub enum ErrorCode {
     #[msg("Revenue can only be claimed after the epoch has ended.")]
     PrematureRevenueClaim,
 
-    #[msg("Account convert_to_block_rewards must be enabled.")]
-    ConvertToBlockRewardsNotEnabled,
-
     #[msg("Revenue for this epoch has not been claimed yet.")]
     EpochNotClaimed,
 
@@ -751,6 +748,9 @@ pub enum ErrorCode {
 
     #[msg("Rakurai scheduler is not enabled for this validator.")]
     RakuraiSchedulerNotEnabled,
+
+    #[msg("Revenue ledger is full and all entries are unclaimed.")]
+    RevenueLedgerFull,
 }
 
 /// Closes a `ClaimStatus` account and refunds lamports to the payer.
@@ -1214,7 +1214,7 @@ impl ClaimRevenue<'_> {
     }
 }
 
-/// Marks a claimed epoch as converted to block rewards (`converted_to_block_reward` false → true).
+/// Marks a claimed epoch as converted to block rewards (`block_reward_converted` false → true).
 #[derive(Accounts)]
 #[instruction(epoch: u64)]
 pub struct UpdateEpochConvertedToBlockReward<'info> {
@@ -1256,7 +1256,7 @@ impl UpdateEpochConvertedToBlockReward<'_> {
     }
 }
 
-/// Updates revenue share config (`commission_bps`, `commission_account`, `convert_to_block_rewards`).
+/// Updates revenue share config (`commission_bps`, `commission_account`, `block_reward_conversion_enabled`).
 #[derive(Accounts)]
 pub struct UpdateRevenueShareConfig<'info> {
     #[account(mut)]
@@ -1457,7 +1457,7 @@ pub struct RevenueShareConfigUpdatedEvent {
     pub share_kind: RevenueKind,
     pub commission_bps: u16,
     pub commission_account: Pubkey,
-    pub convert_to_block_rewards: bool,
+    pub block_reward_conversion_enabled: bool,
     pub record_authority: Pubkey,
 }
 

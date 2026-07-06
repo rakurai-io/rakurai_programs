@@ -42,8 +42,6 @@ pub const RAKURAI_TIP_ACCOUNT_7_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_7";
 /// against the receiving TCA.
 pub const RECORD_AUTHORITY_SEED: &[u8] = b"RECORD_AUTHORITY";
 
-/// Account discriminator size
-pub const HEADER: usize = 8;
 const MAX_COMMISSION_BPS: u64 = 10_000;
 
 /// Rakurai label for the tip revenue share vault (`TipsCollectionAccount` / TCA; `name` field in PDA seeds).
@@ -342,9 +340,6 @@ pub enum RakuraiTipManagerError {
 
     #[msg("Rakurai scheduler is not enabled for this validator.")]
     RakuraiSchedulerNotEnabled,
-
-    #[msg("TCA record_authority does not match the tip manager's RECORD_AUTHORITY PDA.")]
-    InvalidTcaRecordAuthority,
 }
 
 /// PDA Bumps

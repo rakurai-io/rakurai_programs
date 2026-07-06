@@ -1200,8 +1200,8 @@
     {
       "name": "update_epoch_converted_to_block_reward",
       "docs": [
-        "Marks a claimed epoch ledger entry as `converted_to_block_reward`.",
-        "Requires account `convert_to_block_rewards`, entry claimed, and entry flag still false.",
+        "Marks a claimed epoch ledger entry as `block_reward_converted`.",
+        "Requires entry claimed and entry flag still false.",
         "Callable by manager, record authority, or validator identity (vote node signer)."
       ],
       "discriminator": [
@@ -1237,7 +1237,7 @@
     {
       "name": "update_revenue_share_config",
       "docs": [
-        "Updates revenue share config (`commission_bps`, `commission_account`, `convert_to_block_rewards`). Manager authority only."
+        "Updates revenue share config (`commission_bps`, `commission_account`, `block_reward_conversion_enabled`). Manager authority only."
       ],
       "discriminator": [
         47,
@@ -1298,7 +1298,7 @@
           "type": "pubkey"
         },
         {
-          "name": "convert_to_block_rewards",
+          "name": "block_reward_conversion_enabled",
           "type": "bool"
         },
         {
@@ -1721,28 +1721,28 @@
     },
     {
       "code": 6021,
-      "name": "ConvertToBlockRewardsNotEnabled",
-      "msg": "Account convert_to_block_rewards must be enabled."
-    },
-    {
-      "code": 6022,
       "name": "EpochNotClaimed",
       "msg": "Revenue for this epoch has not been claimed yet."
     },
     {
-      "code": 6023,
+      "code": 6022,
       "name": "EpochAlreadyConvertedToBlockReward",
       "msg": "Revenue for this epoch is already marked converted to block rewards."
     },
     {
-      "code": 6024,
+      "code": 6023,
       "name": "RevenueManagerNotConfigured",
       "msg": "Tip/mev-share revenue manager is not configured on the reward distribution config."
     },
     {
-      "code": 6025,
+      "code": 6024,
       "name": "RakuraiSchedulerNotEnabled",
       "msg": "Rakurai scheduler is not enabled for this validator."
+    },
+    {
+      "code": 6025,
+      "name": "RevenueLedgerFull",
+      "msg": "Revenue ledger is full and all entries are unclaimed."
     }
   ],
   "types": [
@@ -1922,9 +1922,9 @@
             "type": "bool"
           },
           {
-            "name": "converted_to_block_reward",
+            "name": "block_reward_converted",
             "docs": [
-              "When true, this epoch's share is converted to block rewards on claim."
+              "Whether this epoch's block reward conversion is complete."
             ],
             "type": "bool"
           }
@@ -2177,7 +2177,7 @@
     {
       "name": "RevenueLedger",
       "docs": [
-        "Per-account epoch revenue ledger; grows until `max_epoch_entries` then overrides oldest epoch."
+        "Per-account epoch revenue ledger; grows until `max_epoch_entries` then evicts oldest claimed entry (errors if all unclaimed)."
       ],
       "type": {
         "kind": "struct",
@@ -2301,9 +2301,9 @@
             "type": "pubkey"
           },
           {
-            "name": "convert_to_block_rewards",
+            "name": "block_reward_conversion_enabled",
             "docs": [
-              "When true, recorded share is converted to block rewards on claim."
+              "When true, epoch entries require explicit block reward conversion via `update_epoch_converted_to_block_reward`."
             ],
             "type": "bool"
           },
@@ -2405,7 +2405,7 @@
             "type": "pubkey"
           },
           {
-            "name": "convert_to_block_rewards",
+            "name": "block_reward_conversion_enabled",
             "type": "bool"
           },
           {
