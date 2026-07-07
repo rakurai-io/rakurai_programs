@@ -12,7 +12,7 @@ security_txt! {
     // Required fields
     name: "Rakurai Multisig Based Activation Program",
     project_url: "https://rakurai.io/",
-    contacts: "link:https://rakurai.io/company,link:https://github.com/rakurai-io/rakurai-validator,link:https://docs.rakurai.io,discord:https://discord.gg/QzqQVBAMpp,telegram:https://t.me/rakurai_official",
+    contacts: "link:https://rakurai.io/company,link:https://discord.gg/QzqQVBAMpp,link:https://t.me/rakurai_official,link:https://github.com/rakurai-io/rakurai-validator,link:https://docs.rakurai.io",
     policy: "https://rakurai.io/faqs",
     // Optional fields
     preferred_languages: "en",
