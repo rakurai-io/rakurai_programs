@@ -240,9 +240,7 @@ pub mod reward_distribution {
                 ),
                 &[
                     ctx.accounts.signer.to_account_info(),
-                    ctx.accounts
-                        .client_commission_account
-                        .to_account_info(),
+                    ctx.accounts.client_commission_account.to_account_info(),
                     ctx.accounts.system_program.to_account_info(),
                 ],
             )?;
@@ -310,15 +308,12 @@ pub mod reward_distribution {
                 ),
                 &[
                     ctx.accounts.signer.to_account_info(),
-                    ctx.accounts
-                        .client_commission_account
-                        .to_account_info(),
+                    ctx.accounts.client_commission_account.to_account_info(),
                     ctx.accounts.system_program.to_account_info(),
                 ],
             )?;
 
-            reward_collection_acc.client_mev_commission_deducted =
-                Some(client_mev_commission);
+            reward_collection_acc.client_mev_commission_deducted = Some(client_mev_commission);
         }
 
         // Emit event
@@ -1316,12 +1311,9 @@ pub struct CloseRevenueShareAccount<'info> {
 
 impl CloseRevenueShareAccount<'_> {
     fn auth(ctx: &Context<CloseRevenueShareAccount>) -> Result<()> {
-        let signer = ctx.accounts.authority.key();
-        let account = &ctx.accounts.revenue_share_account;
-        if signer != account.initializer && signer != account.manager_authority {
-            return Err(Unauthorized.into());
-        }
-        Ok(())
+        ctx.accounts
+            .revenue_share_account
+            .auth_manager_signer(ctx.accounts.authority.key())
     }
 }
 
