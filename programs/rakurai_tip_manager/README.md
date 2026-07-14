@@ -40,9 +40,10 @@ A Solana smart contract for managing tips sent to validators. The program mainta
 
 The Rakurai Tip Manager Program uses a **singleton configuration account** (`TipManagerConfigAccount`) that controls:
 
-- The **validator tip receiver account** — where validator tips are sent
-- The **client commission account** — where client commission is sent
-- The **client commission rate** (in basis points, 0–10000)
+- The **validator tip receiver account** — where validator tips are sent (rotated on each drain to the Rakurai TCA)
+- The **client commission account** / **bps** — used by `change_client` when rotating the tip-manager client
+
+Drain commission for tip payouts comes from the **old TCA** (`change_tip_receiver_v2`): `commission_bps` and `commission_account` on that account.
 
 The program maintains **eight separate tip accounts** (PDAs) to minimize account write-lock contention when multiple transactions send tips simultaneously. Users can send tips to any of these eight accounts.
 
@@ -71,21 +72,24 @@ These accounts are empty state accounts that hold SOL (lamports). When tips are 
 
 1. **Users send tips** → Tips are sent to any of the eight tip accounts via standard SOL transfers
 2. **Tips accumulate** → Tips accumulate in the tip accounts until claimed
-3. **Validator claims tips** → `change_tip_receiver_v1` (or legacy `change_tip_receiver`) drains tips and rotates config receiver to TCA
+3. **Validator claims tips** → `change_tip_receiver_v2` drains tips (TCA→TCA) using commission from the **old TCA**
 4. **Automatic split** → Tips are automatically split:
-   - Client commission → `client_commission_account`
-   - Remaining tips → `old_tip_receiver` (current config receiver)
+   - Client commission → old TCA `commission_account` (at old TCA `commission_bps`)
+   - Remaining tips → old TCA
 5. **Config update** → `validator_tip_receiver_account` set to the Rakurai [Tips Collection Account](../reward_distribution/README.md#51-why-a-tips-collection-account-tca) (TCA) PDA for this validator vote
+6. **Ledger** → When the old TCA’s `record_authority` matches the tip-manager PDA, drain CPIs `record_revenue` for the validator share before moving lamports
 
 ---
 
 ## 5. Integration with reward distribution
 
-Tips land on the **TCA** via `change_tip_receiver_v1`.
+Tips land on the **TCA** via `change_tip_receiver_v2`.
 
-Prerequisite: `initialize_revenue_share_account` (`share_kind = Tip`, name `"Rakurai"`) before the first drain. PDA: `[REVENUE_SHARE, "TIP", "Rakurai", validator_vote]`.
+Prerequisite: `initialize_tips_and_mev_share_config` (once) then `initialize_revenue_share_account_v1` (`share_kind = Tip`, name `RAKURAI_REVENUE_NAME` / lowercase `rakurai`) before the first drain. PDA: `[REVENUE_SHARE, "TIP", "rakurai", validator_vote]`.
 
-For the full TCA / MCA account layout, see [RevenueShareAccount structure](../reward_distribution/README.md#55-revenueshareaccount-structure).
+On `claim_revenue`, Rakurai-named vaults skip commission (effective `commission_bps = 0`): tip drain already paid Rakurai via the old TCA’s `commission_bps` / `commission_account`, so the TCA only holds the validator share and claim must not fee again.
+
+For the full TCA / MCA account layout, see [RevenueShareAccount structure](../reward_distribution/README.md#56-revenueshareaccount-structure).
 
 ---
 

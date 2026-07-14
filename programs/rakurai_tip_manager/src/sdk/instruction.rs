@@ -263,6 +263,84 @@ pub fn change_tip_receiver_v1_ix(
     }
 }
 
+pub struct ChangeTipReceiverV2Args;
+
+pub struct ChangeTipReceiverV2Accounts {
+    pub tip_manager_config: Pubkey,
+    pub old_tip_receiver: Pubkey,
+    pub new_tip_receiver: Pubkey,
+    pub client_commission_account: Pubkey,
+    pub rakurai_tip_account_0: Pubkey,
+    pub rakurai_tip_account_1: Pubkey,
+    pub rakurai_tip_account_2: Pubkey,
+    pub rakurai_tip_account_3: Pubkey,
+    pub rakurai_tip_account_4: Pubkey,
+    pub rakurai_tip_account_5: Pubkey,
+    pub rakurai_tip_account_6: Pubkey,
+    pub rakurai_tip_account_7: Pubkey,
+    pub signer: Pubkey,
+    /// PDA (`[RECORD_AUTHORITY_SEED]`) that signs the reward_distribution record_revenue CPI.
+    pub record_authority: Pubkey,
+    /// Appended as `remaining_accounts[0]` (enabled RAA PDA for signer).
+    pub rakurai_activation_account: Pubkey,
+    /// Appended as `remaining_accounts[1]` (reward distribution program id).
+    pub reward_distribution_program: Pubkey,
+}
+
+/// Drains tips using old TCA commission; rotates config to the new TCA.
+pub fn change_tip_receiver_v2_ix(
+    program_id: Pubkey,
+    _args: ChangeTipReceiverV2Args,
+    accounts: ChangeTipReceiverV2Accounts,
+) -> Instruction {
+    let ChangeTipReceiverV2Accounts {
+        tip_manager_config,
+        old_tip_receiver,
+        new_tip_receiver,
+        client_commission_account,
+        rakurai_tip_account_0,
+        rakurai_tip_account_1,
+        rakurai_tip_account_2,
+        rakurai_tip_account_3,
+        rakurai_tip_account_4,
+        rakurai_tip_account_5,
+        rakurai_tip_account_6,
+        rakurai_tip_account_7,
+        signer,
+        record_authority,
+        rakurai_activation_account,
+        reward_distribution_program,
+    } = accounts;
+
+    let mut account_metas = crate::accounts::ChangeTipReceiverV2 {
+        tip_manager_config,
+        old_tip_receiver,
+        new_tip_receiver,
+        client_commission_account,
+        rakurai_tip_account_0,
+        rakurai_tip_account_1,
+        rakurai_tip_account_2,
+        rakurai_tip_account_3,
+        rakurai_tip_account_4,
+        rakurai_tip_account_5,
+        rakurai_tip_account_6,
+        rakurai_tip_account_7,
+        signer,
+        record_authority,
+    }
+    .to_account_metas(None);
+    account_metas.push(AccountMeta::new_readonly(rakurai_activation_account, false));
+    account_metas.push(AccountMeta::new_readonly(
+        reward_distribution_program,
+        false,
+    ));
+    Instruction {
+        program_id,
+        data: crate::instruction::ChangeTipReceiverV2 {}.data(),
+        accounts: account_metas,
+    }
+}
+
 pub struct ChangeClientArgs {
     pub client_commission_bps: u64,
 }
