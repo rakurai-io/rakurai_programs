@@ -70,6 +70,45 @@ pub struct MerkleRoot {
 
 pub const MAX_REVENUE_EPOCH_ENTRIES_CAP: usize = 32;
 
+/// Rakurai label for tip/mev revenue share vaults (`name` field in PDA seeds; lowercase padded).
+pub const RAKURAI_REVENUE_NAME: [u8; 32] = {
+    let mut name = [0u8; 32];
+    name[0] = b'r';
+    name[1] = b'a';
+    name[2] = b'k';
+    name[3] = b'u';
+    name[4] = b'r';
+    name[5] = b'a';
+    name[6] = b'i';
+    name
+};
+
+/// Singleton defaults for tip and mev-share revenue share account initialization (`init_v1`).
+#[account]
+#[derive(Default)]
+pub struct TipsAndMevShareConfigAccount {
+    /// Authorized updater of this config.
+    pub authority: Pubkey,
+    /// PDA bump.
+    pub bump: u8,
+
+    /// Tip defaults (copied onto TCA at `initialize_revenue_share_account_v1`).
+    pub tip_manager_authority: Pubkey,
+    pub tip_commission_account: Pubkey,
+    pub tip_commission_bps: u16,
+    /// Ledger capacity written to `RevenueShareAccount.max_epoch_entries` (1..=32).
+    pub tip_epoch: u8,
+    pub tip_record_authority: Pubkey,
+
+    /// MevShare defaults (copied onto MCA at `initialize_revenue_share_account_v1`).
+    pub mev_share_manager_authority: Pubkey,
+    pub mev_share_commission_account: Pubkey,
+    pub mev_share_commission_bps: u16,
+    /// Ledger capacity written to `RevenueShareAccount.max_epoch_entries` (1..=32).
+    pub mev_share_epoch: u8,
+    pub mev_share_record_authority: Pubkey,
+}
+
 /// Per-epoch attributed amount.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct EpochAmountEntry {
@@ -193,6 +232,87 @@ impl RewardDistributionConfigAccount {
         }
 
         Ok(())
+    }
+}
+
+impl TipsAndMevShareConfigAccount {
+    /// PDA seed for the tips-and-mev-share config singleton.
+    pub const SEED: &'static [u8] = b"TIPS_AND_MEV_SHARE_CONFIG";
+    /// Account size for rent-exemption.
+    pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
+
+    /// Returns `(manager, commission_account, commission_bps, epoch, record_authority)` for `share_kind`.
+    pub fn defaults_for(
+        &self,
+        share_kind: RevenueKind,
+    ) -> (Pubkey, Pubkey, u16, u8, Pubkey) {
+        match share_kind {
+            RevenueKind::Tip => (
+                self.tip_manager_authority,
+                self.tip_commission_account,
+                self.tip_commission_bps,
+                self.tip_epoch,
+                self.tip_record_authority,
+            ),
+            RevenueKind::MevShare => (
+                self.mev_share_manager_authority,
+                self.mev_share_commission_account,
+                self.mev_share_commission_bps,
+                self.mev_share_epoch,
+                self.mev_share_record_authority,
+            ),
+        }
+    }
+
+    /// Rent space for a revenue share vault initialized from this config for `share_kind`.
+    pub fn space_for_share_kind(&self, share_kind: RevenueKind) -> usize {
+        let max_epoch_entries = match share_kind {
+            RevenueKind::Tip => self.tip_epoch,
+            RevenueKind::MevShare => self.mev_share_epoch,
+        };
+        RevenueShareAccount::space_for(max_epoch_entries as usize)
+    }
+
+    /// Validates tip and mev-share field groups (commission, epoch capacity, authorities).
+    pub fn validate(&self) -> Result<()> {
+        if self.authority == Pubkey::default() {
+            return Err(AccountValidationFailure.into());
+        }
+
+        Self::validate_side(
+            self.tip_manager_authority,
+            self.tip_commission_account,
+            self.tip_commission_bps,
+            self.tip_epoch,
+            self.tip_record_authority,
+        )?;
+        Self::validate_side(
+            self.mev_share_manager_authority,
+            self.mev_share_commission_account,
+            self.mev_share_commission_bps,
+            self.mev_share_epoch,
+            self.mev_share_record_authority,
+        )?;
+
+        Ok(())
+    }
+
+    fn validate_side(
+        manager_authority: Pubkey,
+        commission_account: Pubkey,
+        commission_bps: u16,
+        epoch: u8,
+        record_authority: Pubkey,
+    ) -> Result<()> {
+        if manager_authority == Pubkey::default() || record_authority == Pubkey::default() {
+            return Err(AccountValidationFailure.into());
+        }
+
+        if epoch == 0 || epoch as usize > MAX_REVENUE_EPOCH_ENTRIES_CAP {
+            return Err(InvalidRevenueEpochCapacity.into());
+        }
+
+        validate_commission(commission_bps, commission_account, MAX_COMMISSION_BPS)
     }
 }
 
@@ -686,6 +806,57 @@ mod tests {
     fn commission_requires_account_when_bps_positive() {
         assert!(validate_commission(100, Pubkey::default(), 10_000).is_err());
         assert!(validate_commission(0, Pubkey::default(), 10_000).is_ok());
+    }
+
+    fn valid_tips_and_mev_share_config() -> TipsAndMevShareConfigAccount {
+        TipsAndMevShareConfigAccount {
+            authority: Pubkey::new_unique(),
+            bump: 255,
+            tip_manager_authority: Pubkey::new_unique(),
+            tip_commission_account: Pubkey::new_unique(),
+            tip_commission_bps: 500,
+            tip_epoch: 8,
+            tip_record_authority: Pubkey::new_unique(),
+            mev_share_manager_authority: Pubkey::new_unique(),
+            mev_share_commission_account: Pubkey::new_unique(),
+            mev_share_commission_bps: 1_000,
+            mev_share_epoch: 16,
+            mev_share_record_authority: Pubkey::new_unique(),
+        }
+    }
+
+    #[test]
+    fn tips_and_mev_share_config_validate_ok() {
+        assert!(valid_tips_and_mev_share_config().validate().is_ok());
+    }
+
+    #[test]
+    fn tips_and_mev_share_config_rejects_bad_epoch() {
+        let mut cfg = valid_tips_and_mev_share_config();
+        cfg.tip_epoch = 0;
+        assert!(cfg.validate().is_err());
+        cfg.tip_epoch = 8;
+        cfg.mev_share_epoch = 33;
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn tips_and_mev_share_config_defaults_for_selects_field_group() {
+        let cfg = valid_tips_and_mev_share_config();
+        let (tip_mgr, tip_comm_acc, tip_bps, tip_ep, tip_rec) = cfg.defaults_for(RevenueKind::Tip);
+        assert_eq!(tip_mgr, cfg.tip_manager_authority);
+        assert_eq!(tip_comm_acc, cfg.tip_commission_account);
+        assert_eq!(tip_bps, cfg.tip_commission_bps);
+        assert_eq!(tip_ep, cfg.tip_epoch);
+        assert_eq!(tip_rec, cfg.tip_record_authority);
+
+        let (mev_mgr, mev_comm_acc, mev_bps, mev_ep, mev_rec) =
+            cfg.defaults_for(RevenueKind::MevShare);
+        assert_eq!(mev_mgr, cfg.mev_share_manager_authority);
+        assert_eq!(mev_comm_acc, cfg.mev_share_commission_account);
+        assert_eq!(mev_bps, cfg.mev_share_commission_bps);
+        assert_eq!(mev_ep, cfg.mev_share_epoch);
+        assert_eq!(mev_rec, cfg.mev_share_record_authority);
     }
 
     fn test_revenue_share_account(block_reward_conversion_enabled: bool) -> RevenueShareAccount {

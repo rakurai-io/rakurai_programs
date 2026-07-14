@@ -265,6 +265,169 @@ pub fn close_config_ix(
     }
 }
 
+pub struct InitializeTipsAndMevShareConfigArgs {
+    pub authority: Pubkey,
+    pub tip_manager_authority: Pubkey,
+    pub tip_commission_account: Pubkey,
+    pub tip_commission_bps: u16,
+    pub tip_epoch: u8,
+    pub tip_record_authority: Pubkey,
+    pub mev_share_manager_authority: Pubkey,
+    pub mev_share_commission_account: Pubkey,
+    pub mev_share_commission_bps: u16,
+    pub mev_share_epoch: u8,
+    pub mev_share_record_authority: Pubkey,
+    pub bump: u8,
+}
+
+pub struct InitializeTipsAndMevShareConfigAccounts {
+    pub tips_and_mev_share_config: Pubkey,
+    pub system_program: Pubkey,
+    pub initializer: Pubkey,
+}
+
+pub fn initialize_tips_and_mev_share_config_ix(
+    program_id: Pubkey,
+    args: InitializeTipsAndMevShareConfigArgs,
+    accounts: InitializeTipsAndMevShareConfigAccounts,
+) -> Instruction {
+    let InitializeTipsAndMevShareConfigArgs {
+        authority,
+        tip_manager_authority,
+        tip_commission_account,
+        tip_commission_bps,
+        tip_epoch,
+        tip_record_authority,
+        mev_share_manager_authority,
+        mev_share_commission_account,
+        mev_share_commission_bps,
+        mev_share_epoch,
+        mev_share_record_authority,
+        bump,
+    } = args;
+    let InitializeTipsAndMevShareConfigAccounts {
+        tips_and_mev_share_config,
+        system_program,
+        initializer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::InitializeTipsAndMevShareConfig {
+            authority,
+            tip_manager_authority,
+            tip_commission_account,
+            tip_commission_bps,
+            tip_epoch,
+            tip_record_authority,
+            mev_share_manager_authority,
+            mev_share_commission_account,
+            mev_share_commission_bps,
+            mev_share_epoch,
+            mev_share_record_authority,
+            bump,
+        }
+        .data(),
+        accounts: crate::accounts::InitializeTipsAndMevShareConfig {
+            tips_and_mev_share_config,
+            system_program,
+            initializer,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateTipsAndMevShareConfigArgs {
+    pub tip_manager_authority: Pubkey,
+    pub tip_commission_account: Pubkey,
+    pub tip_commission_bps: u16,
+    pub tip_epoch: u8,
+    pub tip_record_authority: Pubkey,
+    pub mev_share_manager_authority: Pubkey,
+    pub mev_share_commission_account: Pubkey,
+    pub mev_share_commission_bps: u16,
+    pub mev_share_epoch: u8,
+    pub mev_share_record_authority: Pubkey,
+}
+
+pub struct UpdateTipsAndMevShareConfigAccounts {
+    pub tips_and_mev_share_config: Pubkey,
+    pub authority: Pubkey,
+}
+
+pub fn update_tips_and_mev_share_config_ix(
+    program_id: Pubkey,
+    args: UpdateTipsAndMevShareConfigArgs,
+    accounts: UpdateTipsAndMevShareConfigAccounts,
+) -> Instruction {
+    let UpdateTipsAndMevShareConfigArgs {
+        tip_manager_authority,
+        tip_commission_account,
+        tip_commission_bps,
+        tip_epoch,
+        tip_record_authority,
+        mev_share_manager_authority,
+        mev_share_commission_account,
+        mev_share_commission_bps,
+        mev_share_epoch,
+        mev_share_record_authority,
+    } = args;
+    let UpdateTipsAndMevShareConfigAccounts {
+        tips_and_mev_share_config,
+        authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateTipsAndMevShareConfig {
+            tip_manager_authority,
+            tip_commission_account,
+            tip_commission_bps,
+            tip_epoch,
+            tip_record_authority,
+            mev_share_manager_authority,
+            mev_share_commission_account,
+            mev_share_commission_bps,
+            mev_share_epoch,
+            mev_share_record_authority,
+        }
+        .data(),
+        accounts: crate::accounts::UpdateTipsAndMevShareConfig {
+            tips_and_mev_share_config,
+            authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct CloseTipsAndMevShareConfigArgs;
+
+pub struct CloseTipsAndMevShareConfigAccounts {
+    pub tips_and_mev_share_config: Pubkey,
+    pub signer: Pubkey,
+}
+
+pub fn close_tips_and_mev_share_config_ix(
+    program_id: Pubkey,
+    _args: CloseTipsAndMevShareConfigArgs,
+    accounts: CloseTipsAndMevShareConfigAccounts,
+) -> Instruction {
+    let CloseTipsAndMevShareConfigAccounts {
+        tips_and_mev_share_config,
+        signer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::CloseTipsAndMevShareConfig {}.data(),
+        accounts: crate::accounts::CloseTipsAndMevShareConfig {
+            tips_and_mev_share_config,
+            signer,
+        }
+        .to_account_metas(None),
+    }
+}
+
 /// Merkle root and claim limits for uploading new rewards.
 pub struct UploadMerkleRootArgs {
     pub root: [u8; 32],
@@ -549,6 +712,60 @@ pub fn initialize_revenue_share_account_ix(
         accounts: crate::accounts::InitializeRevenueShareAccount {
             revenue_share_account,
             config,
+            rakurai_activation_account,
+            validator_vote_account,
+            payer,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct InitializeRevenueShareAccountV1Args {
+    pub share_kind: RevenueKind,
+    pub name: [u8; 32],
+    pub bump: u8,
+}
+
+pub struct InitializeRevenueShareAccountV1Accounts {
+    pub revenue_share_account: Pubkey,
+    pub tips_and_mev_share_config: Pubkey,
+    pub rakurai_activation_account: Pubkey,
+    pub validator_vote_account: Pubkey,
+    pub payer: Pubkey,
+    pub system_program: Pubkey,
+}
+
+pub fn initialize_revenue_share_account_v1_ix(
+    program_id: Pubkey,
+    args: InitializeRevenueShareAccountV1Args,
+    accounts: InitializeRevenueShareAccountV1Accounts,
+) -> Instruction {
+    let InitializeRevenueShareAccountV1Args {
+        share_kind,
+        name,
+        bump,
+    } = args;
+    let InitializeRevenueShareAccountV1Accounts {
+        revenue_share_account,
+        tips_and_mev_share_config,
+        rakurai_activation_account,
+        validator_vote_account,
+        payer,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::InitializeRevenueShareAccountV1 {
+            share_kind,
+            name,
+            bump,
+        }
+        .data(),
+        accounts: crate::accounts::InitializeRevenueShareAccountV1 {
+            revenue_share_account,
+            tips_and_mev_share_config,
             rakurai_activation_account,
             validator_vote_account,
             payer,

@@ -18,12 +18,16 @@ description: >-
 
 ```
 RAA commission ──► RCA (vote, epoch) ──► Merkle staker claims
-RevenueShareAccount (share_kind = Tip | MevShare) ── per (kind, revenue label, vote, max_epochs)
-  record_revenue (accounting) ──► claim_revenue splits commission_bps to commission_account, rest to validator identity
+TipsAndMevShareConfigAccount ── defaults for Tip / MevShare at init_v1
+RevenueShareAccount (share_kind = Tip | MevShare) ── per (kind, revenue label, vote)
+  record_revenue (accounting) ──► claim_revenue splits commission_bps
+    (0 when name == RAKURAI_REVENUE_NAME: commission already taken on tip drain)
+    → commission_account + validator identity
 ```
 
 - **RCA** — lamport vault, optional Merkle root; block rewards via `transfer_staker_rewards`
-- **Revenue-share PDAs** — one unified `RevenueShareAccount` per `(share_kind, name, vote)`; epoch ledger + lamport vault; `record_revenue` is accounting-only; claim splits per `commission_bps`
+- **TipsAndMevShareConfigAccount** — singleton defaults (manager, commission, record authority, epoch capacity) for Tip and MevShare; used by `initialize_revenue_share_account_v1`
+- **Revenue-share PDAs** — one unified `RevenueShareAccount` per `(share_kind, name, vote)`; epoch ledger + lamport vault; `record_revenue` is accounting-only; claim applies `commission_bps` except Rakurai-named vaults (tip drain already took that cut)
 
 ---
 
@@ -31,10 +35,13 @@ RevenueShareAccount (share_kind = Tip | MevShare) ── per (kind, revenue labe
 
 | Account | Role |
 |---------|------|
-| `RewardDistributionConfigAccount` | Admin, `num_epochs_valid` (1–10), commission caps, MEV toggle, `revenue_manager_authority` |
+| `RewardDistributionConfigAccount` | Admin, `num_epochs_valid` (1–10), commission caps, MEV toggle |
+| `TipsAndMevShareConfigAccount` | Singleton tip + mev-share defaults for `initialize_revenue_share_account_v1` |
 | `RewardCollectionAccount` | Per-epoch collection vault |
 | `ClaimStatus` | Per-claimant replay guard |
 | `RevenueShareAccount` | Unified revenue-share vault per `(share_kind, name, validator)`; `share_kind ∈ {Tip, MevShare}` in PDA seeds. Type aliases `TipsCollectionAccount` (TCA) / `MevShareCollectionAccount` (MCA) |
+
+`RAKURAI_REVENUE_NAME` — lowercase `rakurai` padded to 32 bytes; defined in RD `state.rs`; tip-manager re-exports it.
 
 ---
 
@@ -43,20 +50,21 @@ RevenueShareAccount (share_kind = Tip | MevShare) ── per (kind, revenue labe
 | Category | Instructions |
 |----------|-------------|
 | Config | `initialize`, `update_config`, `close_config` |
-| RCA | `initialize_reward_collection_account` (legacy), `initialize_reward_collection_account_v1` (preferred), `upload_merkle_root`, `transfer_staker_rewards`, `transfer_client_commission_on_mev_commission`, `close_reward_collection_account` |
+| Tips/Mev config | `initialize_tips_and_mev_share_config`, `update_tips_and_mev_share_config`, `close_tips_and_mev_share_config` |
+| RCA | `initialize_reward_collection_account_v1`, `upload_merkle_root`, `transfer_staker_rewards`, `transfer_client_commission_on_mev_commission`, `close_reward_collection_account` |
 | Claims | `claim`, `close_claim_status` |
-| Revenue share (unified; `share_kind` arg/stored) | `initialize_revenue_share_account` (takes `share_kind`), `record_revenue`, `claim_revenue`, `update_revenue_share_config`, `update_epoch_converted_to_block_reward`, `close_revenue_share_account` |
+| Revenue share | `initialize_revenue_share_account_v1`, `record_revenue`, `claim_revenue`, `update_revenue_share_config`, `update_epoch_converted_to_block_reward`, `close_revenue_share_account` |
 
 ---
 
 ## Epoch Flow
 
-1. **Init RCA** (epoch E): validator identity signs; pass `validator_vote_account` + enabled RAA via `initialize_reward_collection_account_v1` (legacy ix omits RAA).
+1. **Init RCA** (epoch E): validator identity signs; pass `validator_vote_account` + enabled RAA via `initialize_reward_collection_account_v1`.
 2. **During E**: `transfer_staker_rewards` (pass same vote account; must match RCA); `record_revenue`; optional MEV commission ix.
-3. **After E**: `upload_merkle_root`; staker `claim`; `claim_revenue` with `epoch = RCA.creation_epoch` and `current_epoch > epoch` — commission portion to `commission_account`, remainder to validator identity.
+3. **After E**: `upload_merkle_root`; staker `claim`; `claim_revenue` — commission to `commission_account` except Rakurai-named vaults (0; already taken at tip drain), remainder to validator identity.
 4. **Cleanup**: close RCA after expiry; `close_claim_status` permissionless after expiry.
 
-**Revenue share flow:** init → record (ledger) → settle (SOL into PDA) → claim. PDA `[REVENUE_SHARE, share_kind, name, vote]`. Init: any payer + enabled RAA; `manager_authority` from config. Record: `record_authority`. Claim/config: `manager_authority`.
+**Revenue share flow:** tips/mev config init (once) → `initialize_revenue_share_account_v1` → record (ledger) → settle (SOL into PDA) → claim. PDA `[REVENUE_SHARE, share_kind, name, vote]`. Record: `record_authority`. Claim/config: `manager_authority`.
 
 ---
 
@@ -65,6 +73,7 @@ RevenueShareAccount (share_kind = Tip | MevShare) ── per (kind, revenue labe
 ```rust
 use reward_distribution::sdk::{
     derive_config_account_address,
+    derive_tips_and_mev_share_config_address,
     derive_reward_collection_account_address,
     derive_revenue_share_account_address,           // (share_kind, name, vote)
     derive_tip_collection_account_address,          // wrapper: Tip
@@ -90,4 +99,4 @@ anchor build -p reward_distribution --no-idl
 
 `declare_id!` = testnet. Prefer Rust SDK over JSON IDL for new types.
 
-**Related**: `rakurai_activation` (RAA), `rakurai_tip_manager` (tip PDAs; no RD CPI).
+**Related**: `rakurai_activation` (RAA), `rakurai_tip_manager` (tip PDAs; CPI `record_revenue` on drain).

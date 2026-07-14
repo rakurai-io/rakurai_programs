@@ -6,7 +6,8 @@ use solana_security_txt::security_txt;
 use crate::{
     state::{
         validate_commission, ClaimStatus, MerkleRoot, RevenueKind, RevenueShareAccount,
-        RewardCollectionAccount, RewardDistributionConfigAccount,
+        RewardCollectionAccount, RewardDistributionConfigAccount, TipsAndMevShareConfigAccount,
+        RAKURAI_REVENUE_NAME,
     },
     ErrorCode::{InvalidClientCommissionAccount, RakuraiSchedulerNotEnabled, Unauthorized},
 };
@@ -148,6 +149,100 @@ pub mod reward_distribution {
 
         // Emit closure event
         emit!(ConfigClosedEvent {
+            authority: authority.key(),
+            lamports_reclaimed: lamports_to_reclaim,
+        });
+
+        Ok(())
+    }
+
+    /// One-time init of the tips-and-mev-share config singleton (defaults for `initialize_revenue_share_account_v1`).
+    pub fn initialize_tips_and_mev_share_config(
+        ctx: Context<InitializeTipsAndMevShareConfig>,
+        authority: Pubkey,
+        tip_manager_authority: Pubkey,
+        tip_commission_account: Pubkey,
+        tip_commission_bps: u16,
+        tip_epoch: u8,
+        tip_record_authority: Pubkey,
+        mev_share_manager_authority: Pubkey,
+        mev_share_commission_account: Pubkey,
+        mev_share_commission_bps: u16,
+        mev_share_epoch: u8,
+        mev_share_record_authority: Pubkey,
+        bump: u8,
+    ) -> Result<()> {
+        let cfg = &mut ctx.accounts.tips_and_mev_share_config;
+        cfg.authority = authority;
+        cfg.bump = bump;
+        cfg.tip_manager_authority = tip_manager_authority;
+        cfg.tip_commission_account = tip_commission_account;
+        cfg.tip_commission_bps = tip_commission_bps;
+        cfg.tip_epoch = tip_epoch;
+        cfg.tip_record_authority = tip_record_authority;
+        cfg.mev_share_manager_authority = mev_share_manager_authority;
+        cfg.mev_share_commission_account = mev_share_commission_account;
+        cfg.mev_share_commission_bps = mev_share_commission_bps;
+        cfg.mev_share_epoch = mev_share_epoch;
+        cfg.mev_share_record_authority = mev_share_record_authority;
+        cfg.validate()?;
+
+        Ok(())
+    }
+
+    /// Updates tips-and-mev-share config defaults. Only the config authority can invoke this.
+    pub fn update_tips_and_mev_share_config(
+        ctx: Context<UpdateTipsAndMevShareConfig>,
+        tip_manager_authority: Pubkey,
+        tip_commission_account: Pubkey,
+        tip_commission_bps: u16,
+        tip_epoch: u8,
+        tip_record_authority: Pubkey,
+        mev_share_manager_authority: Pubkey,
+        mev_share_commission_account: Pubkey,
+        mev_share_commission_bps: u16,
+        mev_share_epoch: u8,
+        mev_share_record_authority: Pubkey,
+    ) -> Result<()> {
+        UpdateTipsAndMevShareConfig::auth(&ctx)?;
+
+        let cfg = &mut ctx.accounts.tips_and_mev_share_config;
+        cfg.tip_manager_authority = tip_manager_authority;
+        cfg.tip_commission_account = tip_commission_account;
+        cfg.tip_commission_bps = tip_commission_bps;
+        cfg.tip_epoch = tip_epoch;
+        cfg.tip_record_authority = tip_record_authority;
+        cfg.mev_share_manager_authority = mev_share_manager_authority;
+        cfg.mev_share_commission_account = mev_share_commission_account;
+        cfg.mev_share_commission_bps = mev_share_commission_bps;
+        cfg.mev_share_epoch = mev_share_epoch;
+        cfg.mev_share_record_authority = mev_share_record_authority;
+        cfg.validate()?;
+
+        emit!(TipsAndMevShareConfigUpdatedEvent {
+            authority: ctx.accounts.authority.key(),
+        });
+
+        Ok(())
+    }
+
+    /// Closes the tips-and-mev-share config account and reclaims rent.
+    pub fn close_tips_and_mev_share_config(
+        ctx: Context<CloseTipsAndMevShareConfig>,
+    ) -> Result<()> {
+        CloseTipsAndMevShareConfig::auth(&ctx)?;
+
+        let config_account = &mut ctx.accounts.tips_and_mev_share_config;
+        let authority = &mut ctx.accounts.signer;
+
+        let lamports_to_reclaim = config_account.to_account_info().lamports();
+        **config_account.to_account_info().try_borrow_mut_lamports()? = 0;
+        **authority.try_borrow_mut_lamports()? = authority
+            .lamports()
+            .checked_add(lamports_to_reclaim)
+            .ok_or(ArithmeticError)?;
+
+        emit!(TipsAndMevShareConfigClosedEvent {
             authority: authority.key(),
             lamports_reclaimed: lamports_to_reclaim,
         });
@@ -499,6 +594,64 @@ pub mod reward_distribution {
         Ok(())
     }
 
+    /// Initializes a revenue share vault using [`TipsAndMevShareConfigAccount`] defaults (no RD config).
+    /// Args are only `share_kind`, `name`, and `bump`; manager/commission/record/epoch come from config.
+    pub fn initialize_revenue_share_account_v1(
+        ctx: Context<InitializeRevenueShareAccountV1>,
+        share_kind: RevenueKind,
+        name: [u8; 32],
+        bump: u8,
+    ) -> Result<()> {
+        let (
+            manager_authority,
+            commission_account,
+            commission_bps,
+            max_epoch_entries,
+            record_authority,
+        ) = ctx
+            .accounts
+            .tips_and_mev_share_config
+            .defaults_for(share_kind);
+
+        InitializeRevenueShareAccountV1::auth(
+            &ctx,
+            name,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+        )?;
+
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        revenue_share_account.populate_on_init(
+            share_kind,
+            name,
+            ctx.accounts.validator_vote_account.key(),
+            ctx.accounts.payer.key(),
+            manager_authority,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+            bump,
+        )?;
+
+        emit!(RevenueShareAccountInitializedEvent {
+            revenue_share_account: revenue_share_account.key(),
+            share_kind,
+            name,
+            validator_vote: revenue_share_account.validator_vote,
+            initializer: ctx.accounts.payer.key(),
+            manager_authority,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+        });
+
+        Ok(())
+    }
+
     /// Records revenue for the current epoch (accounting only).
     pub fn record_revenue(ctx: Context<RecordRevenue>, amount: u64) -> Result<()> {
         RecordRevenue::auth(&ctx)?;
@@ -518,12 +671,17 @@ pub mod reward_distribution {
     }
 
     /// Claims revenue for a completed epoch.
+    /// Rakurai-named vaults skip commission (effective `commission_bps = 0`).
     pub fn claim_revenue(ctx: Context<ClaimRevenue>, epoch: u64) -> Result<()> {
         ClaimRevenue::auth(&ctx)?;
 
         let revenue_share_account = &mut ctx.accounts.revenue_share_account;
         let share_kind = revenue_share_account.share_kind;
-        let commission_bps = revenue_share_account.commission_bps;
+        let commission_bps = if revenue_share_account.name == RAKURAI_REVENUE_NAME {
+            0
+        } else {
+            revenue_share_account.commission_bps
+        };
         let revenue_share_account_info = revenue_share_account.to_account_info();
         let (commission_amount, validator_amount) = RevenueShareAccount::claim_revenue(
             &mut revenue_share_account.ledger,
@@ -920,6 +1078,76 @@ impl CloseConfig<'_> {
     }
 }
 
+/// Initializes the tips-and-mev-share config singleton.
+#[derive(Accounts)]
+pub struct InitializeTipsAndMevShareConfig<'info> {
+    #[account(
+        init,
+        seeds = [TipsAndMevShareConfigAccount::SEED],
+        bump,
+        payer = initializer,
+        space = TipsAndMevShareConfigAccount::SIZE,
+        rent_exempt = enforce
+    )]
+    pub tips_and_mev_share_config: Account<'info, TipsAndMevShareConfigAccount>,
+
+    pub system_program: Program<'info, System>,
+
+    #[account(mut)]
+    pub initializer: Signer<'info>,
+}
+
+/// Updates fields in the tips-and-mev-share config singleton.
+#[derive(Accounts)]
+pub struct UpdateTipsAndMevShareConfig<'info> {
+    #[account(
+        mut,
+        seeds = [TipsAndMevShareConfigAccount::SEED],
+        bump = tips_and_mev_share_config.bump,
+        rent_exempt = enforce
+    )]
+    pub tips_and_mev_share_config: Account<'info, TipsAndMevShareConfigAccount>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+}
+
+impl UpdateTipsAndMevShareConfig<'_> {
+    fn auth(ctx: &Context<UpdateTipsAndMevShareConfig>) -> Result<()> {
+        if ctx.accounts.tips_and_mev_share_config.authority != ctx.accounts.authority.key() {
+            Err(Unauthorized.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Closes the tips-and-mev-share config account.
+#[derive(Accounts)]
+pub struct CloseTipsAndMevShareConfig<'info> {
+    #[account(
+        mut,
+        close = signer,
+        seeds = [TipsAndMevShareConfigAccount::SEED],
+        bump = tips_and_mev_share_config.bump,
+        rent_exempt = enforce
+    )]
+    pub tips_and_mev_share_config: Account<'info, TipsAndMevShareConfigAccount>,
+
+    #[account(mut)]
+    pub signer: Signer<'info>,
+}
+
+impl CloseTipsAndMevShareConfig<'_> {
+    fn auth(ctx: &Context<CloseTipsAndMevShareConfig>) -> Result<()> {
+        if ctx.accounts.tips_and_mev_share_config.authority != ctx.accounts.signer.key() {
+            Err(Unauthorized.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
 /// Instruction to close a reward collection account after the epoch has ended.
 #[derive(Accounts)]
 #[instruction(epoch: u64)]
@@ -1163,6 +1391,80 @@ impl InitializeRevenueShareAccount<'_> {
     }
 }
 
+/// Initializes a revenue share vault PDA using tips-and-mev-share config defaults (no RD config).
+#[derive(Accounts)]
+#[instruction(share_kind: RevenueKind, name: [u8; 32], _bump: u8)]
+pub struct InitializeRevenueShareAccountV1<'info> {
+    #[account(
+        init,
+        payer = payer,
+        space = tips_and_mev_share_config.space_for_share_kind(share_kind),
+        seeds = [
+            RevenueShareAccount::SEED,
+            share_kind.seed(),
+            name.as_ref(),
+            validator_vote_account.key().as_ref(),
+        ],
+        bump,
+    )]
+    pub revenue_share_account: Account<'info, RevenueShareAccount>,
+
+    #[account(
+        seeds = [TipsAndMevShareConfigAccount::SEED],
+        bump = tips_and_mev_share_config.bump,
+    )]
+    pub tips_and_mev_share_config: Account<'info, TipsAndMevShareConfigAccount>,
+
+    #[account(
+        seeds = [RakuraiActivationAccount::SEED, rakurai_activation_account.validator_authority.as_ref()],
+        bump = rakurai_activation_account.bump,
+        seeds::program = rakurai_activation::ID,
+        constraint = rakurai_activation_account.is_enabled @ RakuraiSchedulerNotEnabled,
+    )]
+    pub rakurai_activation_account: Account<'info, RakuraiActivationAccount>,
+
+    /// CHECK: validator vote account used in PDA seeds; node must match RAA validator authority.
+    pub validator_vote_account: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+impl InitializeRevenueShareAccountV1<'_> {
+    fn auth(
+        ctx: &Context<InitializeRevenueShareAccountV1>,
+        name: [u8; 32],
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
+    ) -> Result<()> {
+        use rakurai_vote_state::VoteState;
+
+        if ctx.accounts.validator_vote_account.owner != &solana_program::vote::program::id() {
+            return Err(Unauthorized.into());
+        }
+
+        let node_pubkey = VoteState::deserialize_node_pubkey(&ctx.accounts.validator_vote_account)
+            .map_err(|_| Unauthorized)?;
+        if node_pubkey != ctx.accounts.rakurai_activation_account.validator_authority {
+            return Err(Unauthorized.into());
+        }
+
+        // Cap is the absolute max (10_000); tips/mev config already validated its own sides.
+        RevenueShareAccount::validate_init_params(
+            name,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+            10_000,
+        )
+    }
+}
+
 /// Records revenue for the current epoch.
 #[derive(Accounts)]
 pub struct RecordRevenue<'info> {
@@ -1338,6 +1640,17 @@ pub struct ConfigClosedEvent {
     /// Authority that closed the config account.
     pub authority: Pubkey,
     /// Amount of lamports reclaimed.
+    pub lamports_reclaimed: u64,
+}
+
+#[event]
+pub struct TipsAndMevShareConfigUpdatedEvent {
+    pub authority: Pubkey,
+}
+
+#[event]
+pub struct TipsAndMevShareConfigClosedEvent {
+    pub authority: Pubkey,
     pub lamports_reclaimed: u64,
 }
 

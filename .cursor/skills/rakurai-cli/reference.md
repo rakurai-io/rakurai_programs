@@ -117,7 +117,7 @@ Anchor ix → Solana ix: map `ix.accounts` to `AccountMeta` with `Pubkey::new_fr
 
 ## Tip Manager & RCA CLI Accounts (reference)
 
-**change_tip_receiver**: config, rakurai_activation_account (PDA `[RAA_SEED, signer]`), validator_vote_account, old_tip_receiver, new_tip_receiver, client_commission_account, 8 tip PDAs, validator identity signer.
+**change_tip_receiver_v2**: tip_manager_config, old_tip_receiver (TCA), new_tip_receiver (TCA), client_commission_account (= old TCA `commission_account`), 8 tip PDAs, signer, record_authority PDA; remaining: RAA, reward_distribution program.
 
 **transfer_staker_rewards** (RD): validator_vote_account, client_commission_account, reward_collection_account, system_program, validator identity signer.
 

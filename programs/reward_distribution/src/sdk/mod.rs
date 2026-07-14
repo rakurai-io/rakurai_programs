@@ -4,7 +4,7 @@ use anchor_lang::{prelude::Pubkey, solana_program::clock::Epoch};
 
 use crate::{
     RevenueShareAccount, RevenueKind, RewardCollectionAccount,
-    RewardDistributionConfigAccount,
+    RewardDistributionConfigAccount, TipsAndMevShareConfigAccount,
 };
 
 /// Derives the PDA for a reward collection account using vote pubkey and epoch.
@@ -29,6 +29,16 @@ pub fn derive_reward_collection_account_address(
 pub fn derive_config_account_address(reward_distribution_program_id: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[RewardDistributionConfigAccount::SEED],
+        reward_distribution_program_id,
+    )
+}
+
+/// Derives the PDA for the tips-and-mev-share config singleton.
+pub fn derive_tips_and_mev_share_config_address(
+    reward_distribution_program_id: &Pubkey,
+) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &[TipsAndMevShareConfigAccount::SEED],
         reward_distribution_program_id,
     )
 }
