@@ -141,9 +141,10 @@ Once settled (TCA or MCA), revenue is split in two parts:
 |------|-------------------|----------------------------|
 | **Config** | One-time `initialize_tips_and_mev_share_config` (shared singleton) | Same |
 | **Init** | `initialize_revenue_share_account_v1` — once per `(share_kind, name, vote)`; defaults from tips/mev config | Same |
-| **Record** | Validator (`record_authority`) calls `record_revenue` **each leader turn** — ledger only | Service calls `record_revenue` **once after epoch end** — ledger only |
-| **Settle** | Tip account holder transfers SOL into the PDA post-epoch | Service transfers SOL into the PDA post-epoch |
-| **Claim** | `manager_authority` calls `claim_revenue(epoch)` — splits commission → `commission_account` (skipped for Rakurai name; already taken at tip drain), rest → validator identity | Same (partner MCA still takes commission at claim) |
+| **Record** | Validator (`record_authority`) calls `record_revenue` each leader turn. **Rakurai tip TCA** also credits `transferred_amount` (tip drain deposits SOL). | Service calls `record_revenue` once after epoch end (ledger only; no auto-transfer credit) |
+| **Settle** | Not needed for Rakurai tip TCA. Partner/custom TCA: any wallet `settle_revenue(epoch, amount)` (system-transfer + credit `transferred_amount`). If SOL was sent directly, manager/record authority calls `update_transferred_amount(epoch, amount)` (ledger only) | Same |
+| **Claim** | `manager_authority` calls `claim_revenue(epoch)` — pays `transferred_amount` (even if above recorded); shortfall when underfunded adds to `deficit`; Rakurai name skips claim commission | Same |
+| **Close** | `close_revenue_share_account` (new layout) or `close_revenue_share_account_legacy` (old layout) | Same |
 
 ### 5.5. TipsAndMevShareConfigAccount
 
@@ -151,8 +152,10 @@ Singleton PDA (`TIPS_AND_MEV_SHARE_CONFIG`) holding Tip and MevShare defaults co
 
 | Side | Fields copied at init_v1 |
 |------|--------------------------|
-| Tip | `tip_manager_authority`, `tip_commission_account`, `tip_commission_bps`, `tip_epoch` → `max_epoch_entries`, `tip_record_authority` |
-| MevShare | `mev_share_manager_authority`, `mev_share_commission_*`, `mev_share_epoch`, `mev_share_record_authority` |
+| Tip | `tip_manager_authority`, `tip_commission_account`, `tip_commission_bps`, `tip_epoch` → `max_epoch_entries` |
+| MevShare | `mev_share_manager_authority`, `mev_share_commission_*`, `mev_share_epoch` |
+
+`record_authority` is passed as an instruction argument to `initialize_revenue_share_account_v1` (same as legacy init).
 
 Instructions: `initialize_tips_and_mev_share_config`, `update_tips_and_mev_share_config`, `close_tips_and_mev_share_config`.
 
@@ -185,25 +188,29 @@ pub struct RevenueLedger {
 pub struct EpochAmountEntry {
     pub epoch: u64,                   // epoch this entry belongs to
     pub amount: u64,                  // attributed lamports (updated by record_revenue)
+    pub transferred_amount: u64,      // settle_revenue, or auto on record_revenue for Rakurai tip TCA
     pub claimed: bool,                // true after claim_revenue succeeds
     pub block_reward_converted: bool, // whether converted to block rewards
 }
 ```
 
-**Example ledger after `record_revenue`:**
+Account-level `deficit: u64` (below the ledger) accumulates shortfalls when claim pays less than recorded (`amount - transferred`); manager adjusts via `update_deficit` with [`DeficitUpdate`].
+
+**Example ledger after `record_revenue` + partial settle:**
 
 ```json
 {
+  "deficit": 0,
   "ledger": {
     "entries": [
-      { "epoch": 998, "amount": 500000000, "claimed": false, "block_reward_converted": false },
-      { "epoch": 997, "amount": 1200000000, "claimed": true, "block_reward_converted": false }
+      { "epoch": 998, "amount": 500000000, "transferred_amount": 300000000, "claimed": false, "block_reward_converted": false },
+      { "epoch": 997, "amount": 1200000000, "transferred_amount": 1200000000, "claimed": true, "block_reward_converted": false }
     ]
   }
 }
 ```
 
-`record_revenue` updates accounting only (no lamport move). For TCA it may be called each leader turn; for MCA the service calls it **once per epoch** after the epoch ends. Settlement is a separate SOL transfer into the PDA; `claim_revenue` distributes settled funds and sets `claimed = true`.
+`record_revenue` updates `amount`. For the **Rakurai tip TCA** only, it also credits `transferred_amount` (tip-manager deposits SOL in the same drain tx). Non-Rakurai vaults call `settle_revenue` (system-transfer + credit) or `update_transferred_amount` (credit only, after a direct SOL send). `claim_revenue` pays `transferred_amount`, accrues `deficit` when underfunded (`amount > transferred`), and sets `claimed = true`.
 
 ### 5.7. How to check status
 

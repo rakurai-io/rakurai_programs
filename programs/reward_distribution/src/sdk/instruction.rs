@@ -271,12 +271,10 @@ pub struct InitializeTipsAndMevShareConfigArgs {
     pub tip_commission_account: Pubkey,
     pub tip_commission_bps: u16,
     pub tip_epoch: u8,
-    pub tip_record_authority: Pubkey,
     pub mev_share_manager_authority: Pubkey,
     pub mev_share_commission_account: Pubkey,
     pub mev_share_commission_bps: u16,
     pub mev_share_epoch: u8,
-    pub mev_share_record_authority: Pubkey,
     pub bump: u8,
 }
 
@@ -297,12 +295,10 @@ pub fn initialize_tips_and_mev_share_config_ix(
         tip_commission_account,
         tip_commission_bps,
         tip_epoch,
-        tip_record_authority,
         mev_share_manager_authority,
         mev_share_commission_account,
         mev_share_commission_bps,
         mev_share_epoch,
-        mev_share_record_authority,
         bump,
     } = args;
     let InitializeTipsAndMevShareConfigAccounts {
@@ -319,12 +315,10 @@ pub fn initialize_tips_and_mev_share_config_ix(
             tip_commission_account,
             tip_commission_bps,
             tip_epoch,
-            tip_record_authority,
             mev_share_manager_authority,
             mev_share_commission_account,
             mev_share_commission_bps,
             mev_share_epoch,
-            mev_share_record_authority,
             bump,
         }
         .data(),
@@ -342,12 +336,10 @@ pub struct UpdateTipsAndMevShareConfigArgs {
     pub tip_commission_account: Pubkey,
     pub tip_commission_bps: u16,
     pub tip_epoch: u8,
-    pub tip_record_authority: Pubkey,
     pub mev_share_manager_authority: Pubkey,
     pub mev_share_commission_account: Pubkey,
     pub mev_share_commission_bps: u16,
     pub mev_share_epoch: u8,
-    pub mev_share_record_authority: Pubkey,
 }
 
 pub struct UpdateTipsAndMevShareConfigAccounts {
@@ -365,12 +357,10 @@ pub fn update_tips_and_mev_share_config_ix(
         tip_commission_account,
         tip_commission_bps,
         tip_epoch,
-        tip_record_authority,
         mev_share_manager_authority,
         mev_share_commission_account,
         mev_share_commission_bps,
         mev_share_epoch,
-        mev_share_record_authority,
     } = args;
     let UpdateTipsAndMevShareConfigAccounts {
         tips_and_mev_share_config,
@@ -384,12 +374,10 @@ pub fn update_tips_and_mev_share_config_ix(
             tip_commission_account,
             tip_commission_bps,
             tip_epoch,
-            tip_record_authority,
             mev_share_manager_authority,
             mev_share_commission_account,
             mev_share_commission_bps,
             mev_share_epoch,
-            mev_share_record_authority,
         }
         .data(),
         accounts: crate::accounts::UpdateTipsAndMevShareConfig {
@@ -724,6 +712,7 @@ pub fn initialize_revenue_share_account_ix(
 pub struct InitializeRevenueShareAccountV1Args {
     pub share_kind: RevenueKind,
     pub name: [u8; 32],
+    pub record_authority: Pubkey,
     pub bump: u8,
 }
 
@@ -744,6 +733,7 @@ pub fn initialize_revenue_share_account_v1_ix(
     let InitializeRevenueShareAccountV1Args {
         share_kind,
         name,
+        record_authority,
         bump,
     } = args;
     let InitializeRevenueShareAccountV1Accounts {
@@ -760,6 +750,7 @@ pub fn initialize_revenue_share_account_v1_ix(
         data: crate::instruction::InitializeRevenueShareAccountV1 {
             share_kind,
             name,
+            record_authority,
             bump,
         }
         .data(),
@@ -801,6 +792,104 @@ pub fn record_revenue_ix(
         accounts: crate::accounts::RecordRevenue {
             revenue_share_account,
             record_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct SettleRevenueArgs {
+    pub epoch: u64,
+    pub amount: u64,
+}
+
+pub struct SettleRevenueAccounts {
+    pub revenue_share_account: Pubkey,
+    pub payer: Pubkey,
+    pub system_program: Pubkey,
+}
+
+pub fn settle_revenue_ix(
+    program_id: Pubkey,
+    args: SettleRevenueArgs,
+    accounts: SettleRevenueAccounts,
+) -> Instruction {
+    let SettleRevenueArgs { epoch, amount } = args;
+    let SettleRevenueAccounts {
+        revenue_share_account,
+        payer,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::SettleRevenue { epoch, amount }.data(),
+        accounts: crate::accounts::SettleRevenue {
+            revenue_share_account,
+            payer,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateTransferredAmountArgs {
+    pub epoch: u64,
+    pub amount: u64,
+}
+
+pub struct UpdateTransferredAmountAccounts {
+    pub revenue_share_account: Pubkey,
+    pub authority: Pubkey,
+}
+
+pub fn update_transferred_amount_ix(
+    program_id: Pubkey,
+    args: UpdateTransferredAmountArgs,
+    accounts: UpdateTransferredAmountAccounts,
+) -> Instruction {
+    let UpdateTransferredAmountArgs { epoch, amount } = args;
+    let UpdateTransferredAmountAccounts {
+        revenue_share_account,
+        authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateTransferredAmount { epoch, amount }.data(),
+        accounts: crate::accounts::UpdateTransferredAmount {
+            revenue_share_account,
+            authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateDeficitArgs {
+    pub update: crate::state::DeficitUpdate,
+}
+
+pub struct UpdateDeficitAccounts {
+    pub revenue_share_account: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+pub fn update_deficit_ix(
+    program_id: Pubkey,
+    args: UpdateDeficitArgs,
+    accounts: UpdateDeficitAccounts,
+) -> Instruction {
+    let UpdateDeficitArgs { update } = args;
+    let UpdateDeficitAccounts {
+        revenue_share_account,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateDeficit { update }.data(),
+        accounts: crate::accounts::UpdateDeficit {
+            revenue_share_account,
+            manager_authority,
         }
         .to_account_metas(None),
     }
@@ -945,6 +1034,34 @@ pub fn close_revenue_share_account_ix(
         program_id,
         data: crate::instruction::CloseRevenueShareAccount {}.data(),
         accounts: crate::accounts::CloseRevenueShareAccount {
+            revenue_share_account,
+            initializer,
+            authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct CloseRevenueShareAccountLegacyAccounts {
+    pub revenue_share_account: Pubkey,
+    pub initializer: Pubkey,
+    pub authority: Pubkey,
+}
+
+pub fn close_revenue_share_account_legacy_ix(
+    program_id: Pubkey,
+    accounts: CloseRevenueShareAccountLegacyAccounts,
+) -> Instruction {
+    let CloseRevenueShareAccountLegacyAccounts {
+        revenue_share_account,
+        initializer,
+        authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::CloseRevenueShareAccountLegacy {}.data(),
+        accounts: crate::accounts::CloseRevenueShareAccountLegacy {
             revenue_share_account,
             initializer,
             authority,

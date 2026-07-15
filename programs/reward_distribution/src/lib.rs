@@ -5,9 +5,9 @@ use solana_security_txt::security_txt;
 
 use crate::{
     state::{
-        validate_commission, ClaimStatus, MerkleRoot, RevenueKind, RevenueShareAccount,
-        RewardCollectionAccount, RewardDistributionConfigAccount, TipsAndMevShareConfigAccount,
-        RAKURAI_REVENUE_NAME,
+        validate_commission, ClaimStatus, DeficitUpdate, MerkleRoot, RevenueKind,
+        RevenueShareAccount, RewardCollectionAccount, RewardDistributionConfigAccount,
+        TipsAndMevShareConfigAccount, RAKURAI_REVENUE_NAME,
     },
     ErrorCode::{InvalidClientCommissionAccount, RakuraiSchedulerNotEnabled, Unauthorized},
 };
@@ -164,12 +164,10 @@ pub mod reward_distribution {
         tip_commission_account: Pubkey,
         tip_commission_bps: u16,
         tip_epoch: u8,
-        tip_record_authority: Pubkey,
         mev_share_manager_authority: Pubkey,
         mev_share_commission_account: Pubkey,
         mev_share_commission_bps: u16,
         mev_share_epoch: u8,
-        mev_share_record_authority: Pubkey,
         bump: u8,
     ) -> Result<()> {
         let cfg = &mut ctx.accounts.tips_and_mev_share_config;
@@ -179,12 +177,10 @@ pub mod reward_distribution {
         cfg.tip_commission_account = tip_commission_account;
         cfg.tip_commission_bps = tip_commission_bps;
         cfg.tip_epoch = tip_epoch;
-        cfg.tip_record_authority = tip_record_authority;
         cfg.mev_share_manager_authority = mev_share_manager_authority;
         cfg.mev_share_commission_account = mev_share_commission_account;
         cfg.mev_share_commission_bps = mev_share_commission_bps;
         cfg.mev_share_epoch = mev_share_epoch;
-        cfg.mev_share_record_authority = mev_share_record_authority;
         cfg.validate()?;
 
         Ok(())
@@ -197,12 +193,10 @@ pub mod reward_distribution {
         tip_commission_account: Pubkey,
         tip_commission_bps: u16,
         tip_epoch: u8,
-        tip_record_authority: Pubkey,
         mev_share_manager_authority: Pubkey,
         mev_share_commission_account: Pubkey,
         mev_share_commission_bps: u16,
         mev_share_epoch: u8,
-        mev_share_record_authority: Pubkey,
     ) -> Result<()> {
         UpdateTipsAndMevShareConfig::auth(&ctx)?;
 
@@ -211,12 +205,10 @@ pub mod reward_distribution {
         cfg.tip_commission_account = tip_commission_account;
         cfg.tip_commission_bps = tip_commission_bps;
         cfg.tip_epoch = tip_epoch;
-        cfg.tip_record_authority = tip_record_authority;
         cfg.mev_share_manager_authority = mev_share_manager_authority;
         cfg.mev_share_commission_account = mev_share_commission_account;
         cfg.mev_share_commission_bps = mev_share_commission_bps;
         cfg.mev_share_epoch = mev_share_epoch;
-        cfg.mev_share_record_authority = mev_share_record_authority;
         cfg.validate()?;
 
         emit!(TipsAndMevShareConfigUpdatedEvent {
@@ -595,20 +587,15 @@ pub mod reward_distribution {
     }
 
     /// Initializes a revenue share vault using [`TipsAndMevShareConfigAccount`] defaults (no RD config).
-    /// Args are only `share_kind`, `name`, and `bump`; manager/commission/record/epoch come from config.
+    /// Manager/commission/epoch come from config; `record_authority` is an instruction arg (like legacy).
     pub fn initialize_revenue_share_account_v1(
         ctx: Context<InitializeRevenueShareAccountV1>,
         share_kind: RevenueKind,
         name: [u8; 32],
+        record_authority: Pubkey,
         bump: u8,
     ) -> Result<()> {
-        let (
-            manager_authority,
-            commission_account,
-            commission_bps,
-            max_epoch_entries,
-            record_authority,
-        ) = ctx
+        let (manager_authority, commission_account, commission_bps, max_epoch_entries) = ctx
             .accounts
             .tips_and_mev_share_config
             .defaults_for(share_kind);
@@ -652,7 +639,9 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Records revenue for the current epoch (accounting only).
+    /// Records revenue for the current epoch.
+    /// Rakurai tip TCA also credits `transferred_amount` (SOL deposited by tip-manager in the same tx).
+    /// Non-Rakurai vaults require a later `settle_revenue` to fund and credit transfer.
     pub fn record_revenue(ctx: Context<RecordRevenue>, amount: u64) -> Result<()> {
         RecordRevenue::auth(&ctx)?;
 
@@ -670,7 +659,68 @@ pub mod reward_distribution {
         Ok(())
     }
 
+    /// For non-Rakurai vaults: CPI system-transfer SOL into the vault, then `credit_transferred`.
+    /// Rejected for Rakurai tip TCA (transfer is credited via `record_revenue` + tip drain).
+    pub fn settle_revenue(ctx: Context<SettleRevenue>, epoch: u64, amount: u64) -> Result<()> {
+        if ctx.accounts.revenue_share_account.is_rakurai_tip_tca() {
+            return Err(Unauthorized.into());
+        }
+
+        // Pre-validate so we do not accept SOL if the ledger credit would fail.
+        {
+            let entry = ctx.accounts.revenue_share_account.ledger.get_mut(epoch)?;
+            if entry.claimed {
+                return Err(EpochAlreadyClaimed.into());
+            }
+            if amount == 0 {
+                return Err(RewardsTooLow.into());
+            }
+            let _ = entry
+                .transferred_amount
+                .checked_add(amount)
+                .ok_or(ArithmeticError)?;
+        }
+
+        // 1) CPI transfer SOL from payer into the vault.
+        invoke(
+            &system_instruction::transfer(
+                ctx.accounts.payer.key,
+                &ctx.accounts.revenue_share_account.key(),
+                amount,
+            ),
+            &[
+                ctx.accounts.payer.to_account_info(),
+                ctx.accounts.revenue_share_account.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+        )?;
+
+        // 2) Record the settled amount on the epoch entry.
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        revenue_share_account.credit_transferred(epoch, amount)?;
+
+        let transferred_amount = revenue_share_account
+            .ledger
+            .entries
+            .iter()
+            .find(|e| e.epoch == epoch)
+            .map(|e| e.transferred_amount)
+            .unwrap_or(0);
+
+        emit!(RevenueSettledEvent {
+            revenue_share_account: revenue_share_account.key(),
+            share_kind: revenue_share_account.share_kind,
+            epoch,
+            amount,
+            payer: ctx.accounts.payer.key(),
+            transferred_amount,
+        });
+
+        Ok(())
+    }
+
     /// Claims revenue for a completed epoch.
+    /// Pays `min(recorded, transferred)`; underfunded claims add shortfall to account `deficit`.
     /// Rakurai-named vaults skip commission (effective `commission_bps = 0`).
     pub fn claim_revenue(ctx: Context<ClaimRevenue>, epoch: u64) -> Result<()> {
         ClaimRevenue::auth(&ctx)?;
@@ -682,24 +732,52 @@ pub mod reward_distribution {
         } else {
             revenue_share_account.commission_bps
         };
+        let revenue_share_key = revenue_share_account.key();
         let revenue_share_account_info = revenue_share_account.to_account_info();
-        let (commission_amount, validator_amount) = RevenueShareAccount::claim_revenue(
-            &mut revenue_share_account.ledger,
-            revenue_share_account_info,
-            ctx.accounts.commission_account.to_account_info(),
-            ctx.accounts.validator_identity.to_account_info(),
-            commission_bps,
-            epoch,
-        )?;
+        let acc: &mut RevenueShareAccount = &mut *revenue_share_account;
+        let (commission_amount, validator_amount, claimable, shortfall) =
+            RevenueShareAccount::claim_revenue(
+                &mut acc.ledger,
+                &mut acc.deficit,
+                revenue_share_account_info,
+                ctx.accounts.commission_account.to_account_info(),
+                ctx.accounts.validator_identity.to_account_info(),
+                commission_bps,
+                epoch,
+            )?;
 
         emit!(RevenueClaimedEvent {
-            revenue_share_account: revenue_share_account.key(),
+            revenue_share_account: revenue_share_key,
             share_kind,
             validator_identity: ctx.accounts.validator_identity.key(),
             commission_account: ctx.accounts.commission_account.key(),
             epoch,
             commission_amount,
             validator_amount,
+            claimable,
+            shortfall,
+            deficit: acc.deficit,
+        });
+
+        Ok(())
+    }
+
+    /// Sets the cumulative `deficit` field. Manager authority only (e.g. write-off to 0).
+    pub fn update_deficit(ctx: Context<UpdateDeficit>, update: DeficitUpdate) -> Result<()> {
+        UpdateDeficit::auth(&ctx)?;
+
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        let previous = revenue_share_account.deficit;
+        let deficit = update.apply(previous)?;
+        revenue_share_account.deficit = deficit;
+
+        emit!(RevenueDeficitUpdatedEvent {
+            revenue_share_account: revenue_share_account.key(),
+            share_kind: revenue_share_account.share_kind,
+            previous_deficit: previous,
+            deficit,
+            update,
+            authority: ctx.accounts.manager_authority.key(),
         });
 
         Ok(())
@@ -758,9 +836,75 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Closes a revenue share account; rent is returned to the original initializer.
+    /// Closes a revenue share account with the **new** layout (`transferred_amount` + `deficit`).
+    /// Rent is returned to the original initializer. Rejects legacy-layout accounts.
     pub fn close_revenue_share_account(ctx: Context<CloseRevenueShareAccount>) -> Result<()> {
         CloseRevenueShareAccount::auth(&ctx)?;
+
+        let data_len = ctx.accounts.revenue_share_account.to_account_info().data_len();
+        let expected = RevenueShareAccount::space_for(
+            ctx.accounts.revenue_share_account.max_epoch_entries as usize,
+        );
+        require_eq!(data_len, expected, InvalidRevenueShareLayout);
+
+        Ok(())
+    }
+
+    /// Closes a revenue share account with the **legacy** layout (no `transferred_amount` / `deficit`).
+    /// Rent is returned to the original initializer. Rejects new-layout accounts.
+    pub fn close_revenue_share_account_legacy(
+        ctx: Context<CloseRevenueShareAccountLegacy>,
+    ) -> Result<()> {
+        CloseRevenueShareAccountLegacy::auth(&ctx)?;
+
+        let account_info = ctx.accounts.revenue_share_account.to_account_info();
+        let lamports_to_reclaim = account_info.lamports();
+        **account_info.try_borrow_mut_lamports()? = 0;
+        **ctx.accounts.initializer.try_borrow_mut_lamports()? = ctx
+            .accounts
+            .initializer
+            .lamports()
+            .checked_add(lamports_to_reclaim)
+            .ok_or(ArithmeticError)?;
+
+        // Zero data so the account cannot be re-used with stale layout.
+        {
+            let mut data = account_info.try_borrow_mut_data()?;
+            data.fill(0);
+        }
+
+        Ok(())
+    }
+
+    /// Credits `transferred_amount` for an epoch without moving lamports.
+    /// Use when SOL was sent into the vault outside `settle_revenue`.
+    pub fn update_transferred_amount(
+        ctx: Context<UpdateTransferredAmount>,
+        epoch: u64,
+        amount: u64,
+    ) -> Result<()> {
+        UpdateTransferredAmount::auth(&ctx)?;
+
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        revenue_share_account.credit_transferred(epoch, amount)?;
+
+        let transferred_amount = revenue_share_account
+            .ledger
+            .entries
+            .iter()
+            .find(|e| e.epoch == epoch)
+            .map(|e| e.transferred_amount)
+            .unwrap_or(0);
+
+        emit!(RevenueTransferredAmountUpdatedEvent {
+            revenue_share_account: revenue_share_account.key(),
+            share_kind: revenue_share_account.share_kind,
+            epoch,
+            amount,
+            transferred_amount,
+            authority: ctx.accounts.authority.key(),
+        });
+
         Ok(())
     }
 }
@@ -904,6 +1048,9 @@ pub enum ErrorCode {
 
     #[msg("Revenue ledger is full and all entries are unclaimed.")]
     RevenueLedgerFull,
+
+    #[msg("Revenue share account data length does not match the expected layout for this instruction.")]
+    InvalidRevenueShareLayout,
 }
 
 /// Closes a `ClaimStatus` account and refunds lamports to the payer.
@@ -1393,7 +1540,7 @@ impl InitializeRevenueShareAccount<'_> {
 
 /// Initializes a revenue share vault PDA using tips-and-mev-share config defaults (no RD config).
 #[derive(Accounts)]
-#[instruction(share_kind: RevenueKind, name: [u8; 32], _bump: u8)]
+#[instruction(share_kind: RevenueKind, name: [u8; 32], _record_authority: Pubkey, _bump: u8)]
 pub struct InitializeRevenueShareAccountV1<'info> {
     #[account(
         init,
@@ -1482,6 +1629,19 @@ impl RecordRevenue<'_> {
     }
 }
 
+/// Settles SOL into the revenue vault for an epoch (`transferred_amount` += amount). Any payer.
+#[derive(Accounts)]
+#[instruction(epoch: u64, amount: u64)]
+pub struct SettleRevenue<'info> {
+    #[account(mut)]
+    pub revenue_share_account: Account<'info, RevenueShareAccount>,
+
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
 /// Claims revenue for a completed epoch.
 #[derive(Accounts)]
 #[instruction(epoch: u64)]
@@ -1505,6 +1665,23 @@ pub struct ClaimRevenue<'info> {
 
 impl ClaimRevenue<'_> {
     fn auth(ctx: &Context<ClaimRevenue>) -> Result<()> {
+        ctx.accounts
+            .revenue_share_account
+            .auth_manager_signer(ctx.accounts.manager_authority.key())
+    }
+}
+
+/// Sets cumulative deficit (manager write-off / adjustment).
+#[derive(Accounts)]
+pub struct UpdateDeficit<'info> {
+    #[account(mut)]
+    pub revenue_share_account: Account<'info, RevenueShareAccount>,
+
+    pub manager_authority: Signer<'info>,
+}
+
+impl UpdateDeficit<'_> {
+    fn auth(ctx: &Context<UpdateDeficit>) -> Result<()> {
         ctx.accounts
             .revenue_share_account
             .auth_manager_signer(ctx.accounts.manager_authority.key())
@@ -1585,7 +1762,7 @@ impl UpdateRevenueShareConfig<'_> {
     }
 }
 
-/// Closes a revenue share account.
+/// Closes a revenue share account (new layout only).
 #[derive(Accounts)]
 pub struct CloseRevenueShareAccount<'info> {
     #[account(
@@ -1616,6 +1793,95 @@ impl CloseRevenueShareAccount<'_> {
         ctx.accounts
             .revenue_share_account
             .auth_manager_signer(ctx.accounts.authority.key())
+    }
+}
+
+/// Closes a legacy-layout revenue share account (manual lamport reclaim; no Anchor `close`).
+#[derive(Accounts)]
+pub struct CloseRevenueShareAccountLegacy<'info> {
+    /// CHECK: validated as program-owned legacy layout with matching PDA seeds in `auth`.
+    #[account(mut)]
+    pub revenue_share_account: UncheckedAccount<'info>,
+
+    /// CHECK: receives rent; must match initializer embedded in legacy account data.
+    #[account(mut)]
+    pub initializer: AccountInfo<'info>,
+
+    pub authority: Signer<'info>,
+}
+
+impl CloseRevenueShareAccountLegacy<'_> {
+    fn auth(ctx: &Context<CloseRevenueShareAccountLegacy>) -> Result<()> {
+        use crate::ErrorCode::*;
+
+        let account_info = ctx.accounts.revenue_share_account.to_account_info();
+        if account_info.owner != &crate::ID {
+            return Err(Unauthorized.into());
+        }
+
+        let data = account_info.try_borrow_data()?;
+        if RevenueShareAccount::is_new_layout(&data) {
+            return Err(InvalidRevenueShareLayout.into());
+        }
+        let (manager_authority, initializer) =
+            RevenueShareAccount::read_legacy_close_authorities(&data)?;
+
+        if manager_authority != ctx.accounts.authority.key() {
+            return Err(Unauthorized.into());
+        }
+        if initializer != ctx.accounts.initializer.key() {
+            return Err(Unauthorized.into());
+        }
+
+        // PDA seed check using identity fields at fixed offsets (same for legacy and new).
+        let share_kind_byte = data[8];
+        let name: [u8; 32] = data[9..41]
+            .try_into()
+            .map_err(|_| AccountValidationFailure)?;
+        let validator_vote = Pubkey::new_from_array(
+            data[41..73]
+                .try_into()
+                .map_err(|_| AccountValidationFailure)?,
+        );
+        let kind_seed = match share_kind_byte {
+            0 => RevenueKind::Tip.seed(),
+            1 => RevenueKind::MevShare.seed(),
+            _ => return Err(AccountValidationFailure.into()),
+        };
+        let (expected, _) = Pubkey::find_program_address(
+            &[
+                RevenueShareAccount::SEED,
+                kind_seed,
+                name.as_ref(),
+                validator_vote.as_ref(),
+            ],
+            &crate::ID,
+        );
+        if expected != account_info.key() {
+            return Err(Unauthorized.into());
+        }
+
+        Ok(())
+    }
+}
+
+/// Credits ledger `transferred_amount` without a system transfer (direct-deposit sync).
+#[derive(Accounts)]
+pub struct UpdateTransferredAmount<'info> {
+    #[account(mut)]
+    pub revenue_share_account: Account<'info, RevenueShareAccount>,
+
+    pub authority: Signer<'info>,
+}
+
+impl UpdateTransferredAmount<'_> {
+    fn auth(ctx: &Context<UpdateTransferredAmount>) -> Result<()> {
+        let signer = ctx.accounts.authority.key();
+        let acc = &ctx.accounts.revenue_share_account;
+        if signer != acc.manager_authority && signer != acc.record_authority {
+            return Err(Unauthorized.into());
+        }
+        Ok(())
     }
 }
 
@@ -1746,6 +2012,26 @@ pub struct RevenueRecordedEvent {
 }
 
 #[event]
+pub struct RevenueSettledEvent {
+    pub revenue_share_account: Pubkey,
+    pub share_kind: RevenueKind,
+    pub epoch: u64,
+    pub amount: u64,
+    pub payer: Pubkey,
+    pub transferred_amount: u64,
+}
+
+#[event]
+pub struct RevenueTransferredAmountUpdatedEvent {
+    pub revenue_share_account: Pubkey,
+    pub share_kind: RevenueKind,
+    pub epoch: u64,
+    pub amount: u64,
+    pub transferred_amount: u64,
+    pub authority: Pubkey,
+}
+
+#[event]
 pub struct RevenueClaimedEvent {
     pub revenue_share_account: Pubkey,
     pub share_kind: RevenueKind,
@@ -1754,6 +2040,19 @@ pub struct RevenueClaimedEvent {
     pub epoch: u64,
     pub commission_amount: u64,
     pub validator_amount: u64,
+    pub claimable: u64,
+    pub shortfall: u64,
+    pub deficit: u64,
+}
+
+#[event]
+pub struct RevenueDeficitUpdatedEvent {
+    pub revenue_share_account: Pubkey,
+    pub share_kind: RevenueKind,
+    pub previous_deficit: u64,
+    pub deficit: u64,
+    pub update: DeficitUpdate,
+    pub authority: Pubkey,
 }
 
 #[event]

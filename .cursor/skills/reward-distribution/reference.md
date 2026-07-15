@@ -32,11 +32,12 @@ Singleton defaults copied onto TCA/MCA at `initialize_revenue_share_account_v1`.
 | tip_manager_authority | → TCA `manager_authority` |
 | tip_commission_account / tip_commission_bps | → TCA commission fields |
 | tip_epoch | → TCA `max_epoch_entries` (1..=32) |
-| tip_record_authority | → TCA `record_authority` |
 | mev_share_* | Same for MevShare / MCA |
 | bump | PDA bump |
 
-Validate: each side’s `commission_bps ≤ 10_000`; non-default commission account when bps > 0; epoch in 1..=32; manager and record authorities non-default.
+`record_authority` is an `initialize_revenue_share_account_v1` instruction arg (not stored on this config).
+
+Validate: each side’s `commission_bps ≤ 10_000`; non-default commission account when bps > 0; epoch in 1..=32; manager authority non-default.
 
 ---
 
@@ -55,13 +56,12 @@ Validate: each side’s `commission_bps ≤ 10_000`; non-default commission acco
 | commission_account | Pubkey | Receives commission portion; required non-default when `commission_bps > 0` |
 | block_reward_conversion_enabled | bool | When true, epoch entries require explicit conversion via `update_epoch_converted_to_block_reward` |
 | ledger | RevenueLedger | `Vec<EpochAmountEntry>` |
+| deficit | u64 | Cumulative unpaid shortfall from underfunded claims; manager `update_deficit` |
 | bump | u8 | |
 
-**EpochAmountEntry**: `epoch`, `amount`, `claimed`, `block_reward_converted`. Ledger grows until capacity, then overwrites oldest claimed entry.
+**EpochAmountEntry**: `epoch`, `amount` (recorded), `transferred_amount` (settled), `claimed`, `block_reward_converted`. Ledger grows until capacity, then overwrites oldest claimed entry.
 
-**Claim split**: `commission_amount = amount * commission_bps / 10000`; remainder → validator identity.
-
-**Rakurai name exception:** if `name == RAKURAI_REVENUE_NAME`, effective `commission_bps = 0` at claim. Tip-manager `change_tip_receiver_v2` already deducted Rakurai’s share on drain; re-applying at claim would double-charge. Partner TCA/MCA vaults still take commission at claim.
+**Claim split**: claimable = `transferred_amount` (allows over-settle). If underfunded, `deficit += amount - claimable`. Then `commission_amount = claimable * commission_bps / 10000` (0 for Rakurai name); remainder → validator identity.
 
 ---
 
@@ -95,8 +95,12 @@ Vote binding (where applicable): vote account owned by vote program; `VoteState`
 | update_tips_and_mev_share_config | tips/mev config authority | — | — |
 | close_tips_and_mev_share_config | tips/mev config authority | — | — |
 | initialize_revenue_share_account_v1 | any payer | required | enabled RAA; vote node == RAA `validator_authority`; defaults from tips/mev config |
-| record_revenue | record_authority | — | — |
-| close_revenue_share_account | manager_authority | — | rent to `initializer` |
+| record_revenue | record_authority | — | Rakurai tip TCA also credits `transferred_amount` |
+| settle_revenue | any payer | — | non-Rakurai: system-transfer SOL + credit `transferred_amount` (over-settle allowed) |
+| update_transferred_amount | manager or record authority | — | credit `transferred_amount` only (no CPI transfer) |
+| update_deficit | manager_authority | — | `DeficitUpdate::{Set, Clear, Increase, Decrease}` |
+| close_revenue_share_account | manager_authority | — | new layout only; rent to `initializer` |
+| close_revenue_share_account_legacy | manager_authority | — | legacy layout only; rent to `initializer` |
 | claim | payer | — | — |
 | close_claim_status | — | — | permissionless after expiry |
 
@@ -167,11 +171,15 @@ Revenue claim (`claim_revenue`): `revenue_share_account`, `commission_account` (
 
 ### Revenue share init accounts
 
-`initialize_revenue_share_account_v1`: `tips_and_mev_share_config`, `revenue_share_account` (init), `rakurai_activation_account`, `validator_vote_account`, `payer`, `system_program`. Args: `share_kind`, `name`, `bump` only (defaults from config by `share_kind`).
+`initialize_revenue_share_account_v1`: `tips_and_mev_share_config`, `revenue_share_account` (init), `rakurai_activation_account`, `validator_vote_account`, `payer`, `system_program`. Args: `share_kind`, `name`, `record_authority`, `bump` (manager/commission/epoch from config by `share_kind`).
 
 ### Revenue share close accounts
 
-`close_revenue_share_account`: `revenue_share_account` (mut, close), `initializer` (mut, receives rent), `authority` (signer = `manager_authority`).
+`close_revenue_share_account`: `revenue_share_account` (mut, close), `initializer` (mut, receives rent), `authority` (signer = `manager_authority`); rejects non-new layout sizes.
+
+`close_revenue_share_account_legacy`: `revenue_share_account` (unchecked mut), `initializer`, `authority`; rejects new layout.
+
+`update_transferred_amount`: `revenue_share_account` (mut), `authority` (manager or record); args `epoch`, `amount`.
 
 ### Revenue share config update accounts
 

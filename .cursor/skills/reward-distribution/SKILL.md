@@ -26,7 +26,7 @@ RevenueShareAccount (share_kind = Tip | MevShare) ── per (kind, revenue labe
 ```
 
 - **RCA** — lamport vault, optional Merkle root; block rewards via `transfer_staker_rewards`
-- **TipsAndMevShareConfigAccount** — singleton defaults (manager, commission, record authority, epoch capacity) for Tip and MevShare; used by `initialize_revenue_share_account_v1`
+- **TipsAndMevShareConfigAccount** — singleton defaults (manager, commission, epoch capacity) for Tip and MevShare; used by `initialize_revenue_share_account_v1` (`record_authority` is an ix arg)
 - **Revenue-share PDAs** — one unified `RevenueShareAccount` per `(share_kind, name, vote)`; epoch ledger + lamport vault; `record_revenue` is accounting-only; claim applies `commission_bps` except Rakurai-named vaults (tip drain already took that cut)
 
 ---
@@ -53,7 +53,7 @@ RevenueShareAccount (share_kind = Tip | MevShare) ── per (kind, revenue labe
 | Tips/Mev config | `initialize_tips_and_mev_share_config`, `update_tips_and_mev_share_config`, `close_tips_and_mev_share_config` |
 | RCA | `initialize_reward_collection_account_v1`, `upload_merkle_root`, `transfer_staker_rewards`, `transfer_client_commission_on_mev_commission`, `close_reward_collection_account` |
 | Claims | `claim`, `close_claim_status` |
-| Revenue share | `initialize_revenue_share_account_v1`, `record_revenue`, `claim_revenue`, `update_revenue_share_config`, `update_epoch_converted_to_block_reward`, `close_revenue_share_account` |
+| Revenue share | `initialize_revenue_share_account_v1`, `record_revenue`, `settle_revenue`, `update_transferred_amount`, `claim_revenue`, `update_deficit`, `update_revenue_share_config`, `update_epoch_converted_to_block_reward`, `close_revenue_share_account`, `close_revenue_share_account_legacy` |
 
 ---
 
@@ -64,7 +64,7 @@ RevenueShareAccount (share_kind = Tip | MevShare) ── per (kind, revenue labe
 3. **After E**: `upload_merkle_root`; staker `claim`; `claim_revenue` — commission to `commission_account` except Rakurai-named vaults (0; already taken at tip drain), remainder to validator identity.
 4. **Cleanup**: close RCA after expiry; `close_claim_status` permissionless after expiry.
 
-**Revenue share flow:** tips/mev config init (once) → `initialize_revenue_share_account_v1` → record (ledger) → settle (SOL into PDA) → claim. PDA `[REVENUE_SHARE, share_kind, name, vote]`. Record: `record_authority`. Claim/config: `manager_authority`.
+**Revenue share flow:** tips/mev config init → `initialize_revenue_share_account_v1` → `record_revenue` (Rakurai tip TCA also credits `transferred_amount`) → non-Rakurai `settle_revenue` or `update_transferred_amount` (direct deposit sync) → `claim_revenue`. Record: `record_authority`. Claim/config/deficit: `manager_authority`.
 
 ---
 
