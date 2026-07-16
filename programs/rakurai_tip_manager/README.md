@@ -72,8 +72,8 @@ These accounts are empty state accounts that hold SOL (lamports). When tips are 
 
 1. **Users send tips** → any of the eight tip accounts
 2. **Validator drains tips** via one of:
-   - `change_tip_receiver` / `change_tip_receiver_v1` — **legacy TCA** (`REVENUE_SHARE`); CPI `record_revenue`; drain uses TM global commission, then sync from new TCA
-   - `change_tip_receiver_v2` — **TCAV1** (`REVENUE_SHARE_V1`); CPI `record_revenue_v1`; drain uses TM global commission, then sync from new TCAV1
+   - `change_tip_receiver` / `change_tip_receiver_v1` — **new** tip receiver must be legacy TCA (`REVENUE_SHARE`); records old TCA **or** TCAV1; drain uses TM global commission, then sync from new TCA
+   - `change_tip_receiver_v2` — **new** tip receiver must be TCAV1 (`REVENUE_SHARE_V1`); records old TCA **or** TCAV1; drain uses TM global commission, then sync from new TCAV1
 3. **Config update** → `validator_tip_receiver_account` set to the new tip receiver PDA; `client_commission_*` synced from new TCA / TCAV1 for the next leader
 
 ---
@@ -82,8 +82,10 @@ These accounts are empty state accounts that hold SOL (lamports). When tips are 
 
 | Path | Tip receiver PDA | Init | Drain ix | Record CPI |
 |------|------------------|------|----------|------------|
-| Legacy (old validators) | `[REVENUE_SHARE, TIP, rakurai, vote]` | `initialize_revenue_share_account` | `change_tip_receiver_v1` | `record_revenue` |
-| V1 (new validators) | `[REVENUE_SHARE_V1, TIP, rakurai, vote]` | `initialize_revenue_share_account_v1` | `change_tip_receiver_v2` | `record_revenue_v1` |
+| Legacy (old validators) | `[REVENUE_SHARE, TIP, rakurai, vote]` | `initialize_revenue_share_account` | `change_tip_receiver_v1` | `record_revenue` (or `record_revenue_v1` if previous was TCAV1) |
+| V1 (new validators) | `[REVENUE_SHARE_V1, TIP, rakurai, vote]` | `initialize_revenue_share_account_v1` | `change_tip_receiver_v2` | `record_revenue_v1` (or `record_revenue` if previous was legacy TCA) |
+
+Both `v1` and `v2` detect whether **old** is TCA or TCAV1 and CPI the matching record ix, so mixed handoffs (v1→v2→v1…) still ledger.
 
 SDK: `derive_rakurai_tip_collection_address` (legacy), `derive_rakurai_tip_collection_v1_address` (V1).
 

@@ -46,7 +46,6 @@ pub const RAKURAI_TIP_ACCOUNT_7_SEED: &[u8] = b"RAKURAI_TIP_ACCOUNT_7";
 pub const RECORD_AUTHORITY_SEED: &[u8] = b"RECORD_AUTHORITY";
 
 const MAX_COMMISSION_BPS: u64 = 10_000;
-
 /// Rakurai Tip Manager Program: users send tips to one of eight tip accounts, validators periodically drain them
 /// and tips are split between the configured tip receiver and an client commission account.
 #[program]
@@ -196,49 +195,15 @@ pub mod rakurai_tip_manager {
 
         let validator_fee = total_tips.checked_sub(client_fee).ok_or(ArithmeticError)?;
 
-        // 2. Record the validator's share on the TCA ledger when possible.
-        // If `old_tip_receiver` is a TCA whose `record_authority` matches our PDA,
-        // CPI `record_revenue`; otherwise skip ONLY the recording and still drain
-        // and distribute the tips (a mismatched/absent authority must not block payouts).
-        //
-        // The CPI must happen BEFORE any lamport changes: the runtime only syncs
-        // CPI-referenced accounts from VM→host before its pre-CPI balance check,
-        // so any prior mutations on non-CPI accounts appear as an imbalance.
-        let should_record = validator_fee > 0
-            && ctx.accounts.old_tip_receiver.owner == &reward_distribution::ID
-            && {
-                use anchor_lang::AccountDeserialize;
-                TipsCollectionAccount::try_deserialize(
-                    &mut &ctx.accounts.old_tip_receiver.data.borrow()[..],
-                )
-                .map(|tca| tca.record_authority == ctx.accounts.record_authority.key())
-                .unwrap_or(false)
-            };
-
-        if should_record {
-            use anchor_lang::solana_program::program::invoke_signed;
-            use reward_distribution::sdk::instruction::{
-                record_revenue_ix, RecordRevenueArgs, RecordRevenueShareAccounts,
-            };
-            let record_ix = record_revenue_ix(
-                ctx.remaining_accounts[1].key(),
-                RecordRevenueArgs {
-                    amount: validator_fee,
-                },
-                RecordRevenueShareAccounts {
-                    revenue_share_account: ctx.accounts.old_tip_receiver.key(),
-                    record_authority: ctx.accounts.record_authority.key(),
-                },
-            );
-            invoke_signed(
-                &record_ix,
-                &[
-                    ctx.accounts.old_tip_receiver.to_account_info(),
-                    ctx.accounts.record_authority.to_account_info(),
-                ],
-                &[&[RECORD_AUTHORITY_SEED, &[ctx.bumps.record_authority]]],
-            )?;
-        }
+        // 2. Record on old TCA or TCAV1 when possible (mixed v1↔v2 handoffs).
+        // CPI before lamport changes (runtime balance sync).
+        maybe_record_tip_revenue(
+            &ctx.accounts.old_tip_receiver.to_account_info(),
+            &ctx.accounts.record_authority.to_account_info(),
+            ctx.bumps.record_authority,
+            ctx.remaining_accounts[1].key(),
+            validator_fee,
+        )?;
 
         // 3. Drain using precomputed per-account tips, then distribute lamports.
         RakuraiTipAccount::drain_collected(&tip_accounts, &per_account_tips)?;
@@ -273,7 +238,7 @@ pub mod rakurai_tip_manager {
 
     /// Mirror of `change_tip_receiver_v1` for **TCAV1** (`REVENUE_SHARE_V1`).
     /// Commission on the drain uses tip-manager global config; after drain, syncs global from the
-    /// **new** TCAV1. Optional CPI `record_revenue_v1`.
+    /// **new** TCAV1. Records against legacy TCA or TCAV1 old receiver.
     pub fn change_tip_receiver_v2(ctx: Context<ChangeTipReceiverV2>) -> Result<()> {
         ChangeTipReceiverV2::auth(&ctx)?;
 
@@ -290,41 +255,13 @@ pub mod rakurai_tip_manager {
 
         let validator_fee = total_tips.checked_sub(client_fee).ok_or(ArithmeticError)?;
 
-        let should_record = validator_fee > 0
-            && ctx.accounts.old_tip_receiver.owner == &reward_distribution::ID
-            && {
-                use anchor_lang::AccountDeserialize;
-                TipsCollectionAccountV1::try_deserialize(
-                    &mut &ctx.accounts.old_tip_receiver.data.borrow()[..],
-                )
-                .map(|tca| tca.record_authority == ctx.accounts.record_authority.key())
-                .unwrap_or(false)
-            };
-
-        if should_record {
-            use anchor_lang::solana_program::program::invoke_signed;
-            use reward_distribution::sdk::instruction::{
-                record_revenue_v1_ix, RecordRevenueArgs, RecordRevenueShareAccounts,
-            };
-            let record_ix = record_revenue_v1_ix(
-                ctx.remaining_accounts[1].key(),
-                RecordRevenueArgs {
-                    amount: validator_fee,
-                },
-                RecordRevenueShareAccounts {
-                    revenue_share_account: ctx.accounts.old_tip_receiver.key(),
-                    record_authority: ctx.accounts.record_authority.key(),
-                },
-            );
-            invoke_signed(
-                &record_ix,
-                &[
-                    ctx.accounts.old_tip_receiver.to_account_info(),
-                    ctx.accounts.record_authority.to_account_info(),
-                ],
-                &[&[RECORD_AUTHORITY_SEED, &[ctx.bumps.record_authority]]],
-            )?;
-        }
+        maybe_record_tip_revenue(
+            &ctx.accounts.old_tip_receiver.to_account_info(),
+            &ctx.accounts.record_authority.to_account_info(),
+            ctx.bumps.record_authority,
+            ctx.remaining_accounts[1].key(),
+            validator_fee,
+        )?;
 
         RakuraiTipAccount::drain_collected(&tip_accounts, &per_account_tips)?;
 
@@ -403,6 +340,71 @@ pub mod rakurai_tip_manager {
 
         Ok(())
     }
+}
+
+/// CPI `record_revenue` (legacy TCA) or `record_revenue_v1` (TCAV1) when `old_tip_receiver`
+/// is a matching vault. Skips recording (does not error) for wallets / wrong authority / unknown layout.
+///
+/// Used by both `change_tip_receiver_v1` and `change_tip_receiver_v2` so mixed handoffs still ledger.
+fn maybe_record_tip_revenue<'info>(
+    old_tip_receiver: &AccountInfo<'info>,
+    record_authority: &AccountInfo<'info>,
+    record_authority_bump: u8,
+    reward_distribution_program: Pubkey,
+    amount: u64,
+) -> Result<()> {
+    if amount == 0 || old_tip_receiver.owner != &reward_distribution::ID {
+        return Ok(());
+    }
+
+    use anchor_lang::solana_program::program::invoke_signed;
+    use anchor_lang::AccountDeserialize;
+    use reward_distribution::sdk::instruction::{
+        record_revenue_ix, record_revenue_v1_ix, RecordRevenueArgs, RecordRevenueShareAccounts,
+    };
+
+    let record_accounts = RecordRevenueShareAccounts {
+        revenue_share_account: old_tip_receiver.key(),
+        record_authority: record_authority.key(),
+    };
+    let args = RecordRevenueArgs { amount };
+    let signer_seeds: &[&[&[u8]]] = &[&[RECORD_AUTHORITY_SEED, &[record_authority_bump]]];
+
+    {
+        let data = old_tip_receiver.data.borrow();
+        if let Ok(tca) = TipsCollectionAccount::try_deserialize(&mut &data[..]) {
+            if tca.record_authority != record_authority.key() {
+                return Ok(());
+            }
+            drop(data);
+            let record_ix = record_revenue_ix(reward_distribution_program, args, record_accounts);
+            invoke_signed(
+                &record_ix,
+                &[old_tip_receiver.clone(), record_authority.clone()],
+                signer_seeds,
+            )?;
+            return Ok(());
+        }
+    }
+
+    {
+        let data = old_tip_receiver.data.borrow();
+        if let Ok(tca) = TipsCollectionAccountV1::try_deserialize(&mut &data[..]) {
+            if tca.record_authority != record_authority.key() {
+                return Ok(());
+            }
+            drop(data);
+            let record_ix =
+                record_revenue_v1_ix(reward_distribution_program, args, record_accounts);
+            invoke_signed(
+                &record_ix,
+                &[old_tip_receiver.clone(), record_authority.clone()],
+                signer_seeds,
+            )?;
+        }
+    }
+
+    Ok(())
 }
 
 /// Errors
