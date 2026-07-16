@@ -6,7 +6,7 @@ use rakurai_activation::state::RakuraiActivationAccount;
 use solana_security_txt::security_txt;
 
 use crate::RakuraiTipManagerError::{ArithmeticError, Unauthorized};
-use reward_distribution::state::TipsCollectionAccount;
+use reward_distribution::state::{TipsCollectionAccount, TipsCollectionAccountV1};
 
 /// Rakurai label for tip revenue share vaults; defined once in reward_distribution.
 pub use reward_distribution::state::RAKURAI_REVENUE_NAME;
@@ -268,9 +268,9 @@ pub mod rakurai_tip_manager {
         Ok(())
     }
 
-    /// Changes the active tip receiver (TCA → TCA). Commission is taken from the **old** TCA's
-    /// `commission_bps` / `commission_account` (not tip-manager global client commission).
-    /// When the old TCA's `record_authority` matches this program's PDA, CPIs `record_revenue`.
+    /// Mirror of `change_tip_receiver_v1` for **TCAV1** (`REVENUE_SHARE_V1`).
+    /// Commission from the **new** TCAV1 (`commission_bps` / `commission_account`); also syncs
+    /// tip-manager global commission to those values. Optional CPI `record_revenue_v1`.
     pub fn change_tip_receiver_v2(ctx: Context<ChangeTipReceiverV2>) -> Result<()> {
         ChangeTipReceiverV2::auth(&ctx)?;
 
@@ -280,23 +280,30 @@ pub mod rakurai_tip_manager {
         let (total_tips, per_account_tips) = RakuraiTipAccount::collect_tips(&rent, &tip_accounts)?;
 
         let client_fee = total_tips
-            .checked_mul(ctx.accounts.old_tip_receiver.commission_bps as u64)
+            .checked_mul(ctx.accounts.new_tip_receiver.commission_bps as u64)
             .ok_or(ArithmeticError)?
             .checked_div(MAX_COMMISSION_BPS)
             .ok_or(ArithmeticError)?;
 
         let validator_fee = total_tips.checked_sub(client_fee).ok_or(ArithmeticError)?;
 
-        // CPI must happen BEFORE any lamport changes (same pre-CPI ordering as v1).
         let should_record = validator_fee > 0
-            && ctx.accounts.old_tip_receiver.record_authority == ctx.accounts.record_authority.key();
+            && ctx.accounts.old_tip_receiver.owner == &reward_distribution::ID
+            && {
+                use anchor_lang::AccountDeserialize;
+                TipsCollectionAccountV1::try_deserialize(
+                    &mut &ctx.accounts.old_tip_receiver.data.borrow()[..],
+                )
+                .map(|tca| tca.record_authority == ctx.accounts.record_authority.key())
+                .unwrap_or(false)
+            };
 
         if should_record {
             use anchor_lang::solana_program::program::invoke_signed;
             use reward_distribution::sdk::instruction::{
-                record_revenue_ix, RecordRevenueArgs, RecordRevenueShareAccounts,
+                record_revenue_v1_ix, RecordRevenueArgs, RecordRevenueShareAccounts,
             };
-            let record_ix = record_revenue_ix(
+            let record_ix = record_revenue_v1_ix(
                 ctx.remaining_accounts[1].key(),
                 RecordRevenueArgs {
                     amount: validator_fee,
@@ -319,11 +326,7 @@ pub mod rakurai_tip_manager {
         RakuraiTipAccount::drain_collected(&tip_accounts, &per_account_tips)?;
 
         if validator_fee > 0 {
-            **ctx
-                .accounts
-                .old_tip_receiver
-                .to_account_info()
-                .try_borrow_mut_lamports()? += validator_fee;
+            **ctx.accounts.old_tip_receiver.try_borrow_mut_lamports()? += validator_fee;
         }
         if client_fee > 0 {
             **ctx
@@ -341,9 +344,14 @@ pub mod rakurai_tip_manager {
             });
         }
 
+        let new_tip_receiver = ctx.accounts.new_tip_receiver.to_account_info();
         ctx.accounts
             .tip_manager_config
-            .validator_tip_receiver_account = ctx.accounts.new_tip_receiver.key();
+            .validator_tip_receiver_account = new_tip_receiver.key();
+        ctx.accounts.tip_manager_config.client_commission_bps =
+            ctx.accounts.new_tip_receiver.commission_bps as u64;
+        ctx.accounts.tip_manager_config.client_commission_account =
+            ctx.accounts.new_tip_receiver.commission_account;
 
         Ok(())
     }
@@ -886,7 +894,8 @@ impl<'info> ChangeTipReceiverV1<'info> {
     }
 }
 
-/// Tip drain that takes commission from the old TCA (not tip-manager client commission).
+/// Mirror of [`ChangeTipReceiverV1`] for TCAV1 (`REVENUE_SHARE_V1`).
+/// Commission is taken from the **new** TCAV1 and synced onto tip-manager config.
 #[derive(Accounts)]
 pub struct ChangeTipReceiverV2<'info> {
     #[account(
@@ -897,20 +906,16 @@ pub struct ChangeTipReceiverV2<'info> {
     )]
     pub tip_manager_config: Account<'info, TipManagerConfigAccount>,
 
-    /// Old tip receiver TCA; must match config's current `validator_tip_receiver_account`.
-    #[account(
-        mut,
-        owner = reward_distribution::ID,
-        constraint = old_tip_receiver.key() == tip_manager_config.validator_tip_receiver_account
-    )]
-    pub old_tip_receiver: Box<Account<'info, TipsCollectionAccount>>,
+    /// CHECK: old_tip_receiver receives the funds in the RakuraiTipAccount accounts
+    #[account(mut, constraint = old_tip_receiver.key() == tip_manager_config.validator_tip_receiver_account)]
+    pub old_tip_receiver: AccountInfo<'info>,
 
-    /// New tip receiver TCA (Tip kind / Rakurai name validated in auth).
+    /// Rakurai tip TCAV1 PDA for this validator vote.
     #[account(mut, owner = reward_distribution::ID)]
-    pub new_tip_receiver: Box<Account<'info, TipsCollectionAccount>>,
+    pub new_tip_receiver: Account<'info, TipsCollectionAccountV1>,
 
-    /// CHECK: receives commission; must match old TCA's stored `commission_account`.
-    #[account(mut, constraint = client_commission_account.key() == old_tip_receiver.commission_account)]
+    /// CHECK: receives commission; must match new TCAV1's stored `commission_account`.
+    #[account(mut, constraint = client_commission_account.key() == new_tip_receiver.commission_account)]
     pub client_commission_account: AccountInfo<'info>,
 
     #[account(
@@ -980,7 +985,7 @@ pub struct ChangeTipReceiverV2<'info> {
     #[account(mut)]
     pub signer: Signer<'info>,
 
-    /// CHECK: PDA that signs the `reward_distribution::record_revenue` CPI.
+    /// CHECK: PDA that signs the `reward_distribution::record_revenue_v1` CPI.
     #[account(seeds = [RECORD_AUTHORITY_SEED], bump)]
     pub record_authority: UncheckedAccount<'info>,
 }
@@ -989,15 +994,7 @@ impl ChangeTipReceiverV2<'_> {
     /// Remaining accounts: `[0]` enabled RAA PDA; `[1]` reward distribution program id.
     fn auth(ctx: &Context<ChangeTipReceiverV2>) -> Result<()> {
         use anchor_lang::AccountDeserialize;
-        use reward_distribution::state::RevenueKind;
-
-        if ctx.accounts.new_tip_receiver.share_kind != RevenueKind::Tip
-            || ctx.accounts.new_tip_receiver.name != RAKURAI_REVENUE_NAME
-        {
-            return Err(Unauthorized.into());
-        }
-
-        let (expected, _) = crate::sdk::derive_rakurai_tip_collection_address(
+        let (expected, _) = crate::sdk::derive_rakurai_tip_collection_v1_address(
             &reward_distribution::ID,
             &ctx.accounts.new_tip_receiver.validator_vote,
         );

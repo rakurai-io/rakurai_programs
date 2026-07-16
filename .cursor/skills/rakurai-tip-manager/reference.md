@@ -4,117 +4,35 @@ PDA seeds, account layouts, instruction accounts. Source: `programs/rakurai_tip_
 
 ---
 
-## PDA Seeds
+## Tip-manager PDA seeds
 
 | Account | Seeds |
 |---------|-------|
-| Config | `b"TIP_MANAGER_CONFIG_ACCOUNT"` |
-| Tip 0–7 | `b"RAKURAI_TIP_ACCOUNT_N"` (N = 0..7) |
-| Record authority | `b"RECORD_AUTHORITY"` (signs `reward_distribution::record_revenue` CPIs) |
+| Config | `TIP_MANAGER_CONFIG_ACCOUNT` |
+| Tip accounts | `RAKURAI_TIP_ACCOUNT_0` … `_7` |
+| Record authority | `RECORD_AUTHORITY` |
 
-SDK: `derive_rakurai_tip_manager_config_account_address`, `derive_rakurai_tip_payment_account_pdas`, `derive_rakurai_tip_collection_address`, `derive_record_authority_address`.
+SDK: `derive_rakurai_tip_manager_config_account_address`, `derive_rakurai_tip_payment_account_pdas`, `derive_rakurai_tip_collection_address` (legacy), `derive_rakurai_tip_collection_v1_address`, `derive_record_authority_address`.
 
-Revenue-share PDA (reward_distribution, Tip kind): `[REVENUE_SHARE, "TIP", RAKURAI_REVENUE_NAME, validator_vote]` where `RAKURAI_REVENUE_NAME` is lowercase `rakurai` padded (from `reward_distribution::state`).
+## Revenue-share tip PDAs (reward_distribution)
 
----
-
-## Account Structs
-
-### TipManagerConfigAccount
-
-| Field | Type | Notes |
-|-------|------|-------|
-| authority | Pubkey | `close`, `change_client` |
-| validator_tip_receiver_account | Pubkey | Updated on drain → tip revenue-share PDA |
-| client_commission_account | Pubkey | Commission destination for `change_client` |
-| client_commission_bps | u64 | 0–10000; used by `change_client` |
-| bumps | RakuraiTipManagerBumps | config + 8 tip bumps |
-
-### RakuraiTipAccount
-
-Empty state (`SIZE = 8` discriminator). Tips = lamports above rent.
+| Path | Seeds |
+|------|-------|
+| Legacy TCA | `[REVENUE_SHARE, TIP, RAKURAI_REVENUE_NAME, vote]` |
+| TCAV1 | `[REVENUE_SHARE_V1, TIP, RAKURAI_REVENUE_NAME, vote]` |
 
 ---
 
-## Instruction Accounts
+## change_tip_receiver_v1 (legacy)
 
-### InitializeRakuraiTipManager
+`new_tip_receiver`: `TipsCollectionAccount`. Optional CPI `record_revenue`. Commission: tip-manager `client_commission_bps` / `client_commission_account`.
 
-tip_manager_config (init), rakurai_tip_account_0..7 (init), system_program, payer (mut, signer)
+## change_tip_receiver_v2 (TCAV1, mirrors v1)
 
-### CloseRakuraiTipManager
+`new_tip_receiver`: `TipsCollectionAccountV1`. Optional CPI `record_revenue_v1`.
 
-tip_manager_config (mut, close→signer), rakurai_tip_account_0..7 (mut, close→signer), system_program, signer (mut, signer)
+Commission:
+- Drain split uses **new** TCAV1 `commission_bps` / `commission_account`
+- After drain, tip-manager config `client_commission_bps` / `client_commission_account` are synced from that TCAV1
 
-### ChangeTipReceiverV2
-
-tip_manager_config (mut), **old_tip_receiver** (mut, boxed `TipsCollectionAccount`; must match config receiver), **new_tip_receiver** (mut, boxed TCA), client_commission_account (mut; must match **old TCA** `commission_account`), rakurai_tip_account_0..7 (mut), signer (mut, signer), record_authority (PDA)
-
-**remaining_accounts:** `[0]` RAA PDA (readonly), `[1]` reward_distribution program id (readonly)
-
-**new_tip_receiver constraints:**
-- `share_kind == Tip`, `name == RAKURAI_REVENUE_NAME`
-- Address == `derive_rakurai_tip_collection_address(...)`
-
-**Commission:** `client_fee = total * old_tca.commission_bps / 10_000` → `old_tca.commission_account`.
-
-**record_revenue CPI:** when old TCA `record_authority` matches the PDA (before lamport moves).
-
-### ChangeClient
-
-tip_manager_config (mut), validator_tip_receiver_account (mut), old_client (mut), new_client (mut), rakurai_tip_account_0..7 (mut), signer (mut, signer)
-
----
-
-## Drain Logic
-
-1. Collect/drain 8 PDAs → `total_tips` (preserve rent each)
-2. Split using old TCA `commission_bps`
-3. Credit **old** TCA + its commission account (not `new_tip_receiver`)
-4. Optionally CPI `record_revenue(validator_fee)` on old TCA
-5. Update `validator_tip_receiver_account` to `new_tip_receiver`
-
----
-
-## Deployed Tip Account Addresses
-
-Prefer SDK `derive_rakurai_tip_payment_account_pdas` for localnet/redeploy.
-
-### Mainnet (`rKtiPTD7WuCdEEQ2JXWgAmZHHL9iZLc3niCXwtS7wSH`)
-
-| Idx | Address |
-|-----|---------|
-| 0 | `BjqjPHFmwr19YFmkH8CMNJFbj1wzX9k9ngr4am2nQEdq` |
-| 1 | `9CNKnAqJgLA4pL6KByzhhdY4mKoQP5wcPdhJgnvvi5Ve` |
-| 2 | `5wy4C2VMFhHE4i8PWKNS1K4SV275zjNwhLwfKBwajrro` |
-| 3 | `AgMdA97pk2i2Ry4YQ4iVPNrRiFhcH3x3ARUCiQGt3vJG` |
-| 4 | `4Qf8JFV5vmpADXNouoJriQ9KiniT5DENrz9JM2mKGH9m` |
-| 5 | `AuFAFzbzE9dzMajy4RNdyJZBTskeiuJQqT2wd9xoGSRD` |
-| 6 | `8aLaHz8595MAvgxKoBJEyZmDfqQp8CorezFGYnC7CPjy` |
-| 7 | `H6hyJo6rpBmwHbvVuWCEHExJ2bE4rcn1hTPeiBtypus4` |
-
-### Testnet (`4qRZaFzf7MvgfBTCP9grb69cCST8UmKHPtkpGAgkJosD`)
-
-| Idx | Address |
-|-----|---------|
-| 0 | `3ahyXyni1jLj8kJ13VgGEFDJzB374dgQW273nJSg8cdm` |
-| 1 | `3aebD4TAn1somZfiaKRrMypUfmbDzT7XMVWRM5TFHuKW` |
-| 2 | `Hm4LFyTAbrgH4eejYmNXQJ9oejQyq8frD2qeJbmkCAWR` |
-| 3 | `AffPqNJ8jSrFGgfiouVfXcra1Vd6gHUjNhpoL8uW8dY5` |
-| 4 | `9Z4pSxRZzE1T2e6587yzMWtvo8RHKW3R5Rb2FcprUPz` |
-| 5 | `J2JdwcRrxWyCHKrgi2ipwCFXK2oRSgzPN4P7Q6Kz9XZ9` |
-| 6 | `DscP7KHpAvfnboSKEQ5KEcwuFuRWn6MTjKYYTftuqY6z` |
-| 7 | `Ur14r1oNyLvYeFLngGoEwYV4zwFVcui72vJqAavDXhZ` |
-
----
-
-## Errors & Events
-
-| Error | When |
-|-------|------|
-| ArithmeticError | Overflow in split/drain/close |
-| MaxCommissionBpsExceeded | bps > 10_000 |
-| Unauthorized | Wrong authority; RAA / revenue-share PDA mismatch |
-| RakuraiSchedulerNotEnabled | RAA exists but `is_enabled == false` on drain |
-
-Events: `TipsClaimedEvent` (drain ixs), `TipsManagerCloseEvent` (close).
+Auth derive: `derive_rakurai_tip_collection_v1_address`.

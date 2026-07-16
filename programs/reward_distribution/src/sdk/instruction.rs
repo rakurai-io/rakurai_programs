@@ -797,6 +797,28 @@ pub fn record_revenue_ix(
     }
 }
 
+pub fn record_revenue_v1_ix(
+    program_id: Pubkey,
+    args: RecordRevenueArgs,
+    accounts: RecordRevenueShareAccounts,
+) -> Instruction {
+    let RecordRevenueArgs { amount } = args;
+    let RecordRevenueShareAccounts {
+        revenue_share_account,
+        record_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::RecordRevenueV1 { amount }.data(),
+        accounts: crate::accounts::RecordRevenueV1 {
+            revenue_share_account,
+            record_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
 pub struct SettleRevenueArgs {
     pub epoch: u64,
     pub amount: u64,
@@ -932,6 +954,32 @@ pub fn claim_revenue_ix(
     }
 }
 
+pub fn claim_revenue_v1_ix(
+    program_id: Pubkey,
+    args: ClaimRevenueArgs,
+    accounts: ClaimRevenueShareAccounts,
+) -> Instruction {
+    let ClaimRevenueArgs { epoch } = args;
+    let ClaimRevenueShareAccounts {
+        revenue_share_account,
+        commission_account,
+        validator_identity,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::ClaimRevenueV1 { epoch }.data(),
+        accounts: crate::accounts::ClaimRevenueV1 {
+            revenue_share_account,
+            commission_account,
+            validator_identity,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
 pub struct UpdateRevenueShareConfigArgs {
     pub commission_bps: u16,
     pub commission_account: Pubkey,
@@ -1042,17 +1090,17 @@ pub fn close_revenue_share_account_ix(
     }
 }
 
-pub struct CloseRevenueShareAccountLegacyAccounts {
+pub struct CloseRevenueShareAccountV1Accounts {
     pub revenue_share_account: Pubkey,
     pub initializer: Pubkey,
     pub authority: Pubkey,
 }
 
-pub fn close_revenue_share_account_legacy_ix(
+pub fn close_revenue_share_account_v1_ix(
     program_id: Pubkey,
-    accounts: CloseRevenueShareAccountLegacyAccounts,
+    accounts: CloseRevenueShareAccountV1Accounts,
 ) -> Instruction {
-    let CloseRevenueShareAccountLegacyAccounts {
+    let CloseRevenueShareAccountV1Accounts {
         revenue_share_account,
         initializer,
         authority,
@@ -1060,8 +1108,8 @@ pub fn close_revenue_share_account_legacy_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::CloseRevenueShareAccountLegacy {}.data(),
-        accounts: crate::accounts::CloseRevenueShareAccountLegacy {
+        data: crate::instruction::CloseRevenueShareAccountV1 {}.data(),
+        accounts: crate::accounts::CloseRevenueShareAccountV1 {
             revenue_share_account,
             initializer,
             authority,

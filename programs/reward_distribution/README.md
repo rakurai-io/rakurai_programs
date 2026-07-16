@@ -131,20 +131,20 @@ Once settled (TCA or MCA), revenue is split in two parts:
  - **Validator**: the remaining share is credited to its identity account.
    - The validator further has the option to convert the credited amount into block rewards. If enabled, once claimed, the claimed amount is converted into a high-priority block reward. The high-priority transaction is sent from the validator's identity account (because the amount was credited into the identity), and the transaction is guaranteed to land within the leader turn — it is created in the first turn of the leader slot, and the blockhash protects it so that if it does not land within those slots, it expires.
 
-**Rakurai vault claim exception:** when `name == RAKURAI_REVENUE_NAME` (lowercase `rakurai`), `claim_revenue` forces effective `commission_bps = 0`. Tip-manager drain (`change_tip_receiver_v2`) already took Rakurai’s cut from those tips (old TCA `commission_bps` → `commission_account`); the TCA only holds the validator share. Applying commission again at claim would double-charge. Partner / custom TCA and MCA vaults still apply `commission_bps` at claim — that is where Rakurai’s share is taken for revenue not drained by tip-manager.
+**Rakurai vault claim exception:** when `name == RAKURAI_REVENUE_NAME` (lowercase `rakurai`), `claim_revenue` / `claim_revenue_v1` forces effective `commission_bps = 0`. Tip-manager drain (`change_tip_receiver_v2`) already took Rakurai’s cut from those tips (new TCAV1 `commission_bps` → `commission_account`); the vault only holds the validator share. Applying commission again at claim would double-charge. Partner / custom TCA and MCA vaults still apply `commission_bps` at claim — that is where Rakurai’s share is taken for revenue not drained by tip-manager.
 
 **Note:** if the external searcher, trader, or transaction inclusion service does not share revenue within 2 epochs, they will be disabled and will not be able to get custom tip prioritization or post-pack confirmation.
 
 ### 5.4. Flow
 
-| Step | TCA (custom tips) | MCA (post-pack / MevShare) |
-|------|-------------------|----------------------------|
-| **Config** | One-time `initialize_tips_and_mev_share_config` (shared singleton) | Same |
-| **Init** | `initialize_revenue_share_account_v1` — once per `(share_kind, name, vote)`; defaults from tips/mev config | Same |
-| **Record** | Validator (`record_authority`) calls `record_revenue` each leader turn. **Rakurai tip TCA** also credits `transferred_amount` (tip drain deposits SOL). | Service calls `record_revenue` once after epoch end (ledger only; no auto-transfer credit) |
-| **Settle** | Not needed for Rakurai tip TCA. Partner/custom TCA: any wallet `settle_revenue(epoch, amount)` (system-transfer + credit `transferred_amount`). If SOL was sent directly, manager/record authority calls `update_transferred_amount(epoch, amount)` (ledger only) | Same |
-| **Claim** | `manager_authority` calls `claim_revenue(epoch)` — pays `transferred_amount` (even if above recorded); shortfall when underfunded adds to `deficit`; Rakurai name skips claim commission | Same |
-| **Close** | `close_revenue_share_account` (new layout) or `close_revenue_share_account_legacy` (old layout) | Same |
+| Step | Legacy TCA/MCA (`REVENUE_SHARE`) | TCAV1 / MCAV1 (`REVENUE_SHARE_V1`) |
+|------|-----------------------------------|--------------------------------------|
+| **Config** | RD config + full init args | One-time `initialize_tips_and_mev_share_config` |
+| **Init** | `initialize_revenue_share_account` | `initialize_revenue_share_account_v1` |
+| **Record** | `record_revenue` (amount only) | `record_revenue_v1` (Rakurai tip also credits `transferred_amount`) |
+| **Settle** | N/A (claim needs vault lamports ≥ `amount`) | `settle_revenue` / `update_transferred_amount` |
+| **Claim** | `claim_revenue` (pays `amount`) | `claim_revenue_v1` (pays `transferred_amount`; deficit; Rakurai name skips commission) |
+| **Close** | `close_revenue_share_account` | `close_revenue_share_account_v1` |
 
 ### 5.5. TipsAndMevShareConfigAccount
 
@@ -159,9 +159,9 @@ Singleton PDA (`TIPS_AND_MEV_SHARE_CONFIG`) holding Tip and MevShare defaults co
 
 Instructions: `initialize_tips_and_mev_share_config`, `update_tips_and_mev_share_config`, `close_tips_and_mev_share_config`.
 
-### 5.6. RevenueShareAccount structure
+### 5.6. RevenueShareAccount / RevenueShareAccountV1 structure
 
-Both TCA and MCA use the same on-chain account type from the [Reward Distribution IDL](./idl/reward_distribution.json).
+**Legacy** `RevenueShareAccount` (aliases TCA / MCA) and **V1** `RevenueShareAccountV1` (aliases TCAV1 / MCAV1) share the same header fields; V1 adds per-entry `transferred_amount` and account-level `deficit`. See the [Reward Distribution IDL](./idl/reward_distribution.json).
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -176,6 +176,7 @@ Both TCA and MCA use the same on-chain account type from the [Reward Distributio
 | `commission_account` | `pubkey` | Receives the commission portion on claim |
 | `block_reward_conversion_enabled` | `bool` | Whether claimed amounts can be converted into block rewards |
 | `ledger` | `RevenueLedger` | Per-epoch attributed amounts |
+| `deficit` | `u64` | Cumulative unpaid shortfall from underfunded claims; manager adjusts via `update_deficit` |
 | `bump` | `u8` | PDA bump seed |
 
 **`RevenueLedger` and `EpochAmountEntry`:**
@@ -214,16 +215,20 @@ Account-level `deficit: u64` (below the ledger) accumulates shortfalls when clai
 
 ### 5.7. How to check status
 
-TCA and MCA use the same account type; only `share_kind` in the seeds differs. Recording timing differs: TCA is updated each leader turn; MCA is updated once post-epoch by the service.
-- The account struct is openly available, so you can decode it.
-- Using Solscan, you can derive the address of the TCA/MCA.
-- Use the Solscan PDA creation tool: https://solscan.io/tools#pda-create
-- Seed: `[REVENUE_SHARE, share_kind ("TIP" | "MEV_SHARE"), name[32], validator_vote]`
-  - Add the 4 seeds using the add button, and make sure to use the correct name and validator vote account.
-  - This will give you the account (TCA/MCA) address, which you can then explore on Solscan to see its decoded data portion.
+- Solscan PDA tool: https://solscan.io/tools#pda-create
+- **Legacy TCA/MCA:** `[REVENUE_SHARE, TIP|MEV_SHARE, name[32], validator_vote]`
+- **TCAV1 / MCAV1:** `[REVENUE_SHARE_V1, TIP|MEV_SHARE, name[32], validator_vote]`
 
-PDA: `[REVENUE_SHARE, share_kind ("TIP" \| "MEV_SHARE"), name[32], validator_vote]`.
-`block_reward_converted` is set from `block_reward_conversion_enabled` on the first `record_revenue` for each epoch (when conversion is disabled, entries start already converted).
+### 5.8. Dual vaults (legacy vs V1)
+
+| | Seeds | Type | Tip manager |
+|--|-------|------|-------------|
+| Legacy | `[REVENUE_SHARE, TIP\|MEV_SHARE, name, vote]` | `RevenueShareAccount` | `change_tip_receiver_v1` + `record_revenue` |
+| V1 | `[REVENUE_SHARE_V1, TIP\|MEV_SHARE, name, vote]` | `RevenueShareAccountV1` | `change_tip_receiver_v2` + `record_revenue_v1` |
+
+Old validator releases keep using legacy PDAs and original ix names. New releases init TCAV1 and use `_v1` / TM `change_tip_receiver_v2`. Close unused legacy vaults with `close_revenue_share_account` when ready.
+
+SDK: `derive_revenue_share_account_address` (legacy), `derive_revenue_share_account_v1_address` (V1).
 
 ---
 
@@ -235,10 +240,8 @@ PDA: `[REVENUE_SHARE, share_kind ("TIP" \| "MEV_SHARE"), name[32], validator_vot
   - Any unclaimed funds are returned to the **validator's identity account**.
   - The account is closed to reclaim rent.
 
-### 6.2. Tip and MevShare collection accounts (TCA and MCA)
+### 6.2. Tip and MevShare collection accounts
 
-Per-validator, per-service TCA and MCA accounts are created once, and only the manager authority can control them.
-
-- They keep records for the most recent epochs, up to a configured capacity (`max_epoch_entries`, max 32); once full, the oldest epoch is overwritten.
+Legacy and V1 vaults coexist. Each is created once per `(seed space, share_kind, name, vote)`. Manager authority closes them when unused.
 
 ---

@@ -279,7 +279,7 @@ pub struct ChangeTipReceiverV2Accounts {
     pub rakurai_tip_account_6: Pubkey,
     pub rakurai_tip_account_7: Pubkey,
     pub signer: Pubkey,
-    /// PDA (`[RECORD_AUTHORITY_SEED]`) that signs the reward_distribution record_revenue CPI.
+    /// PDA (`[RECORD_AUTHORITY_SEED]`) that signs the reward_distribution record_revenue_v1 CPI.
     pub record_authority: Pubkey,
     /// Appended as `remaining_accounts[0]` (enabled RAA PDA for signer).
     pub rakurai_activation_account: Pubkey,
@@ -287,7 +287,8 @@ pub struct ChangeTipReceiverV2Accounts {
     pub reward_distribution_program: Pubkey,
 }
 
-/// Drains tips using old TCA commission; rotates config to the new TCA.
+/// Mirror of v1 for TCAV1: drains tips using **new** TCAV1 commission, syncs tip-manager
+/// global commission to that TCAV1, and rotates config to the TCAV1 PDA.
 pub fn change_tip_receiver_v2_ix(
     program_id: Pubkey,
     _args: ChangeTipReceiverV2Args,
