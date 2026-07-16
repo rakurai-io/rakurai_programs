@@ -87,7 +87,7 @@ These accounts are empty state accounts that hold SOL (lamports). When tips are 
 
 SDK: `derive_rakurai_tip_collection_address` (legacy), `derive_rakurai_tip_collection_v1_address` (V1).
 
-On `claim_revenue_v1`, Rakurai-named vaults skip commission (tip drain already paid Rakurai). Legacy `claim_revenue` pays recorded `amount`.
+On `claim_revenue` / `claim_revenue_v1`, Rakurai tip vaults skip commission (tip drain already paid Rakurai). Legacy pays recorded `amount`; V1 pays `transferred_amount`.
 
 For vault layouts see [Reward Distribution — Tip and MevShare](../reward_distribution/README.md#5-tip-and-mevshare-collection-accounts).
 

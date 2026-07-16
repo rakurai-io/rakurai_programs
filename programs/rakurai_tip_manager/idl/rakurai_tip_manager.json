@@ -716,7 +716,9 @@
       "name": "change_tip_receiver_v1",
       "docs": [
         "Changes the active tip receiver and drains tips to `old_tip_receiver` (wallet or TCA).",
-        "When `old_tip_receiver` is a TCA, CPIs `record_revenue` to update the ledger."
+        "Commission on the drain uses tip-manager **global** config (set by the previous leader from",
+        "their TCA). After the drain, global commission is synced from the **new** TCA for the next",
+        "leader. When `old_tip_receiver` is a TCA, CPIs `record_revenue` to update the ledger."
       ],
       "discriminator": [
         179,
@@ -1065,6 +1067,386 @@
           "docs": [
             "receiving TCA's `record_authority`; the seeds constraint guarantees only this program can sign."
           ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  69,
+                  67,
+                  79,
+                  82,
+                  68,
+                  95,
+                  65,
+                  85,
+                  84,
+                  72,
+                  79,
+                  82,
+                  73,
+                  84,
+                  89
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "change_tip_receiver_v2",
+      "docs": [
+        "Mirror of `change_tip_receiver_v1` for **TCAV1** (`REVENUE_SHARE_V1`).",
+        "Commission on the drain uses tip-manager global config; after drain, syncs global from the",
+        "**new** TCAV1. Optional CPI `record_revenue_v1`."
+      ],
+      "discriminator": [
+        205,
+        118,
+        144,
+        16,
+        164,
+        173,
+        19,
+        141
+      ],
+      "accounts": [
+        {
+          "name": "tip_manager_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  84,
+                  73,
+                  80,
+                  95,
+                  77,
+                  65,
+                  78,
+                  65,
+                  71,
+                  69,
+                  82,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "old_tip_receiver",
+          "writable": true
+        },
+        {
+          "name": "new_tip_receiver",
+          "docs": [
+            "Rakurai tip TCAV1 PDA for this validator vote."
+          ],
+          "writable": true
+        },
+        {
+          "name": "client_commission_account",
+          "writable": true
+        },
+        {
+          "name": "rakurai_tip_account_0",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  84,
+                  73,
+                  80,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84,
+                  95,
+                  48
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_tip_account_1",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  84,
+                  73,
+                  80,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84,
+                  95,
+                  49
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_tip_account_2",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  84,
+                  73,
+                  80,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84,
+                  95,
+                  50
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_tip_account_3",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  84,
+                  73,
+                  80,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84,
+                  95,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_tip_account_4",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  84,
+                  73,
+                  80,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84,
+                  95,
+                  52
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_tip_account_5",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  84,
+                  73,
+                  80,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84,
+                  95,
+                  53
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_tip_account_6",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  84,
+                  73,
+                  80,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84,
+                  95,
+                  54
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_tip_account_7",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  84,
+                  73,
+                  80,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84,
+                  95,
+                  55
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "record_authority",
           "pda": {
             "seeds": [
               {
@@ -1818,6 +2200,19 @@
       ]
     },
     {
+      "name": "RevenueShareAccountV1",
+      "discriminator": [
+        142,
+        160,
+        147,
+        202,
+        54,
+        166,
+        29,
+        200
+      ]
+    },
+    {
       "name": "TipManagerConfigAccount",
       "discriminator": [
         66,
@@ -1885,7 +2280,7 @@
     {
       "name": "EpochAmountEntry",
       "docs": [
-        "Per-epoch attributed amount."
+        "Legacy per-epoch attributed amount (no `transferred_amount`)."
       ],
       "type": {
         "kind": "struct",
@@ -1896,6 +2291,46 @@
           },
           {
             "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "claimed",
+            "type": "bool"
+          },
+          {
+            "name": "block_reward_converted",
+            "docs": [
+              "Whether this epoch's block reward conversion is complete."
+            ],
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EpochAmountEntryV1",
+      "docs": [
+        "V1 per-epoch attributed amount with settle tracking."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Accumulated via `record_revenue`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "transferred_amount",
+            "docs": [
+              "Settled SOL credited via `settle_revenue`, or auto-credited on `record_revenue` for Rakurai tip TCA."
+            ],
             "type": "u64"
           },
           {
@@ -1973,7 +2408,7 @@
     {
       "name": "RevenueKind",
       "docs": [
-        "Revenue share vault kind; included in PDA seeds after [`RevenueShareAccount::SEED`]."
+        "Revenue share vault kind; included in PDA seeds after the vault base seed."
       ],
       "type": {
         "kind": "enum",
@@ -1990,7 +2425,7 @@
     {
       "name": "RevenueLedger",
       "docs": [
-        "Per-account epoch revenue ledger; grows until `max_epoch_entries` then evicts oldest claimed entry (errors if all unclaimed)."
+        "Legacy per-account epoch revenue ledger."
       ],
       "type": {
         "kind": "struct",
@@ -2009,9 +2444,31 @@
       }
     },
     {
+      "name": "RevenueLedgerV1",
+      "docs": [
+        "V1 per-account epoch revenue ledger."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "entries",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "EpochAmountEntryV1"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "RevenueShareAccount",
       "docs": [
-        "Tip/mev-share revenue share vault per validator (accounting + lamport vault)."
+        "Legacy tip/mev-share revenue share vault (no `transferred_amount` / `deficit`).",
+        "PDA: `[REVENUE_SHARE, TIP|MEV_SHARE, name, vote]`."
       ],
       "type": {
         "kind": "struct",
@@ -2099,6 +2556,113 @@
                 "name": "RevenueLedger"
               }
             }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RevenueShareAccountV1",
+      "docs": [
+        "V1 tip/mev-share revenue share vault with settle tracking and deficit.",
+        "PDA: `[REVENUE_SHARE_V1, TIP|MEV_SHARE, name, vote]`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "share_kind",
+            "docs": [
+              "Tip vs mev-share; part of the PDA seeds with `name` and `validator_vote`."
+            ],
+            "type": {
+              "defined": {
+                "name": "RevenueKind"
+              }
+            }
+          },
+          {
+            "name": "name",
+            "docs": [
+              "UTF-8 padded label (used in PDA seeds)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "validator_vote",
+            "type": "pubkey"
+          },
+          {
+            "name": "initializer",
+            "docs": [
+              "Who paid to create this account; receives rent on close."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "manager_authority",
+            "docs": [
+              "Claims revenue, updates config, and closes the account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "record_authority",
+            "docs": [
+              "Signs `record_revenue`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "max_epoch_entries",
+            "docs": [
+              "Max distinct epochs in `ledger`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "commission_bps",
+            "docs": [
+              "Commission on revenue claims (basis points); remainder goes to validator identity."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "commission_account",
+            "docs": [
+              "Receives the commission portion on claim."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "block_reward_conversion_enabled",
+            "docs": [
+              "When true, epoch entries require explicit block reward conversion via `update_epoch_converted_to_block_reward`."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "ledger",
+            "type": {
+              "defined": {
+                "name": "RevenueLedgerV1"
+              }
+            }
+          },
+          {
+            "name": "deficit",
+            "docs": [
+              "Cumulative unpaid shortfall (`record amount - transferred` when claimed underfunded); manager can write off via `update_deficit`."
+            ],
+            "type": "u64"
           },
           {
             "name": "bump",

@@ -732,12 +732,17 @@ pub mod reward_distribution {
     }
 
     /// Claims revenue on a **legacy** TCA/MCA (pays recorded `amount` if vault funded).
+    /// Rakurai tip vaults skip commission (tip-manager drain already took that cut).
     pub fn claim_revenue(ctx: Context<ClaimRevenue>, epoch: u64) -> Result<()> {
         ClaimRevenue::auth(&ctx)?;
 
         let revenue_share_account = &mut ctx.accounts.revenue_share_account;
         let share_kind = revenue_share_account.share_kind;
-        let commission_bps = revenue_share_account.commission_bps;
+        let commission_bps = if revenue_share_account.is_rakurai_tip_tca() {
+            0
+        } else {
+            revenue_share_account.commission_bps
+        };
         let revenue_share_key = revenue_share_account.key();
         let revenue_share_account_info = revenue_share_account.to_account_info();
         let acc: &mut RevenueShareAccount = &mut *revenue_share_account;
@@ -767,13 +772,13 @@ pub mod reward_distribution {
     }
 
     /// Claims revenue on a **TCAV1** vault (pays `transferred_amount`; underfund → `deficit`).
-    /// Rakurai-named vaults skip commission (effective `commission_bps = 0`).
+    /// Rakurai tip vaults skip commission (tip-manager drain already took that cut).
     pub fn claim_revenue_v1(ctx: Context<ClaimRevenueV1>, epoch: u64) -> Result<()> {
         ClaimRevenueV1::auth(&ctx)?;
 
         let revenue_share_account = &mut ctx.accounts.revenue_share_account;
         let share_kind = revenue_share_account.share_kind;
-        let commission_bps = if revenue_share_account.name == RAKURAI_REVENUE_NAME {
+        let commission_bps = if revenue_share_account.is_rakurai_tip_tca() {
             0
         } else {
             revenue_share_account.commission_bps

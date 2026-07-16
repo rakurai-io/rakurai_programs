@@ -691,6 +691,10 @@ impl RevenueShareAccount {
         Ok(())
     }
 
+    pub fn is_rakurai_tip_tca(&self) -> bool {
+        self.share_kind == RevenueKind::Tip && self.name == RAKURAI_REVENUE_NAME
+    }
+
     /// Validates init instruction args before the account is populated.
     pub fn validate_init_params(
         name: [u8; 32],

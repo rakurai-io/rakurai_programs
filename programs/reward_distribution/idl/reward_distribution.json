@@ -108,7 +108,8 @@
     {
       "name": "claim_revenue",
       "docs": [
-        "Claims revenue for a completed epoch."
+        "Claims revenue on a **legacy** TCA/MCA (pays recorded `amount` if vault funded).",
+        "Rakurai tip vaults skip commission (tip-manager drain already took that cut)."
       ],
       "discriminator": [
         4,
@@ -119,6 +120,47 @@
         79,
         73,
         189
+      ],
+      "accounts": [
+        {
+          "name": "revenue_share_account",
+          "writable": true
+        },
+        {
+          "name": "commission_account",
+          "writable": true
+        },
+        {
+          "name": "validator_identity",
+          "writable": true
+        },
+        {
+          "name": "manager_authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "claim_revenue_v1",
+      "docs": [
+        "Claims revenue on a **TCAV1** vault (pays `transferred_amount`; underfund → `deficit`).",
+        "Rakurai tip vaults skip commission (tip-manager drain already took that cut)."
+      ],
+      "discriminator": [
+        147,
+        145,
+        72,
+        106,
+        186,
+        97,
+        112,
+        124
       ],
       "accounts": [
         {
@@ -274,7 +316,7 @@
     {
       "name": "close_revenue_share_account",
       "docs": [
-        "Closes a revenue share account; rent is returned to the original initializer."
+        "Closes a **legacy** revenue share account (`REVENUE_SHARE`). Rent to initializer."
       ],
       "discriminator": [
         179,
@@ -324,6 +366,77 @@
                 "kind": "account",
                 "path": "revenue_share_account.validator_vote",
                 "account": "RevenueShareAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "initializer",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_revenue_share_account_v1",
+      "docs": [
+        "Closes a **TCAV1** revenue share account (`REVENUE_SHARE_V1`). Rent to initializer."
+      ],
+      "discriminator": [
+        153,
+        226,
+        45,
+        27,
+        114,
+        104,
+        155,
+        155
+      ],
+      "accounts": [
+        {
+          "name": "revenue_share_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  69,
+                  86,
+                  69,
+                  78,
+                  85,
+                  69,
+                  95,
+                  83,
+                  72,
+                  65,
+                  82,
+                  69,
+                  95,
+                  86,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "revenue_share_account.share_kind",
+                "account": "RevenueShareAccountV1"
+              },
+              {
+                "kind": "account",
+                "path": "revenue_share_account.name",
+                "account": "RevenueShareAccountV1"
+              },
+              {
+                "kind": "account",
+                "path": "revenue_share_account.validator_vote",
+                "account": "RevenueShareAccountV1"
               }
             ]
           }
@@ -428,6 +541,68 @@
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "close_tips_and_mev_share_config",
+      "docs": [
+        "Closes the tips-and-mev-share config account and reclaims rent."
+      ],
+      "discriminator": [
+        164,
+        71,
+        189,
+        175,
+        98,
+        20,
+        64,
+        114
+      ],
+      "accounts": [
+        {
+          "name": "tips_and_mev_share_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  84,
+                  73,
+                  80,
+                  83,
+                  95,
+                  65,
+                  78,
+                  68,
+                  95,
+                  77,
+                  69,
+                  86,
+                  95,
+                  83,
+                  72,
+                  65,
+                  82,
+                  69,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": []
     },
     {
       "name": "initialize",
@@ -726,6 +901,222 @@
         },
         {
           "name": "commission_account",
+          "type": "pubkey"
+        },
+        {
+          "name": "bump",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "initialize_revenue_share_account_v1",
+      "docs": [
+        "Initializes a revenue share vault using [`TipsAndMevShareConfigAccount`] defaults (no RD config).",
+        "Manager/commission/epoch come from config; `record_authority` is an instruction arg (like legacy)."
+      ],
+      "discriminator": [
+        152,
+        216,
+        91,
+        70,
+        207,
+        59,
+        165,
+        91
+      ],
+      "accounts": [
+        {
+          "name": "revenue_share_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  69,
+                  86,
+                  69,
+                  78,
+                  85,
+                  69,
+                  95,
+                  83,
+                  72,
+                  65,
+                  82,
+                  69,
+                  95,
+                  86,
+                  49
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "share_kind"
+              },
+              {
+                "kind": "arg",
+                "path": "name"
+              },
+              {
+                "kind": "account",
+                "path": "validator_vote_account"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tips_and_mev_share_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  84,
+                  73,
+                  80,
+                  83,
+                  95,
+                  65,
+                  78,
+                  68,
+                  95,
+                  77,
+                  69,
+                  86,
+                  95,
+                  83,
+                  72,
+                  65,
+                  82,
+                  69,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rakurai_activation_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  65,
+                  75,
+                  85,
+                  82,
+                  65,
+                  73,
+                  95,
+                  65,
+                  67,
+                  84,
+                  73,
+                  86,
+                  65,
+                  84,
+                  73,
+                  79,
+                  78,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rakurai_activation_account.validator_authority",
+                "account": "RakuraiActivationAccount"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                12,
+                60,
+                128,
+                187,
+                214,
+                125,
+                126,
+                30,
+                88,
+                247,
+                67,
+                5,
+                34,
+                125,
+                155,
+                212,
+                195,
+                183,
+                226,
+                16,
+                225,
+                153,
+                164,
+                87,
+                14,
+                231,
+                156,
+                211,
+                10,
+                11,
+                25,
+                123
+              ]
+            }
+          }
+        },
+        {
+          "name": "validator_vote_account"
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "share_kind",
+          "type": {
+            "defined": {
+              "name": "RevenueKind"
+            }
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "record_authority",
           "type": "pubkey"
         },
         {
@@ -1041,9 +1432,116 @@
       ]
     },
     {
+      "name": "initialize_tips_and_mev_share_config",
+      "docs": [
+        "One-time init of the tips-and-mev-share config singleton (defaults for `initialize_revenue_share_account_v1`)."
+      ],
+      "discriminator": [
+        42,
+        201,
+        9,
+        197,
+        82,
+        184,
+        140,
+        196
+      ],
+      "accounts": [
+        {
+          "name": "tips_and_mev_share_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  84,
+                  73,
+                  80,
+                  83,
+                  95,
+                  65,
+                  78,
+                  68,
+                  95,
+                  77,
+                  69,
+                  86,
+                  95,
+                  83,
+                  72,
+                  65,
+                  82,
+                  69,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "initializer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "tip_manager_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "tip_commission_account",
+          "type": "pubkey"
+        },
+        {
+          "name": "tip_commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "tip_epoch",
+          "type": "u8"
+        },
+        {
+          "name": "mev_share_manager_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "mev_share_commission_account",
+          "type": "pubkey"
+        },
+        {
+          "name": "mev_share_commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "mev_share_epoch",
+          "type": "u8"
+        },
+        {
+          "name": "bump",
+          "type": "u8"
+        }
+      ]
+    },
+    {
       "name": "record_revenue",
       "docs": [
-        "Records revenue for the current epoch (accounting only)."
+        "Records revenue for the current epoch on a **legacy** TCA/MCA (`REVENUE_SHARE`)."
       ],
       "discriminator": [
         151,
@@ -1066,6 +1564,80 @@
         }
       ],
       "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "record_revenue_v1",
+      "docs": [
+        "Records revenue on a **TCAV1** vault (`REVENUE_SHARE_V1`).",
+        "Rakurai tip TCAV1 also credits `transferred_amount`."
+      ],
+      "discriminator": [
+        177,
+        44,
+        135,
+        122,
+        55,
+        244,
+        3,
+        59
+      ],
+      "accounts": [
+        {
+          "name": "revenue_share_account",
+          "writable": true
+        },
+        {
+          "name": "record_authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "settle_revenue",
+      "docs": [
+        "For non-Rakurai TCAV1 vaults: CPI system-transfer SOL into the vault, then `credit_transferred`."
+      ],
+      "discriminator": [
+        81,
+        248,
+        4,
+        113,
+        85,
+        237,
+        114,
+        203
+      ],
+      "accounts": [
+        {
+          "name": "revenue_share_account",
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        },
         {
           "name": "amount",
           "type": "u64"
@@ -1198,6 +1770,42 @@
       ]
     },
     {
+      "name": "update_deficit",
+      "docs": [
+        "Sets the cumulative `deficit` field on TCAV1. Manager authority only."
+      ],
+      "discriminator": [
+        228,
+        145,
+        39,
+        59,
+        21,
+        136,
+        192,
+        16
+      ],
+      "accounts": [
+        {
+          "name": "revenue_share_account",
+          "writable": true
+        },
+        {
+          "name": "manager_authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "update",
+          "type": {
+            "defined": {
+              "name": "DeficitUpdate"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "update_epoch_converted_to_block_reward",
       "docs": [
         "Marks a claimed epoch ledger entry as `block_reward_converted`.",
@@ -1213,6 +1821,41 @@
         34,
         129,
         236
+      ],
+      "accounts": [
+        {
+          "name": "revenue_share_account",
+          "writable": true
+        },
+        {
+          "name": "validator_vote_account"
+        },
+        {
+          "name": "signer",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update_epoch_converted_to_block_reward_v1",
+      "docs": [
+        "Marks a claimed TCAV1 epoch as `block_reward_converted`."
+      ],
+      "discriminator": [
+        138,
+        156,
+        192,
+        139,
+        195,
+        36,
+        219,
+        203
       ],
       "accounts": [
         {
@@ -1310,6 +1953,212 @@
       ]
     },
     {
+      "name": "update_revenue_share_config_v1",
+      "docs": [
+        "Updates TCAV1 config. Manager authority only."
+      ],
+      "discriminator": [
+        22,
+        72,
+        138,
+        167,
+        65,
+        144,
+        210,
+        196
+      ],
+      "accounts": [
+        {
+          "name": "revenue_share_account",
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  68,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71,
+                  95,
+                  65,
+                  67,
+                  67,
+                  79,
+                  85,
+                  78,
+                  84
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "manager_authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "commission_account",
+          "type": "pubkey"
+        },
+        {
+          "name": "block_reward_conversion_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "record_authority",
+          "type": {
+            "option": "pubkey"
+          }
+        }
+      ]
+    },
+    {
+      "name": "update_tips_and_mev_share_config",
+      "docs": [
+        "Updates tips-and-mev-share config defaults. Only the config authority can invoke this."
+      ],
+      "discriminator": [
+        191,
+        9,
+        16,
+        124,
+        175,
+        142,
+        207,
+        154
+      ],
+      "accounts": [
+        {
+          "name": "tips_and_mev_share_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  84,
+                  73,
+                  80,
+                  83,
+                  95,
+                  65,
+                  78,
+                  68,
+                  95,
+                  77,
+                  69,
+                  86,
+                  95,
+                  83,
+                  72,
+                  65,
+                  82,
+                  69,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "tip_manager_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "tip_commission_account",
+          "type": "pubkey"
+        },
+        {
+          "name": "tip_commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "tip_epoch",
+          "type": "u8"
+        },
+        {
+          "name": "mev_share_manager_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "mev_share_commission_account",
+          "type": "pubkey"
+        },
+        {
+          "name": "mev_share_commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "mev_share_epoch",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "update_transferred_amount",
+      "docs": [
+        "Credits `transferred_amount` on TCAV1 without moving lamports."
+      ],
+      "discriminator": [
+        178,
+        161,
+        240,
+        177,
+        253,
+        136,
+        149,
+        39
+      ],
+      "accounts": [
+        {
+          "name": "revenue_share_account",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "upload_merkle_root",
       "docs": [
         "Uploads a merkle root to the [RewardCollectionAccount]. Only the `merkle_root_upload_authority` can invoke this instruction."
@@ -1403,6 +2252,19 @@
       ]
     },
     {
+      "name": "RevenueShareAccountV1",
+      "discriminator": [
+        142,
+        160,
+        147,
+        202,
+        54,
+        166,
+        29,
+        200
+      ]
+    },
+    {
       "name": "RewardCollectionAccount",
       "discriminator": [
         151,
@@ -1426,6 +2288,19 @@
         206,
         36,
         194
+      ]
+    },
+    {
+      "name": "TipsAndMevShareConfigAccount",
+      "discriminator": [
+        82,
+        173,
+        184,
+        92,
+        129,
+        158,
+        2,
+        125
       ]
     }
   ],
@@ -1522,6 +2397,19 @@
       ]
     },
     {
+      "name": "RevenueDeficitUpdatedEvent",
+      "discriminator": [
+        112,
+        36,
+        247,
+        108,
+        58,
+        78,
+        88,
+        40
+      ]
+    },
+    {
       "name": "RevenueEpochConvertedToBlockRewardUpdatedEvent",
       "discriminator": [
         197,
@@ -1548,6 +2436,19 @@
       ]
     },
     {
+      "name": "RevenueSettledEvent",
+      "discriminator": [
+        59,
+        53,
+        197,
+        71,
+        142,
+        121,
+        24,
+        164
+      ]
+    },
+    {
       "name": "RevenueShareAccountInitializedEvent",
       "discriminator": [
         20,
@@ -1571,6 +2472,19 @@
         172,
         185,
         193
+      ]
+    },
+    {
+      "name": "RevenueTransferredAmountUpdatedEvent",
+      "discriminator": [
+        254,
+        119,
+        166,
+        108,
+        177,
+        237,
+        87,
+        48
       ]
     },
     {
@@ -1610,6 +2524,32 @@
         128,
         19,
         230
+      ]
+    },
+    {
+      "name": "TipsAndMevShareConfigClosedEvent",
+      "discriminator": [
+        94,
+        223,
+        182,
+        71,
+        126,
+        187,
+        67,
+        237
+      ]
+    },
+    {
+      "name": "TipsAndMevShareConfigUpdatedEvent",
+      "discriminator": [
+        76,
+        177,
+        73,
+        126,
+        161,
+        215,
+        2,
+        79
       ]
     }
   ],
@@ -1743,6 +2683,11 @@
       "code": 6025,
       "name": "RevenueLedgerFull",
       "msg": "Revenue ledger is full and all entries are unclaimed."
+    },
+    {
+      "code": 6026,
+      "name": "InvalidRevenueShareLayout",
+      "msg": "Revenue share account data length does not match the expected layout for this instruction."
     }
   ],
   "types": [
@@ -1902,9 +2847,50 @@
       }
     },
     {
+      "name": "DeficitUpdate",
+      "docs": [
+        "How the manager adjusts account-level [`RevenueShareAccountV1::deficit`]."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Set",
+            "fields": [
+              {
+                "name": "value",
+                "type": "u64"
+              }
+            ]
+          },
+          {
+            "name": "Clear"
+          },
+          {
+            "name": "Increase",
+            "fields": [
+              {
+                "name": "amount",
+                "type": "u64"
+              }
+            ]
+          },
+          {
+            "name": "Decrease",
+            "fields": [
+              {
+                "name": "amount",
+                "type": "u64"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "EpochAmountEntry",
       "docs": [
-        "Per-epoch attributed amount."
+        "Legacy per-epoch attributed amount (no `transferred_amount`)."
       ],
       "type": {
         "kind": "struct",
@@ -1915,6 +2901,46 @@
           },
           {
             "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "claimed",
+            "type": "bool"
+          },
+          {
+            "name": "block_reward_converted",
+            "docs": [
+              "Whether this epoch's block reward conversion is complete."
+            ],
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EpochAmountEntryV1",
+      "docs": [
+        "V1 per-epoch attributed amount with settle tracking."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Accumulated via `record_revenue`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "transferred_amount",
+            "docs": [
+              "Settled SOL credited via `settle_revenue`, or auto-credited on `record_revenue` for Rakurai tip TCA."
+            ],
             "type": "u64"
           },
           {
@@ -2125,6 +3151,58 @@
           {
             "name": "validator_amount",
             "type": "u64"
+          },
+          {
+            "name": "claimable",
+            "type": "u64"
+          },
+          {
+            "name": "shortfall",
+            "type": "u64"
+          },
+          {
+            "name": "deficit",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RevenueDeficitUpdatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "revenue_share_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "share_kind",
+            "type": {
+              "defined": {
+                "name": "RevenueKind"
+              }
+            }
+          },
+          {
+            "name": "previous_deficit",
+            "type": "u64"
+          },
+          {
+            "name": "deficit",
+            "type": "u64"
+          },
+          {
+            "name": "update",
+            "type": {
+              "defined": {
+                "name": "DeficitUpdate"
+              }
+            }
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
           }
         ]
       }
@@ -2160,7 +3238,7 @@
     {
       "name": "RevenueKind",
       "docs": [
-        "Revenue share vault kind; included in PDA seeds after [`RevenueShareAccount::SEED`]."
+        "Revenue share vault kind; included in PDA seeds after the vault base seed."
       ],
       "type": {
         "kind": "enum",
@@ -2177,7 +3255,7 @@
     {
       "name": "RevenueLedger",
       "docs": [
-        "Per-account epoch revenue ledger; grows until `max_epoch_entries` then evicts oldest claimed entry (errors if all unclaimed)."
+        "Legacy per-account epoch revenue ledger."
       ],
       "type": {
         "kind": "struct",
@@ -2188,6 +3266,27 @@
               "vec": {
                 "defined": {
                   "name": "EpochAmountEntry"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "RevenueLedgerV1",
+      "docs": [
+        "V1 per-account epoch revenue ledger."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "entries",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "EpochAmountEntryV1"
                 }
               }
             }
@@ -2224,9 +3323,46 @@
       }
     },
     {
+      "name": "RevenueSettledEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "revenue_share_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "share_kind",
+            "type": {
+              "defined": {
+                "name": "RevenueKind"
+              }
+            }
+          },
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "transferred_amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "RevenueShareAccount",
       "docs": [
-        "Tip/mev-share revenue share vault per validator (accounting + lamport vault)."
+        "Legacy tip/mev-share revenue share vault (no `transferred_amount` / `deficit`).",
+        "PDA: `[REVENUE_SHARE, TIP|MEV_SHARE, name, vote]`."
       ],
       "type": {
         "kind": "struct",
@@ -2380,6 +3516,113 @@
       }
     },
     {
+      "name": "RevenueShareAccountV1",
+      "docs": [
+        "V1 tip/mev-share revenue share vault with settle tracking and deficit.",
+        "PDA: `[REVENUE_SHARE_V1, TIP|MEV_SHARE, name, vote]`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "share_kind",
+            "docs": [
+              "Tip vs mev-share; part of the PDA seeds with `name` and `validator_vote`."
+            ],
+            "type": {
+              "defined": {
+                "name": "RevenueKind"
+              }
+            }
+          },
+          {
+            "name": "name",
+            "docs": [
+              "UTF-8 padded label (used in PDA seeds)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "validator_vote",
+            "type": "pubkey"
+          },
+          {
+            "name": "initializer",
+            "docs": [
+              "Who paid to create this account; receives rent on close."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "manager_authority",
+            "docs": [
+              "Claims revenue, updates config, and closes the account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "record_authority",
+            "docs": [
+              "Signs `record_revenue`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "max_epoch_entries",
+            "docs": [
+              "Max distinct epochs in `ledger`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "commission_bps",
+            "docs": [
+              "Commission on revenue claims (basis points); remainder goes to validator identity."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "commission_account",
+            "docs": [
+              "Receives the commission portion on claim."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "block_reward_conversion_enabled",
+            "docs": [
+              "When true, epoch entries require explicit block reward conversion via `update_epoch_converted_to_block_reward`."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "ledger",
+            "type": {
+              "defined": {
+                "name": "RevenueLedgerV1"
+              }
+            }
+          },
+          {
+            "name": "deficit",
+            "docs": [
+              "Cumulative unpaid shortfall (`record amount - transferred` when claimed underfunded); manager can write off via `update_deficit`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "RevenueShareConfigUpdatedEvent",
       "type": {
         "kind": "struct",
@@ -2410,6 +3653,42 @@
           },
           {
             "name": "record_authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RevenueTransferredAmountUpdatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "revenue_share_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "share_kind",
+            "type": {
+              "defined": {
+                "name": "RevenueKind"
+              }
+            }
+          },
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "transferred_amount",
+            "type": "u64"
+          },
+          {
+            "name": "authority",
             "type": "pubkey"
           }
         ]
@@ -2631,6 +3910,103 @@
           {
             "name": "staker_rewards",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TipsAndMevShareConfigAccount",
+      "docs": [
+        "Singleton defaults for tip and mev-share revenue share account initialization (`init_v1`)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "docs": [
+              "Authorized updater of this config."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "tip_manager_authority",
+            "docs": [
+              "Tip defaults (copied onto TCA at `initialize_revenue_share_account_v1`)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "tip_commission_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "tip_commission_bps",
+            "type": "u16"
+          },
+          {
+            "name": "tip_epoch",
+            "docs": [
+              "Ledger capacity written to `max_epoch_entries` (1..=32)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mev_share_manager_authority",
+            "docs": [
+              "MevShare defaults (copied onto MCA at `initialize_revenue_share_account_v1`)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "mev_share_commission_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "mev_share_commission_bps",
+            "type": "u16"
+          },
+          {
+            "name": "mev_share_epoch",
+            "docs": [
+              "Ledger capacity written to `max_epoch_entries` (1..=32)."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TipsAndMevShareConfigClosedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "lamports_reclaimed",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TipsAndMevShareConfigUpdatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
           }
         ]
       }
