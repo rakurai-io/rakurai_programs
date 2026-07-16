@@ -5,19 +5,29 @@ description = "Created with Anchor"
 edition = "2021"
 
 [dependencies]
-anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "8b391aa278387b6f6ce3133453619a175544631e" }
-bincode = "1.3.3"
-bs58 = "0.5.1"
+anchor-lang = { path = "../../anchor/lang" }
+bincode = { workspace = true }
+bs58 = { workspace = true }
 clap = { version = "4.4", features = ["derive"] }
 colored = "2.0"
 rakurai_activation = { path = "../programs/rakurai_activation" }
 reward_distribution = { path = "../programs/reward_distribution", features = ["no-entrypoint"] }
-serde = "1.0.213"
-serde_derive = "1.0.213"
-serde_json = "1.0.132"
+serde = { workspace = true }
+serde_derive = { workspace = true }
+serde_json = { workspace = true }
 shellexpand = "3.1.0"
-solana-rpc-client = "=2.1.21"
-solana-sdk = "=2.1.21"  
+solana-instruction = { workspace = true, features = ["serde"] }
+solana-message = { workspace = true, features = ["serde"] }
+solana-pubkey = { workspace = true, features = ["serde"] }
+solana-signature = { workspace = true, features = ["serde"] }
+solana-signer = { workspace = true }
+solana-transaction = { workspace = true, features = ["serde"] }
+solana-keypair = { workspace = true }
+solana-rpc-client = { workspace = true }
+solana-rpc-client-api = { workspace = true }
+solana-vote-program = { workspace = true }
+solana-commitment-config = { workspace = true }
+solana-system-interface = { workspace = true }
 
 [[bin]]
 name = "rakurai-activation"

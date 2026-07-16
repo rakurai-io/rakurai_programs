@@ -49,7 +49,7 @@ Partners may register a custom tip account (or post-pack flow) so their transact
 2. **Settle** by transferring SOL into the MCA (`transfer`).
 3. Claim/distribution is handled by the configured manager (not this CLI).
 
-See [Post-epoch stage: record and settle](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations#4.4.-post-epoch-stage-record-and-settle).
+See [Post-epoch stage: record and settle](../../transaction_inclusion/post_pack_confirmations.md#44-post-epoch-stage-record-and-settle).
 
 > **Note:** If a service does not record and settle within 2 epochs, post-pack access and MCA prioritization stop after a two-epoch grace period.
 
@@ -114,7 +114,7 @@ Use `--revenue-kind Mev-share` for MCA. Results are ordered by epoch.
 
 Records MevShare revenue on the MCA ledger for the **current cluster epoch**. Calls `record_revenue` (legacy) or `record_revenue_v1` (V1). Updates the on-chain ledger only — **no SOL is moved**.
 
-**Why it is required for MCA:** unlike TCA, the validator does not record MevShare during leader turns. Post-pack revenue stays in your accounts until you report the owed share once per epoch. Without `record-revenue`, there is nothing to settle and claim. See [post-epoch record and settle](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations#4.4.-post-epoch-stage-record-and-settle).
+**Why it is required for MCA:** unlike TCA, the validator does not record MevShare during leader turns. Post-pack revenue stays in your accounts until you report the owed share once per epoch. Without `record-revenue`, there is nothing to settle and claim. See [post-epoch record and settle](../../transaction_inclusion/post_pack_confirmations.md#44-post-epoch-stage-record-and-settle).
 
 Requires `--revenue-kind Mev-share`. When post-pack is enabled, Rakurai creates your MCA; you must hold its **`record_authority`** and pass that keypair as `--keypair` (shown by `get-account` as `Record auth`).
 
@@ -176,7 +176,7 @@ See [dual vaults (legacy vs V1)](../programs/reward_distribution/README.md#58-du
 
 ### 5.1. Custom tips (TCA)
 
-1. Register a custom tip account and revenue-share percentage with Rakurai (you receive a `--revenue-name`) — see [Tips FAQ Q4](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/rakurai_tip_manager_faqs#4.-can-i-use-my-own-tip-account-instead-of-rakurais-eight-accounts).
+1. Register a custom tip account and revenue-share percentage with Rakurai (you receive a `--revenue-name`) — see [Tips FAQ Q4](../../transaction_inclusion/rakurai_tip_manager_faqs.md#4-can-i-use-my-own-tip-account-instead-of-rakurais-eight-accounts).
 2. Receive tips in your account during the epoch.
 3. Confirm the TCA epoch record exists (validator recorded it).
 4. Run `get-all-pending-records --revenue-kind Tip` (or `get-pending-record` for one epoch).
@@ -185,8 +185,8 @@ See [dual vaults (legacy vs V1)](../programs/reward_distribution/README.md#58-du
 
 ### 5.2. Post-pack (MCA)
 
-1. Complete post-pack / transaction-landing integration with Rakurai — Rakurai creates your MCA and assigns `--revenue-name` and `record_authority` (you must hold that keypair) — see [MEV revenue sharing](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations#4.-mev-revenue-sharing).
-2. After the epoch ends, run `record-revenue --revenue-kind Mev-share --amount <LAMPORTS>` with the MCA `record_authority` keypair — see [post-epoch record and settle](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations#4.4.-post-epoch-stage-record-and-settle).
+1. Complete post-pack / transaction-landing integration with Rakurai — Rakurai creates your MCA and assigns `--revenue-name` and `record_authority` (you must hold that keypair) — see [MEV revenue sharing](../../transaction_inclusion/post_pack_confirmations.md#4-mev-revenue-sharing).
+2. After the epoch ends, run `record-revenue --revenue-kind Mev-share --amount <LAMPORTS>` with the MCA `record_authority` keypair — see [post-epoch record and settle](../../transaction_inclusion/post_pack_confirmations.md#44-post-epoch-stage-record-and-settle).
 3. Confirm with `get-pending-record` / `get-all-pending-records --revenue-kind Mev-share`.
 4. Run `transfer --revenue-kind Mev-share` to settle SOL into the MCA.
 5. Keep the transaction signatures for reconciliation.
