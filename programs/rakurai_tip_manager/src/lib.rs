@@ -48,6 +48,7 @@ pub const RECORD_AUTHORITY_SEED: &[u8] = b"RECORD_AUTHORITY";
 const MAX_COMMISSION_BPS: u64 = 10_000;
 /// Rakurai Tip Manager Program: users send tips to one of eight tip accounts, validators periodically drain them
 /// and tips are split between the configured tip receiver and an client commission account.
+#[allow(deprecated)]
 #[program]
 pub mod rakurai_tip_manager {
     use super::*;
@@ -195,12 +196,13 @@ pub mod rakurai_tip_manager {
 
         let validator_fee = total_tips.checked_sub(client_fee).ok_or(ArithmeticError)?;
 
+        let record_authority_bump = *ctx.bumps.get("record_authority").unwrap();
         // 2. Record on old TCA or TCAV1 when possible (mixed v1↔v2 handoffs).
         // CPI before lamport changes (runtime balance sync).
         maybe_record_tip_revenue(
             &ctx.accounts.old_tip_receiver.to_account_info(),
             &ctx.accounts.record_authority.to_account_info(),
-            ctx.bumps.record_authority,
+            record_authority_bump,
             ctx.remaining_accounts[1].key(),
             validator_fee,
         )?;
@@ -254,11 +256,12 @@ pub mod rakurai_tip_manager {
             .ok_or(ArithmeticError)?;
 
         let validator_fee = total_tips.checked_sub(client_fee).ok_or(ArithmeticError)?;
+        let record_authority_bump = *ctx.bumps.get("record_authority").unwrap();
 
         maybe_record_tip_revenue(
             &ctx.accounts.old_tip_receiver.to_account_info(),
             &ctx.accounts.record_authority.to_account_info(),
-            ctx.bumps.record_authority,
+            record_authority_bump,
             ctx.remaining_accounts[1].key(),
             validator_fee,
         )?;

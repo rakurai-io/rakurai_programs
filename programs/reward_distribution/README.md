@@ -61,7 +61,7 @@ At the final slot of each epoch, the following process takes place:
 
 ## 4. Reward Distribution — Free and Automated by Rakurai
 
-- Set the Merkle root authority to `--rewards-merkle-root-authority` to `H21wFgN53ghjDq5N9QhraAiPn1tRVYkobySj55unXLEj` for fully automated reward distribution.
+- Set the Merkle root authority to [Rakurai](../../../validators/setup_and_build.md#4-add-additional-cli-args) for fully automated reward distribution.
 - Keep it yourself if you want to run distribution manually.
 
 When set to **Rakurai**, Rakurai will automatically:
@@ -110,13 +110,13 @@ Both use the same underlying `RevenueShareAccount`, parameterized by `share_kind
 
 ### 5.1. Why a Tips Collection Account (TCA)
 
-By default, searchers tip Rakurai's [eight tip accounts](../rakurai_tip_manager/README.md), and `rakurai_tip_manager` drains them automatically. But an external operator/searcher can [register their own custom tip account](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/rakurai_tip_manager_faqs) and agree to share a commission (e.g. 30%) with Rakurai.
+By default, searchers tip Rakurai's [eight tip accounts](../rakurai_tip_manager/README.md), and `rakurai_tip_manager` drains them automatically. But an external operator/searcher can [register their own custom tip account](../../../transaction_inclusion/rakurai_tip_manager_faqs.md#4-can-i-use-my-own-tip-account-instead-of-rakurais-eight-accounts) and agree to share a commission (e.g. 30%) with Rakurai.
 
 In that case **the tip is received in the external account holder's own account**, not in a Rakurai tip account. So Rakurai can't just drain it — instead the validator **records** the attributed amount on-chain in the per-validator, per-service TCA ledger each leader turn, and after the epoch the external account holder **settles** their agreed share into the Tips Collection Account PDA, from which the commission is deducted.
 
 ### 5.2. Why a MevShare Collection Account (MCA)
 
-Same idea for [post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations) used for MEV / arbitrage. The MEV-share revenue lands in the searcher or transaction inclusion service's own flow, so there is no account Rakurai can drain. Rakurai tracks the agreed revenue share on-chain in a per-validator, per-service MCA.
+Same idea for [post-pack confirmations](../../../transaction_inclusion/post_pack_confirmations.md) used for MEV / arbitrage. The MEV-share revenue lands in the searcher or transaction inclusion service's own flow, so there is no account Rakurai can drain. Rakurai tracks the agreed revenue share on-chain in a per-validator, per-service MCA.
 
 Unlike TCA, **nothing is recorded in the MCA during leader turns**. After the epoch ends, the service **records** the owed amount in the MCA **once** via `record_revenue`, then **settles** by transferring SOL into the PDA.
 
