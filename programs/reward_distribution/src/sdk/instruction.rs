@@ -1028,6 +1028,42 @@ pub fn update_revenue_share_config_ix(
     }
 }
 
+/// Updates TCAV1 / MCAV1 config (`REVENUE_SHARE_V1`).
+pub fn update_revenue_share_config_v1_ix(
+    program_id: Pubkey,
+    args: UpdateRevenueShareConfigArgs,
+    accounts: UpdateRevenueShareConfigAccounts,
+) -> Instruction {
+    let UpdateRevenueShareConfigArgs {
+        commission_bps,
+        commission_account,
+        block_reward_conversion_enabled,
+        record_authority,
+    } = args;
+    let UpdateRevenueShareConfigAccounts {
+        revenue_share_account,
+        config,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateRevenueShareConfigV1 {
+            commission_bps,
+            commission_account,
+            block_reward_conversion_enabled,
+            record_authority,
+        }
+        .data(),
+        accounts: crate::accounts::UpdateRevenueShareConfigV1 {
+            revenue_share_account,
+            config,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
 pub struct UpdateEpochConvertedToBlockRewardArgs {
     pub epoch: u64,
 }
@@ -1054,6 +1090,31 @@ pub fn update_epoch_converted_to_block_reward_ix(
         program_id,
         data: crate::instruction::UpdateEpochConvertedToBlockReward { epoch }.data(),
         accounts: crate::accounts::UpdateEpochConvertedToBlockReward {
+            revenue_share_account,
+            validator_vote_account,
+            signer,
+        }
+        .to_account_metas(None),
+    }
+}
+
+/// Marks a claimed TCAV1 / MCAV1 epoch as `block_reward_converted`.
+pub fn update_epoch_converted_to_block_reward_v1_ix(
+    program_id: Pubkey,
+    args: UpdateEpochConvertedToBlockRewardArgs,
+    accounts: UpdateEpochConvertedToBlockRewardAccounts,
+) -> Instruction {
+    let UpdateEpochConvertedToBlockRewardArgs { epoch } = args;
+    let UpdateEpochConvertedToBlockRewardAccounts {
+        revenue_share_account,
+        validator_vote_account,
+        signer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateEpochConvertedToBlockRewardV1 { epoch }.data(),
+        accounts: crate::accounts::UpdateEpochConvertedToBlockRewardV1 {
             revenue_share_account,
             validator_vote_account,
             signer,
