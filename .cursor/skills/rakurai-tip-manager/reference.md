@@ -23,16 +23,22 @@ SDK: `derive_rakurai_tip_manager_config_account_address`, `derive_rakurai_tip_pa
 
 ---
 
+## Commission handoff (v1 / v2)
+
+Each leader turn:
+
+1. **Drain** — split tips using tip-manager global `client_commission_bps` / `client_commission_account` (written by the **previous** leader from their TCA).
+2. **Rotate** — set `validator_tip_receiver_account` to the new TCA / TCAV1.
+3. **Sync** — copy **new** TCA / TCAV1 `commission_bps` / `commission_account` into global config for the **next** leader.
+
+`client_commission_account` in the ix must match global config at drain time.
+
 ## change_tip_receiver_v1 (legacy)
 
-`new_tip_receiver`: `TipsCollectionAccount`. Optional CPI `record_revenue`. Commission: tip-manager `client_commission_bps` / `client_commission_account`.
+`new_tip_receiver`: `TipsCollectionAccount`. Optional CPI `record_revenue`.
 
 ## change_tip_receiver_v2 (TCAV1, mirrors v1)
 
 `new_tip_receiver`: `TipsCollectionAccountV1`. Optional CPI `record_revenue_v1`.
-
-Commission:
-- Drain split uses **new** TCAV1 `commission_bps` / `commission_account`
-- After drain, tip-manager config `client_commission_bps` / `client_commission_account` are synced from that TCAV1
 
 Auth derive: `derive_rakurai_tip_collection_v1_address`.

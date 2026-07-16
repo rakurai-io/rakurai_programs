@@ -758,9 +758,7 @@ pub mod reward_distribution {
             epoch,
             commission_amount,
             validator_amount,
-            claimable: commission_amount
-                .checked_add(validator_amount)
-                .unwrap_or(0),
+            claimable: commission_amount.checked_add(validator_amount).unwrap_or(0),
             shortfall: 0,
             deficit: 0,
         });

@@ -22,7 +22,8 @@ RakuraiTipAccount x8
 
 change_tip_receiver / v1  → legacy TCA (REVENUE_SHARE) + record_revenue
 change_tip_receiver_v2    → TCAV1 (REVENUE_SHARE_V1) + record_revenue_v1
-                          → commission from new TCAV1; syncs tip-manager global
+                          → drain: TM global commission (previous leader)
+                          → after drain: sync global from new TCAV1
 change_client             → drain + rotate client (authority)
 ```
 
@@ -33,8 +34,8 @@ change_client             → drain + rotate client (authority)
 | Instruction | Signer | Tip receiver | Commission | Record CPI |
 |-------------|--------|--------------|------------|------------|
 | `change_tip_receiver` | validator | unchecked | TM global bps | none |
-| `change_tip_receiver_v1` | Rakurai-enabled validator | legacy TCA | TM global bps | `record_revenue` |
-| `change_tip_receiver_v2` | Rakurai-enabled validator | TCAV1 (mirror of v1) | new TCAV1 bps (+ sync TM config) | `record_revenue_v1` |
+| `change_tip_receiver_v1` | Rakurai-enabled validator | legacy TCA | TM global bps (previous leader); sync from new TCA after | `record_revenue` |
+| `change_tip_receiver_v2` | Rakurai-enabled validator | TCAV1 (mirror of v1) | TM global bps (previous leader); sync from new TCAV1 after | `record_revenue_v1` |
 
 Auth: enabled RAA + reward_distribution program in remaining accounts. `new_tip_receiver` must match derive for the path (legacy TIP or V1).
 

@@ -176,7 +176,9 @@ pub mod rakurai_tip_manager {
     }
 
     /// Changes the active tip receiver and drains tips to `old_tip_receiver` (wallet or TCA).
-    /// When `old_tip_receiver` is a TCA, CPIs `record_revenue` to update the ledger.
+    /// Commission on the drain uses tip-manager **global** config (set by the previous leader from
+    /// their TCA). After the drain, global commission is synced from the **new** TCA for the next
+    /// leader. When `old_tip_receiver` is a TCA, CPIs `record_revenue` to update the ledger.
     pub fn change_tip_receiver_v1(ctx: Context<ChangeTipReceiverV1>) -> Result<()> {
         ChangeTipReceiverV1::auth(&ctx)?;
 
@@ -264,13 +266,14 @@ pub mod rakurai_tip_manager {
         ctx.accounts
             .tip_manager_config
             .validator_tip_receiver_account = new_tip_receiver.key();
-
+        ctx.accounts.tip_manager_config.client_commission_bps =
+            ctx.accounts.new_tip_receiver.commission_bps as u64;
         Ok(())
     }
 
     /// Mirror of `change_tip_receiver_v1` for **TCAV1** (`REVENUE_SHARE_V1`).
-    /// Commission from the **new** TCAV1 (`commission_bps` / `commission_account`); also syncs
-    /// tip-manager global commission to those values. Optional CPI `record_revenue_v1`.
+    /// Commission on the drain uses tip-manager global config; after drain, syncs global from the
+    /// **new** TCAV1. Optional CPI `record_revenue_v1`.
     pub fn change_tip_receiver_v2(ctx: Context<ChangeTipReceiverV2>) -> Result<()> {
         ChangeTipReceiverV2::auth(&ctx)?;
 
@@ -280,7 +283,7 @@ pub mod rakurai_tip_manager {
         let (total_tips, per_account_tips) = RakuraiTipAccount::collect_tips(&rent, &tip_accounts)?;
 
         let client_fee = total_tips
-            .checked_mul(ctx.accounts.new_tip_receiver.commission_bps as u64)
+            .checked_mul(ctx.accounts.tip_manager_config.client_commission_bps)
             .ok_or(ArithmeticError)?
             .checked_div(MAX_COMMISSION_BPS)
             .ok_or(ArithmeticError)?;
@@ -350,8 +353,6 @@ pub mod rakurai_tip_manager {
             .validator_tip_receiver_account = new_tip_receiver.key();
         ctx.accounts.tip_manager_config.client_commission_bps =
             ctx.accounts.new_tip_receiver.commission_bps as u64;
-        ctx.accounts.tip_manager_config.client_commission_account =
-            ctx.accounts.new_tip_receiver.commission_account;
 
         Ok(())
     }
@@ -743,7 +744,7 @@ pub struct ChangeTipReceiverV1<'info> {
     #[account(mut, owner = reward_distribution::ID)]
     pub new_tip_receiver: Account<'info, TipsCollectionAccount>,
 
-    /// CHECK: old_client receives a % of funds in the RakuraiTipAccount accounts
+    /// CHECK: receives commission; must match tip-manager global `client_commission_account`.
     #[account(mut, constraint = client_commission_account.key() == tip_manager_config.client_commission_account)]
     pub client_commission_account: AccountInfo<'info>,
 
@@ -914,8 +915,8 @@ pub struct ChangeTipReceiverV2<'info> {
     #[account(mut, owner = reward_distribution::ID)]
     pub new_tip_receiver: Account<'info, TipsCollectionAccountV1>,
 
-    /// CHECK: receives commission; must match new TCAV1's stored `commission_account`.
-    #[account(mut, constraint = client_commission_account.key() == new_tip_receiver.commission_account)]
+    /// CHECK: receives commission; must match tip-manager global `client_commission_account`.
+    #[account(mut, constraint = client_commission_account.key() == tip_manager_config.client_commission_account)]
     pub client_commission_account: AccountInfo<'info>,
 
     #[account(

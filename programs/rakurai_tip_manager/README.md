@@ -43,7 +43,7 @@ The Rakurai Tip Manager Program uses a **singleton configuration account** (`Tip
 - The **validator tip receiver account** — where validator tips are sent (rotated on each drain to the Rakurai TCA / TCAV1)
 - The **client commission account** / **bps** — used by `change_client` and by `change_tip_receiver` / `v1`
 
-`change_tip_receiver_v2` takes commission from the **new TCAV1** (`commission_bps` / `commission_account`) and syncs those values onto tip-manager config.
+`change_tip_receiver_v1` / `v2` drain using tip-manager global commission (set by the previous leader), then sync global from the new TCA / TCAV1 for the next leader.
 
 The program maintains **eight separate tip accounts** (PDAs) to minimize account write-lock contention when multiple transactions send tips simultaneously.
 
@@ -72,9 +72,9 @@ These accounts are empty state accounts that hold SOL (lamports). When tips are 
 
 1. **Users send tips** → any of the eight tip accounts
 2. **Validator drains tips** via one of:
-   - `change_tip_receiver` / `change_tip_receiver_v1` — **legacy TCA** (`REVENUE_SHARE`); CPI `record_revenue`; commission from tip-manager global bps
-   - `change_tip_receiver_v2` — **TCAV1** (`REVENUE_SHARE_V1`); CPI `record_revenue_v1`; commission from new TCAV1 (synced to tip-manager config)
-3. **Config update** → `validator_tip_receiver_account` set to the new tip receiver PDA; on `v2`, also sync `client_commission_*` from the new TCAV1
+   - `change_tip_receiver` / `change_tip_receiver_v1` — **legacy TCA** (`REVENUE_SHARE`); CPI `record_revenue`; drain uses TM global commission, then sync from new TCA
+   - `change_tip_receiver_v2` — **TCAV1** (`REVENUE_SHARE_V1`); CPI `record_revenue_v1`; drain uses TM global commission, then sync from new TCAV1
+3. **Config update** → `validator_tip_receiver_account` set to the new tip receiver PDA; `client_commission_*` synced from new TCA / TCAV1 for the next leader
 
 ---
 
