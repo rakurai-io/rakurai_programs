@@ -132,20 +132,20 @@ PDA derivation depends on revenue name, vote pubkey, kind, program ID, and accou
 
 ### 5.1. Custom tips (TCA)
 
-1. Register custom tip account and revenue-share % with Rakurai.
+1. Register a custom tip account and revenue-share percentage with Rakurai — see [Tips FAQ Q4](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/rakurai_tip_manager_faqs#4.-can-i-use-my-own-tip-account-instead-of-rakurais-eight-accounts).
 2. Receive tips in your account during the epoch.
 3. Confirm the TCA epoch record exists.
-4. `get-all-pending-records --kind tip` (or `get-pending-record` for one epoch).
-5. After the epoch ends: `transfer --kind tip`.
-6. Keep the tx signature for reconciliation.
+4. Run `get-all-pending-records --kind tip` (or `get-pending-record` for one epoch).
+5. After the epoch ends, run `transfer --kind tip`.
+6. Keep the transaction signature for reconciliation.
 
 ### 5.2. Post-pack / MEV (MCA)
 
-1. Complete post-pack or transaction-inclusion integration with Rakurai.
+1. Complete post-pack or transaction-inclusion integration with Rakurai — see [MEV revenue sharing](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations#4.-mev-revenue-sharing).
 2. Ensure the owed amount is recorded in the MCA.
-3. `get-all-pending-records --kind mev-share` (or `get-pending-record`).
-4. After the epoch ends: `transfer --kind mev-share`.
-5. Keep the tx signature for reconciliation.
+3. Run `get-all-pending-records --kind mev-share` (or `get-pending-record`).
+4. After the epoch ends, run `transfer --kind mev-share`.
+5. Keep the transaction signature for reconciliation.
 
 This CLI does not create revenue records or claim/distribute settled funds. Settle within the two-epoch grace period; unsettled accounts may lose prioritization.
 
