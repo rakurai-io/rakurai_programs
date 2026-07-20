@@ -135,6 +135,8 @@ Once settled (TCA or MCA), revenue is split in two parts:
 
 **Note:** if the external searcher, trader, or transaction inclusion service does not share revenue within 2 epochs, they will be disabled and will not be able to get custom tip prioritization or post-pack confirmation.
 
+Partners settle TCA/MCA balances with the [Partner Reward Settlement CLI](../../cli/PARTNER_REWARD_SETTLEMENT.md) (`get-account`, `get-pending-record`, `get-all-pending-records`, `transfer`).
+
 ### 5.4. Flow
 
 | Step | Legacy TCA/MCA (`REVENUE_SHARE`) | TCAV1 / MCAV1 (`REVENUE_SHARE_V1`) |

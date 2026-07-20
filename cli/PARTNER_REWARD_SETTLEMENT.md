@@ -1,4 +1,4 @@
-# Reward Distribution Partner CLI
+# Partner Reward Settlement CLI
 
 Inspect and settle custom tip and post-pack/MEV revenue in validator TCA/MCA
 vaults.
@@ -6,11 +6,17 @@ vaults.
 **Audience:** Transaction inclusion services, block engines, MEV searchers, and
 post-pack confirmation partners that share revenue with Rakurai validators.
 
+**Binary:** `rakurai-partner-reward-settlement`
+
 **References:**
 
+- [CLI overview / install](./README.md)
 - [Rakurai Transaction Inclusion](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/readme)
 - [Transaction Inclusion guide](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/transaction_inclusion)
 - [Tips FAQ](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/rakurai_tip_manager_faqs)
+- [Reward Distribution program](../programs/reward_distribution/README.md#5-tip-and-mevshare-collection-accounts)
+
+For build and install steps, see the [CLI overview](./README.md#2-installation).
 
 ---
 
@@ -37,7 +43,7 @@ It supports both the legacy and V1 Reward Distribution account layouts.
 
 ## 2. Supported commands
 
-The binary is `rakurai-reward-distribution`.
+The binary is `rakurai-partner-reward-settlement`.
 
 ### 2.1. `get-account`
 
@@ -49,7 +55,7 @@ Default account layout: `--account-version auto` (prefer V1, fall back to
 legacy).
 
 ```sh
-rakurai-reward-distribution \
+rakurai-partner-reward-settlement \
   --url <RPC_URL> \
   --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
   get-account \
@@ -66,7 +72,7 @@ type (`tip` or `mev-share`), revenue name, validator vote pubkey, and balance.
 Reads the existing record for one epoch:
 
 ```sh
-rakurai-reward-distribution \
+rakurai-partner-reward-settlement \
   --url <RPC_URL> \
   --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
   get-pending-record \
@@ -91,7 +97,7 @@ no previous SOL transfer occurred.
 Lists every epoch that still requires settlement:
 
 ```sh
-rakurai-reward-distribution \
+rakurai-partner-reward-settlement \
   --url <RPC_URL> \
   --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
   get-all-pending-records \
@@ -112,7 +118,7 @@ epoch.
 Settles SOL for an existing epoch record:
 
 ```sh
-rakurai-reward-distribution \
+rakurai-partner-reward-settlement \
   --url <RPC_URL> \
   --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
   --keypair <PARTNER_PAYER_KEYPAIR> \
