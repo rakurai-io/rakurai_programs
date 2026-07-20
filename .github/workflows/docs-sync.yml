@@ -44,6 +44,8 @@ jobs:
           cp programs/rakurai_tip_manager/README.md rakurai-docs/docs/services/$REPO_NAME/programs/rakurai_tip_manager/README.md
           cp programs/rakurai_tip_manager/idl/rakurai_tip_manager.json rakurai-docs/docs/services/$REPO_NAME/programs/rakurai_tip_manager/idl/rakurai_tip_manager.json
           cp cli/README.md rakurai-docs/docs/services/$REPO_NAME/cli/README.md
+          cp cli/ACTIVATION.md rakurai-docs/docs/services/$REPO_NAME/cli/ACTIVATION.md
+          cp cli/PARTNER_REWARD_SETTLEMENT.md rakurai-docs/docs/services/$REPO_NAME/cli/PARTNER_REWARD_SETTLEMENT.md
 
       # 4. Commit & push
       - name: Commit and push
