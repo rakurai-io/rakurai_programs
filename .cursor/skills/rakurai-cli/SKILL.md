@@ -93,7 +93,7 @@ cargo run --bin rakurai-activation -- -p pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM
 3. Subcommands → operator workflows, not every on-chain ix
 4. Reuse `lib.rs`; add `get_*`/`display_*` as needed
 
-**Suggested v1 — Partner Tip and MevShare Revenue Settlement CLI** (`rakurai-partner-settle`): `get-account`, `get-pending-record`, `get-all-pending-records`, `transfer` for TCA/MCA.
+**Suggested v1 — Partner Tip and MevShare Revenue Settlement CLI** (`rakurai-partner-settle`): `get-account`, `get-pending-record`, `get-all-pending-records`, `record-revenue` (MCA), `transfer` for TCA/MCA.
 
 **Suggested v1 — tip_manager**: `show-config`, `claim-tips`, `change-tip-receiver`, `change-client`. Optional `--reward-distribution-program-id` only if CLI also credits RCA off-chain.
 

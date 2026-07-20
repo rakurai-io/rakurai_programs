@@ -8,7 +8,10 @@ use {
     reward_distribution::{
         sdk::{
             derive_revenue_share_account_address, derive_revenue_share_account_v1_address,
-            instruction::{settle_revenue_ix, SettleRevenueAccounts, SettleRevenueArgs},
+            instruction::{
+                record_revenue_ix, record_revenue_v1_ix, settle_revenue_ix, RecordRevenueArgs,
+                RecordRevenueShareAccounts, SettleRevenueAccounts, SettleRevenueArgs,
+            },
         },
         state::{
             EpochAmountEntry, EpochAmountEntryV1, RevenueKind, RevenueShareAccount,
@@ -70,6 +73,8 @@ enum Commands {
     GetPendingRecord(PendingRecordArgs),
     /// Show every epoch record that still has an amount pending settlement.
     GetAllPendingRecords(AccountArgs),
+    /// Record MCA MevShare revenue for the current epoch (post-pack partners).
+    RecordRevenue(RecordRevenueCliArgs),
     /// Transfer SOL into a vault for one recorded epoch.
     Transfer(TransferArgs),
 }
@@ -77,6 +82,7 @@ enum Commands {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 enum ShareKindArg {
     Tip,
+    #[value(name = "Mev-share", aliases = ["mev-share", "MevShare"])]
     MevShare,
 }
 
@@ -101,13 +107,13 @@ enum AccountVersion {
 
 #[derive(Args, Clone)]
 struct TargetArgs {
-    /// TCA (`tip`) or MCA (`mev-share`).
-    #[arg(long, value_enum, required = true)]
-    kind: ShareKindArg,
+    /// TCA (`Tip`) or MCA (`Mev-share`).
+    #[arg(long = "revenue-kind", value_enum, required = true)]
+    revenue_kind: ShareKindArg,
 
-    /// Padded revenue-share name used in the PDA seeds.
-    #[arg(short, long, required = true)]
-    name: String,
+    /// Service revenue name (unique id assigned by Rakurai; PDA seed).
+    #[arg(long = "revenue-name", required = true)]
+    revenue_name: String,
 
     /// Validator vote account used in the PDA seeds.
     #[arg(short = 'v', long = "vote-pubkey", required = true, value_parser = parse_pubkey)]
@@ -137,6 +143,16 @@ struct PendingRecordArgs {
     /// Epoch ledger entry to inspect.
     #[arg(short, long)]
     epoch: u64,
+}
+
+#[derive(Args)]
+struct RecordRevenueCliArgs {
+    #[command(flatten)]
+    target: TargetArgs,
+
+    /// Lamports to add to the current-epoch recorded amount on the MCA.
+    #[arg(short = 'x', long, required = true)]
+    amount: u64,
 }
 
 #[derive(Args)]
@@ -175,6 +191,20 @@ impl VaultAccount {
         match self {
             Self::Legacy { .. } => "legacy",
             Self::V1 { .. } => "v1",
+        }
+    }
+
+    fn record_authority(&self) -> Pubkey {
+        match self {
+            Self::Legacy { account, .. } => account.record_authority,
+            Self::V1 { account, .. } => account.record_authority,
+        }
+    }
+
+    fn share_kind(&self) -> RevenueKind {
+        match self {
+            Self::Legacy { account, .. } => account.share_kind,
+            Self::V1 { account, .. } => account.share_kind,
         }
     }
 
@@ -346,8 +376,8 @@ fn load_target(
     program_id: Pubkey,
     target: &TargetArgs,
 ) -> CliResult<VaultAccount> {
-    let name = name_to_bytes(&target.name)?;
-    let kind = target.kind.into();
+    let name = name_to_bytes(&target.revenue_name)?;
+    let kind = target.revenue_kind.into();
     let legacy_address =
         derive_revenue_share_account_address(&program_id, kind, &name, &target.vote_pubkey).0;
     let v1_address =
@@ -395,13 +425,19 @@ fn print_field(icon: ColoredString, label: &str, value: impl std::fmt::Display) 
 }
 
 fn display_account(vault: &VaultAccount, balance: u64) {
-    let (kind, name, vote) = match vault {
-        VaultAccount::Legacy { account, .. } => {
-            (account.share_kind, &account.name, account.validator_vote)
-        }
-        VaultAccount::V1 { account, .. } => {
-            (account.share_kind, &account.name, account.validator_vote)
-        }
+    let (kind, name, vote, record_authority) = match vault {
+        VaultAccount::Legacy { account, .. } => (
+            account.share_kind,
+            &account.name,
+            account.validator_vote,
+            account.record_authority,
+        ),
+        VaultAccount::V1 { account, .. } => (
+            account.share_kind,
+            &account.name,
+            account.validator_vote,
+            account.record_authority,
+        ),
     };
 
     print_heading("Rakurai Reward Distribution Account");
@@ -414,6 +450,11 @@ fn display_account(vault: &VaultAccount, balance: u64) {
     print_field("📝".cyan(), "Type:", kind_name(kind).magenta());
     print_field("📝".cyan(), "Name:", name_to_string(name).magenta());
     print_field("🔑".red(), "Vote:", vote.to_string());
+    print_field(
+        "🔏".magenta(),
+        "Record auth:",
+        record_authority.to_string(),
+    );
     print_field(
         "💰".green(),
         "Balance:",
@@ -474,8 +515,8 @@ fn display_pending_amount(epoch: u64, pending: &PendingAmount) {
 
 fn kind_name(kind: RevenueKind) -> &'static str {
     match kind {
-        RevenueKind::Tip => "tip",
-        RevenueKind::MevShare => "mev-share",
+        RevenueKind::Tip => "Tip",
+        RevenueKind::MevShare => "Mev-share",
     }
 }
 
@@ -518,6 +559,87 @@ fn process_get_all_pending(
         display_pending_amount(epoch, &pending);
     }
     Ok(())
+}
+
+fn process_record_revenue(
+    rpc_client: Arc<RpcClient>,
+    program_id: Pubkey,
+    keypair_path: &str,
+    args: RecordRevenueCliArgs,
+) -> CliResult {
+    if args.target.revenue_kind != ShareKindArg::MevShare {
+        return Err(
+            "record-revenue is for MCA post-pack partners only; use --revenue-kind Mev-share. \
+             TCA tip amounts are recorded by the validator during leader turns."
+                .into(),
+        );
+    }
+    if args.amount == 0 {
+        return Err("record amount must be greater than zero".into());
+    }
+
+    let vault = load_target(&rpc_client, program_id, &args.target)?;
+    if vault.share_kind() != RevenueKind::MevShare {
+        return Err("loaded vault is not an MCA (Mev-share); refusing record-revenue".into());
+    }
+
+    let authority = parse_keypair(keypair_path)?;
+    let expected = vault.record_authority();
+    if authority.pubkey() != expected {
+        return Err(format!(
+            "keypair {} is not the MCA record_authority {}; use the authority assigned at MCA init",
+            authority.pubkey(),
+            expected
+        )
+        .into());
+    }
+
+    let accounts = RecordRevenueShareAccounts {
+        revenue_share_account: vault.address(),
+        record_authority: authority.pubkey(),
+    };
+    let instruction = match &vault {
+        VaultAccount::Legacy { .. } => record_revenue_ix(
+            program_id,
+            RecordRevenueArgs {
+                amount: args.amount,
+            },
+            accounts,
+        ),
+        VaultAccount::V1 { .. } => record_revenue_v1_ix(
+            program_id,
+            RecordRevenueArgs {
+                amount: args.amount,
+            },
+            accounts,
+        ),
+    };
+
+    let clock_epoch = rpc_client.get_epoch_info()?.epoch;
+
+    print_heading("Partner MevShare Record Revenue");
+    print_field(
+        "🔗".cyan(),
+        "Vault:",
+        vault.address().to_string().bold().green(),
+    );
+    print_field("📦".cyan(), "Account:", vault.version_name().blue());
+    print_field(
+        "🕒".cyan(),
+        "Epoch:",
+        format!("{clock_epoch} (current cluster epoch)").blue(),
+    );
+    print_field(
+        "💰".green(),
+        "Amount:",
+        format!(
+            "{} lamports ({:.9} SOL)",
+            args.amount.to_string().yellow(),
+            args.amount as f64 / 1_000_000_000.0
+        ),
+    );
+    print_field("🔏".magenta(), "Signer:", authority.pubkey().to_string());
+    sign_and_send_transaction(rpc_client, instruction, &authority)
 }
 
 fn process_transfer(
@@ -606,6 +728,9 @@ fn main() -> CliResult {
         Commands::GetPendingRecord(args) => process_get_pending(&rpc_client, cli.program_id, args),
         Commands::GetAllPendingRecords(args) => {
             process_get_all_pending(&rpc_client, cli.program_id, args)
+        }
+        Commands::RecordRevenue(args) => {
+            process_record_revenue(rpc_client, cli.program_id, &cli.keypair, args)
         }
         Commands::Transfer(args) => {
             process_transfer(rpc_client, cli.program_id, &cli.keypair, args)

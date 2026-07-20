@@ -2,7 +2,7 @@
 
 Command-line tools for Rakurai validator operators and transaction-inclusion partners.
 
-**Audience:** Validator operators, searchers, block engines, and post-pack / MEV partners.
+**Audience:** Validator operators, transaction-landing services, and post-pack partners.
 
 ---
 
@@ -13,7 +13,7 @@ The `rakurai_cli` crate ships two binaries:
 | Binary | Audience | Purpose |
 | ------ | -------- | ------- |
 | `rakurai-activation` | Validator operators | Manage Rakurai Activation Accounts (RAA): init, scheduler control, commission, show |
-| `rakurai-partner-settle` | Custom tip / post-pack partners | Partner Tip and MevShare Revenue Settlement — inspect TCA/MCA vaults and settle SOL |
+| `rakurai-partner-settle` | Transaction-landing / post-pack partners | Partner Tip and MevShare Revenue Settlement — inspect TCA/MCA, record MCA MevShare, settle SOL |
 
 ---
 
@@ -54,4 +54,4 @@ which rakurai-partner-settle
 | Guide | Description |
 | ----- | ----------- |
 | [Rakurai Activation CLI](./activation.md) | Initialize and manage Rakurai Activation Accounts (RAA): scheduler enable/disable, commission updates, and account display. |
-| [Partner Tip and MevShare Revenue Settlement CLI](./partner_reward_settlement.md) | Settle custom tip (TCA) or post-pack/MEV (MCA) revenue; inspect vaults and pending epoch records (`rakurai-partner-settle`). |
+| [Partner Tip and MevShare Revenue Settlement CLI](./partner_reward_settlement.md) | Record MCA MevShare (post-pack), settle custom tip (TCA) or post-pack (MCA) revenue; inspect vaults and pending epoch records (`rakurai-partner-settle`). |
