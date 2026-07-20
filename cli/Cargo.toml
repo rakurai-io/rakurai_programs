@@ -11,6 +11,7 @@ bs58 = "0.5.1"
 clap = { version = "4.4", features = ["derive"] }
 colored = "2.0"
 rakurai_activation = { path = "../programs/rakurai_activation" }
+reward_distribution = { path = "../programs/reward_distribution", features = ["no-entrypoint"] }
 serde = "1.0.213"
 serde_derive = "1.0.213"
 serde_json = "1.0.132"
@@ -21,3 +22,7 @@ solana-sdk = "=2.1.21"
 [[bin]]
 name = "rakurai-activation"
 path = "src/bin/rakurai_activation_cli.rs"
+
+[[bin]]
+name = "rakurai-reward-distribution"
+path = "src/bin/rakurai_reward_distribution_cli.rs"

@@ -2281,6 +2281,7 @@ dependencies = [
  "clap",
  "colored",
  "rakurai_activation",
+ "reward_distribution",
  "serde",
  "serde_derive",
  "serde_json",

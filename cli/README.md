@@ -154,3 +154,12 @@ rakurai-activation -p <PROGRAM_ID> show --identity_pubkey <IDENTITY_PUBKEY> --ur
 - `-i, --identity_pubkey <PUBKEY>`: Validator identity account pubkey.
 
 ---
+
+## 4. Reward Distribution Partner CLI
+
+Partners using custom tip accounts or post-pack/MEV revenue sharing can use
+`rakurai-reward-distribution` to locate TCA/MCA vaults, inspect pending epoch
+records, and settle SOL across legacy and V1 account layouts.
+
+See [Reward Distribution Partner CLI](REWARD_DISTRIBUTION.md) for the use cases,
+commands, settlement workflows, and safety notes.
