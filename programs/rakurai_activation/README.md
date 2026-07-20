@@ -56,7 +56,7 @@ Once created, this account:
 
 ## 5. Commission updates
 
-- The validator may update their [**commission percentage**](../../cli/ACTIVATION.md#33-update-commission) at any time.
+- The validator may update their [**commission percentage**](../../cli/activation.md#33-update-commission) at any time.
 - The updated commission applies either:
   - From the **current epoch**, if no [`RewardCollectionAccount`](../reward_distribution/README.md#31-rewardcollectionaccount-account-initialization) has been initialized yet.
   - Or from the **next epoch**, if one already exists.
@@ -66,7 +66,7 @@ Once created, this account:
 ## 6. Activation flow
 
 1. **Enabling Rakurai:**
-   - The validator submits an [`update_rakurai_activation_approval`](../../cli/ACTIVATION.md#32-scheduler-control) transaction.
+   - The validator submits an [`update_rakurai_activation_approval`](../../cli/activation.md#32-scheduler-control) transaction.
    - In response, Rakurai submits a transaction to approve and activate the Rakurai scheduler.
 
 2. **Disabling Rakurai:**
@@ -81,7 +81,7 @@ Once created, this account:
 
 ## 7. CLI tool
 
-See the [Rakurai Activation CLI](../../cli/ACTIVATION.md) for operator commands to:
+See the [Rakurai Activation CLI](../../cli/activation.md) for operator commands to:
 
 - Initialize a Rakurai Activation Account.
 - Update commission settings.

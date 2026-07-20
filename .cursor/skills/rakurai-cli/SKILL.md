@@ -19,7 +19,7 @@ Crate at `cli/` (`rakurai_cli`). Shared lib in `cli/src/lib.rs`; binaries in `cl
 ## Layout & Build
 
 ```
-cli/Cargo.toml, README.md, ACTIVATION.md, PARTNER_REWARD_SETTLEMENT.md,
+cli/Cargo.toml, README.md, activation.md, partner_reward_settlement.md,
 src/lib.rs, src/bin/rakurai_activation_cli.rs,
 src/bin/rakurai_partner_settle_cli.rs
 ```

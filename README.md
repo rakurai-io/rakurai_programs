@@ -17,5 +17,5 @@ A collection of Solana smart contracts and tools required for **Rakurai’s vali
 | Section | Description |
 | ------- | ----------- |
 | [Rakurai CLIs](./cli/README.md) | Overview, install, and index for both CLI binaries. |
-| [Rakurai Activation CLI](./cli/ACTIVATION.md) | Operator CLI for Rakurai Activation Accounts — initialize an [RAA](./programs/rakurai_activation/README.md#4-rakurai-activation-account-creation), enable/disable the scheduler, and update commission. |
-| [Partner Tip and MevShare Revenue Settlement CLI](./cli/PARTNER_REWARD_SETTLEMENT.md) | Settle custom tip (TCA) or post-pack/MEV (MCA) revenue into validator vaults (`rakurai-partner-settle`). |
+| [Rakurai Activation CLI](./cli/activation.md) | Operator CLI for Rakurai Activation Accounts — initialize an [RAA](./programs/rakurai_activation/README.md#4-rakurai-activation-account-creation), enable/disable the scheduler, and update commission. |
+| [Partner Tip and MevShare Revenue Settlement CLI](./cli/partner_reward_settlement.md) | Settle custom tip (TCA) or post-pack/MEV (MCA) revenue into validator vaults (`rakurai-partner-settle`). |

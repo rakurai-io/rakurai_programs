@@ -135,7 +135,7 @@ Once settled (TCA or MCA), revenue is split in two parts:
 
 **Note:** if the external searcher, trader, or transaction inclusion service does not share revenue within 2 epochs, they will be disabled and will not be able to get custom tip prioritization or post-pack confirmation.
 
-Partners settle TCA/MCA balances with the [Partner Tip and MevShare Revenue Settlement CLI](../../cli/PARTNER_REWARD_SETTLEMENT.md) (`rakurai-partner-settle`: `get-account`, `get-pending-record`, `get-all-pending-records`, `transfer`).
+Partners settle TCA/MCA balances with the [Partner Tip and MevShare Revenue Settlement CLI](../../cli/partner_reward_settlement.md) (`rakurai-partner-settle`: `get-account`, `get-pending-record`, `get-all-pending-records`, `transfer`).
 
 ### 5.4. Flow
 
