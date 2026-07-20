@@ -168,6 +168,8 @@ Rakurai’s own tip TCA is settled by Tip Manager — `settle_revenue` is blocke
 
 PDA derivation depends on `--revenue-name`, `--vote-pubkey`, `--revenue-kind`, program ID, and account version. Use the exact revenue name assigned by Rakurai.
 
+See [dual vaults (legacy vs V1)](../programs/reward_distribution/README.md#58-dual-vaults-legacy-vs-v1).
+
 ---
 
 ## 5. Workflows

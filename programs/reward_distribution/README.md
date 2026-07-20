@@ -116,15 +116,15 @@ In that case **the tip is received in the external account holder's own account*
 
 ### 5.2. Why a MevShare Collection Account (MCA)
 
-Same idea for [post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations). The MevShare revenue lands in the transaction-landing or post-pack service's own flow, so there is no account Rakurai can drain. Rakurai tracks the agreed revenue share on-chain in a per-validator, per-service MCA.
+Same idea for [post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations). The MevShare revenue lands in the transaction-landing or post-pack service's own flow, so there is no account Rakurai can drain. When you start using **post-pack**, Rakurai creates an MCA for your service (one per service per validator). That MCA is where you **record** MevShare revenue and **transfer** the corresponding SOL. You **must hold the MCA `record_authority`** — only that keypair can call `record_revenue` / Partner CLI `record-revenue`.
 
-Unlike TCA, **nothing is recorded in the MCA during leader turns**. After the epoch ends, the service **records** the owed amount in the MCA **once** via `record_revenue`, then **settles** by transferring SOL into the PDA.
+Unlike TCA, **nothing is recorded in the MCA during leader turns**. After the epoch ends, the service **records** the owed amount in the MCA **once** via `record_revenue`, then **settles** by transferring SOL into the PDA. See the [Partner Tip and MevShare Revenue Settlement CLI](../../cli/partner_reward_settlement.md#mca-setup-post-pack).
 
 ### 5.3. How Tip and MevShare are distributed
 
 **TCA (custom tips):** the validator **records** attributed amounts in the TCA ledger on each leader turn. After the epoch ends, the tip account holder **settles** by transferring SOL into the TCA, then `claim_revenue` distributes it.
 
-**MCA (post-pack / MevShare):** nothing is recorded during leader turns. After the epoch ends, the service **records** the owed amount in the MCA **once**, **settles** by transferring SOL into the MCA, then `claim_revenue` distributes it.
+**MCA (post-pack / MevShare):** when post-pack starts, Rakurai creates the MCA; the service must hold `record_authority`. Nothing is recorded during leader turns. After the epoch ends, the service **records** the owed amount in the MCA **once**, **settles** by transferring SOL into the MCA, then `claim_revenue` distributes it.
 
 Once settled (TCA or MCA), revenue is split in two parts:
  - **Client** (i.e. Rakurai): share of the claim goes to `commission_account` at `commission_bps`.
@@ -163,7 +163,9 @@ Instructions: `initialize_tips_and_mev_share_config`, `update_tips_and_mev_share
 
 ### 5.6. RevenueShareAccount / RevenueShareAccountV1 structure
 
-**Legacy** `RevenueShareAccount` (aliases TCA / MCA) and **V1** `RevenueShareAccountV1` (aliases TCAV1 / MCAV1) share the same header fields; V1 adds per-entry `transferred_amount` and account-level `deficit`. See the [Reward Distribution IDL](./idl/reward_distribution.json).
+**Legacy** `RevenueShareAccount` (aliases TCA / MCA) and **V1** `RevenueShareAccountV1` (aliases TCAV1 / MCAV1) share the same header fields. V1 adds per-entry `transferred_amount` (via `RevenueLedgerV1` / `EpochAmountEntryV1`) and account-level `deficit`. See the [Reward Distribution IDL](./idl/reward_distribution.json).
+
+**Shared header fields** (both layouts):
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -176,30 +178,38 @@ Instructions: `initialize_tips_and_mev_share_config`, `update_tips_and_mev_share
 | `max_epoch_entries` | `u8` | Max distinct epochs stored in `ledger` (up to 32) |
 | `commission_bps` | `u16` | Commission on claims; remainder goes to validator. Forced to 0 at claim when `name == RAKURAI_REVENUE_NAME` (Rakurai tip commission was already taken on tip-manager drain) |
 | `commission_account` | `pubkey` | Receives the commission portion on claim |
-| `block_reward_conversion_enabled` | `bool` | Whether claimed amounts can be converted into block rewards |
-| `ledger` | `RevenueLedger` | Per-epoch attributed amounts |
-| `deficit` | `u64` | Cumulative unpaid shortfall from underfunded claims; manager adjusts via `update_deficit` |
+| `block_reward_conversion_enabled` | `bool` | When true, claimed amounts can be marked converted via `update_epoch_converted_to_block_reward` |
 | `bump` | `u8` | PDA bump seed |
 
-**`RevenueLedger` and `EpochAmountEntry`:**
+**Legacy-only vs V1-only:**
+
+| Field | Legacy (`RevenueShareAccount`) | V1 (`RevenueShareAccountV1`) |
+|-------|--------------------------------|------------------------------|
+| `ledger` | `RevenueLedger` → `Vec<EpochAmountEntry>` | `RevenueLedgerV1` → `Vec<EpochAmountEntryV1>` |
+| `deficit` | — | `u64` cumulative unpaid shortfall; manager adjusts via `update_deficit` |
+
+**Ledger entry layouts:**
 
 ```rust
-pub struct RevenueLedger {
-    pub entries: Vec<EpochAmountEntry>,
+// Legacy — no transferred_amount
+pub struct EpochAmountEntry {
+    pub epoch: u64,
+    pub amount: u64,                  // attributed lamports (updated by record_revenue)
+    pub claimed: bool,
+    pub block_reward_converted: bool,
 }
 
-pub struct EpochAmountEntry {
-    pub epoch: u64,                   // epoch this entry belongs to
+// V1 — settle tracking
+pub struct EpochAmountEntryV1 {
+    pub epoch: u64,
     pub amount: u64,                  // attributed lamports (updated by record_revenue)
     pub transferred_amount: u64,      // settle_revenue, or auto on record_revenue for Rakurai tip TCA
-    pub claimed: bool,                // true after claim_revenue succeeds
-    pub block_reward_converted: bool, // whether converted to block rewards
+    pub claimed: bool,
+    pub block_reward_converted: bool,
 }
 ```
 
-Account-level `deficit: u64` (below the ledger) accumulates shortfalls when claim pays less than recorded (`amount - transferred`); manager adjusts via `update_deficit` with [`DeficitUpdate`].
-
-**Example ledger after `record_revenue` + partial settle:**
+**Example V1 ledger after `record_revenue` + partial settle:**
 
 ```json
 {
