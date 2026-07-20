@@ -13,7 +13,7 @@ The `rakurai_cli` crate ships two binaries:
 | Binary | Audience | Purpose |
 | ------ | -------- | ------- |
 | `rakurai-activation` | Validator operators | Manage Rakurai Activation Accounts (RAA): init, scheduler control, commission, show |
-| `rakurai-partner-reward-settlement` | Custom tip / post-pack partners | Inspect TCA/MCA vaults, list pending epoch records, and settle SOL |
+| `rakurai-partner-settle` | Custom tip / post-pack partners | Partner Tip and MevShare Revenue Settlement — inspect TCA/MCA vaults and settle SOL |
 
 ---
 
@@ -44,7 +44,7 @@ echo "export PATH=\"$(pwd)/target/release/:\$PATH\""
 
 ```sh
 which rakurai-activation
-which rakurai-partner-reward-settlement
+which rakurai-partner-settle
 ```
 
 ---
@@ -54,4 +54,4 @@ which rakurai-partner-reward-settlement
 | Guide | Description |
 | ----- | ----------- |
 | [Rakurai Activation CLI](./ACTIVATION.md) | Initialize and manage Rakurai Activation Accounts (RAA): scheduler enable/disable, commission updates, and account display. |
-| [Partner Reward Settlement CLI](./PARTNER_REWARD_SETTLEMENT.md) | Locate TCA/MCA vaults, inspect pending epoch records, and settle custom tip or post-pack/MEV revenue (legacy and V1). |
+| [Partner Tip and MevShare Revenue Settlement CLI](./PARTNER_REWARD_SETTLEMENT.md) | Settle custom tip (TCA) or post-pack/MEV (MCA) revenue; inspect vaults and pending epoch records (`rakurai-partner-settle`). |

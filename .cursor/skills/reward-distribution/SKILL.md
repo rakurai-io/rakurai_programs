@@ -3,7 +3,7 @@ name: reward-distribution
 description: >-
   Rakurai Reward Distribution program (RCA, Merkle claims, revenue-share
   tip/mev-share PDAs). Use for reward distribution, RCA, revenue-share vaults,
-  Merkle claims, client commission, or Partner Reward Settlement CLI work.
+  Merkle claims, client commission, or Partner Tip and MevShare Revenue Settlement CLI work.
 ---
 
 # Rakurai Reward Distribution

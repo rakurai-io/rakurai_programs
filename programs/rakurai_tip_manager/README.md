@@ -91,7 +91,7 @@ SDK: `derive_rakurai_tip_collection_address` (legacy), `derive_rakurai_tip_colle
 
 On `claim_revenue` / `claim_revenue_v1`, Rakurai tip vaults skip commission (tip drain already paid Rakurai). Legacy pays recorded `amount`; V1 pays `transferred_amount`.
 
-For vault layouts see [Reward Distribution — Tip and MevShare](../reward_distribution/README.md#5-tip-and-mevshare-collection-accounts).
+For vault layouts see [Reward Distribution — Tip and MevShare](../reward_distribution/README.md#5-tip-and-mevshare-collection-accounts). Partners settling custom-tip TCA balances can use the [Partner Tip and MevShare Revenue Settlement CLI](../../cli/PARTNER_REWARD_SETTLEMENT.md) (`rakurai-partner-settle`).
 
 ---
 

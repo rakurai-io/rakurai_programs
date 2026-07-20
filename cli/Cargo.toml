@@ -24,5 +24,5 @@ name = "rakurai-activation"
 path = "src/bin/rakurai_activation_cli.rs"
 
 [[bin]]
-name = "rakurai-partner-reward-settlement"
-path = "src/bin/rakurai_partner_reward_settlement_cli.rs"
+name = "rakurai-partner-settle"
+path = "src/bin/rakurai_partner_settle_cli.rs"

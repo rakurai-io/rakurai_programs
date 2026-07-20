@@ -29,7 +29,7 @@ type CliResult<T = ()> = Result<T, Box<dyn Error>>;
 #[command(
     author,
     version,
-    about = "Partner Reward Settlement CLI for TCA/MCA vaults",
+    about = "Partner Tip and MevShare Revenue Settlement CLI for TCA/MCA vaults",
     arg_required_else_help = true,
     color = clap::ColorChoice::Always
 )]
@@ -573,7 +573,7 @@ fn process_transfer(
         }
     };
 
-    print_heading("Partner Reward Settlement Transfer");
+    print_heading("Partner Tip / MevShare Settlement Transfer");
     print_field(
         "🔗".cyan(),
         "Vault:",

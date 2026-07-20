@@ -135,7 +135,7 @@ Once settled (TCA or MCA), revenue is split in two parts:
 
 **Note:** if the external searcher, trader, or transaction inclusion service does not share revenue within 2 epochs, they will be disabled and will not be able to get custom tip prioritization or post-pack confirmation.
 
-Partners settle TCA/MCA balances with the [Partner Reward Settlement CLI](../../cli/PARTNER_REWARD_SETTLEMENT.md) (`get-account`, `get-pending-record`, `get-all-pending-records`, `transfer`).
+Partners settle TCA/MCA balances with the [Partner Tip and MevShare Revenue Settlement CLI](../../cli/PARTNER_REWARD_SETTLEMENT.md) (`rakurai-partner-settle`: `get-account`, `get-pending-record`, `get-all-pending-records`, `transfer`).
 
 ### 5.4. Flow
 
@@ -213,7 +213,7 @@ Account-level `deficit: u64` (below the ledger) accumulates shortfalls when clai
 }
 ```
 
-`record_revenue` updates `amount`. For the **Rakurai tip TCA** only, it also credits `transferred_amount` (tip-manager deposits SOL in the same drain tx). Non-Rakurai vaults call `settle_revenue` (system-transfer + credit) or `update_transferred_amount` (credit only, after a direct SOL send). `claim_revenue` pays `transferred_amount`, accrues `deficit` when underfunded (`amount > transferred`), and sets `claimed = true`.
+`record_revenue` / `record_revenue_v1` updates `amount`. For the **Rakurai tip TCAV1** only, `record_revenue_v1` also credits `transferred_amount` (tip-manager deposits SOL in the same drain tx). Non-Rakurai V1 vaults call `settle_revenue` (system-transfer + credit) or `update_transferred_amount` (credit only, after a direct SOL send). `claim_revenue_v1` pays `transferred_amount`, accrues `deficit` when underfunded (`amount > transferred`), and sets `claimed = true`. Legacy `claim_revenue` pays recorded `amount` and has no `deficit` / `transferred_amount`.
 
 ### 5.7. How to check status
 
