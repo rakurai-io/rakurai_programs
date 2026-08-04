@@ -30,7 +30,7 @@ pub use state::{
 };
 
 declare_id!("A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB");
-
+#[allow(deprecated)]
 #[program]
 pub mod reward_distribution {
     use solana_program::{program::invoke, system_instruction};
