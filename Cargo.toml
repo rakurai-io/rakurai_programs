@@ -8,6 +8,28 @@ members = [
 ]
 resolver = "2"
 
+[workspace.dependencies]
+bincode = "1.3.3"
+bs58 = "0.5.1"
+serde = "1.0.213"
+serde_derive = "1.0.213"
+serde_json = "1.0.132"
+solana-account = "2.2"
+solana-account-decoder-client-types = "2.2"
+solana-commitment-config = "2.2"
+solana-instruction = { version = "2.3", features = ["serde"] }
+solana-keypair = "2.2"
+solana-message = { version = "2.4", features = ["serde"] }
+solana-pubkey = { version = "2.4", features = ["serde"] }
+solana-rent = "2.2"
+solana-rpc-client = "2.2"
+solana-rpc-client-api = "2.2"
+solana-signature = { version = "2.2", features = ["serde"] }
+solana-signer = "2.2"
+solana-system-interface = "1.0"
+solana-transaction = { version = "2.2", features = ["serde"] }
+solana-vote-program = "2.2"
+
 [profile.release]
 overflow-checks = true
 lto = "fat"
