@@ -10,7 +10,7 @@ description: >-
 
 Crate at `cli/` (`rakurai_cli`). Shared lib in `cli/src/lib.rs`; binaries in `cli/src/bin/`.
 
-**Current**: `rakurai-activation`, `rakurai-partner-settle`. New binaries should follow patterns here plus program skills below.
+**Current**: `rakurai-activation`, `rakurai-revshare`. New binaries should follow patterns here plus program skills below.
 
 **Flags**: [reference.md](reference.md).
 
@@ -21,13 +21,13 @@ Crate at `cli/` (`rakurai_cli`). Shared lib in `cli/src/lib.rs`; binaries in `cl
 ```
 cli/Cargo.toml, README.md, activation.md, partner_reward_settlement.md,
 src/lib.rs, src/bin/rakurai_activation_cli.rs,
-src/bin/rakurai_partner_settle_cli.rs
+src/bin/rakurai_revshare_cli.rs
 ```
 
 ```bash
 cargo build --release -p rakurai_cli
 # → target/release/rakurai-activation
-# → target/release/rakurai-partner-settle
+# → target/release/rakurai-revshare
 ```
 
 ---
@@ -93,7 +93,7 @@ cargo run --bin rakurai-activation -- -p pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM
 3. Subcommands → operator workflows, not every on-chain ix
 4. Reuse `lib.rs`; add `get_*`/`display_*` as needed
 
-**Suggested v1 — Partner Tip and MevShare Revenue Settlement CLI** (`rakurai-partner-settle`): `get-account`, `get-pending-record`, `get-all-pending-records`, `record-revenue` (MCA), `transfer` for TCA/MCA.
+**Suggested v1 — Partner Tip and MevShare Revenue Settlement CLI** (`rakurai-revshare`): `get-account`, `get-all-accounts`, `get-pending-record`, `get-all-pending-records`, `record-revenue` (MCA), `transfer`, `transfer-all` for TCA/MCA.
 
 **Suggested v1 — tip_manager**: `show-config`, `claim-tips`, `change-tip-receiver`, `change-client`. Optional `--reward-distribution-program-id` only if CLI also credits RCA off-chain.
 

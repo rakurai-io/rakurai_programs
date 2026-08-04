@@ -17,6 +17,8 @@ serde_derive = "1.0.213"
 serde_json = "1.0.132"
 shellexpand = "3.1.0"
 solana-rpc-client = "=2.1.21"
+solana-rpc-client-api = "=2.1.21"
+solana-account-decoder-client-types = "=2.1.21"
 solana-sdk = "=2.1.21"  
 
 [[bin]]
@@ -24,5 +26,5 @@ name = "rakurai-activation"
 path = "src/bin/rakurai_activation_cli.rs"
 
 [[bin]]
-name = "rakurai-partner-settle"
-path = "src/bin/rakurai_partner_settle_cli.rs"
+name = "rakurai-revshare"
+path = "src/bin/rakurai_revshare_cli.rs"

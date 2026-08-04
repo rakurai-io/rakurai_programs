@@ -213,11 +213,23 @@ pub fn sign_and_send_transaction(
     instruction: Instruction,
     signer: &Keypair,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    sign_and_send_instructions(rpc_client, std::slice::from_ref(&instruction), signer)
+}
+
+/// Signs and confirms a transaction with one or more instructions.
+pub fn sign_and_send_instructions(
+    rpc_client: Arc<RpcClient>,
+    instructions: &[Instruction],
+    signer: &Keypair,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if instructions.is_empty() {
+        return Err("no instructions to send".into());
+    }
     match rpc_client.get_latest_blockhash() {
         Ok(hash) => {
             let transaction = Transaction::new(
                 &[&signer],
-                Message::new(&[instruction], Some(&signer.pubkey())),
+                Message::new(instructions, Some(&signer.pubkey())),
                 hash,
             );
             match rpc_client.send_and_confirm_transaction(&transaction) {
@@ -228,8 +240,6 @@ pub fn sign_and_send_transaction(
                 Err(err) => Err(err.into()),
             }
         }
-        Err(err) => {
-            return Err(err.into());
-        }
+        Err(err) => Err(err.into()),
     }
 }

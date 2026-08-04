@@ -4,7 +4,7 @@ Inspect, record (MCA), and settle custom tip and post-pack revenue in validator 
 
 **Audience:** Transaction-landing services and post-pack partners.
 
-**Binary:** `rakurai-partner-settle`
+**Product:** Partner Tip and MevShare Revenue Settlement CLI  
 
 For install, see the [CLI overview](./README.md#2-installation). Program details: [Tip and MevShare accounts](../programs/reward_distribution/README.md#5-tip-and-mevshare-collection-accounts).
 
@@ -13,6 +13,29 @@ For install, see the [CLI overview](./README.md#2-installation). Program details
 ## 1. When to use this CLI
 
 Use this CLI if you are a **transaction-landing service** or **post-pack** partner that holds tip or MevShare revenue in an account **Rakurai cannot drain**, and you must settle the agreed share into the validator’s on-chain vault after the epoch.
+
+After the epoch ends, the usual flow is:
+
+```sh
+# 1. See pending shares across all validators
+rakurai-revshare \
+  --url <RPC_URL> \
+  --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
+  get-all-accounts \
+  --revenue-kind Tip \
+  --revenue-name <REVENUE_NAME>
+
+# 2. Settle everything pending (dry-run first if you like)
+rakurai-revshare \
+  --url <RPC_URL> \
+  --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
+  --keypair <PARTNER_PAYER_KEYPAIR> \
+  transfer-all \
+  --revenue-kind Tip \
+  --revenue-name <REVENUE_NAME>
+```
+
+Swap `--revenue-kind` to `Mev-share` for post-pack MCA settlement. **MCA** also needs `record-revenue` per validator/epoch before `transfer-all`. For flags, dry-run, batch size, single-vault transfer, and other details, see the [Commands](#3-commands) subcommands below.
 
 - **TCA (Tips Collection Account)** — `--revenue-kind Tip`  
   Use when you run a **custom tip account**. Tips land in your account; the **validator records** the owed share in the TCA each leader turn. After the epoch, you only **transfer** that amount into the TCA.
@@ -59,13 +82,13 @@ See [Post-epoch stage: record and settle](https://docs.rakurai.io/docs/services/
 
 ### 3.1. `get-account`
 
-Derives and fetches one partner revenue vault.
+Derives and fetches **one** partner revenue vault for a specific validator.
 
 Required: `--revenue-kind`, `--revenue-name`, `--vote-pubkey`.  
 Default: `--account-version auto` (prefer V1, else legacy).
 
 ```sh
-rakurai-partner-settle \
+rakurai-revshare \
   --url <RPC_URL> \
   --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
   get-account \
@@ -76,12 +99,41 @@ rakurai-partner-settle \
 
 Output: derived address, layout (`legacy` / `v1`), type (`Tip` / `Mev-share`), revenue name, vote pubkey, record authority, balance.
 
-### 3.2. `get-pending-record`
+### 3.2. `get-all-accounts`
+
+Lists every TCA/MCA for your service across validators (no `--vote-pubkey`). RPC scan by `--revenue-kind` + `--revenue-name`.
+
+**Default:** a pivot table of **pending** amounts — rows = validators (vote), columns = epochs. Epoch cells and row TOTAL use **lamports** (row TOTAL also shows SOL to 5 decimals). The footer TOTAL row is **SOL only** (5 decimals). A `Unit:` line above the table states this.
+
+```sh
+rakurai-revshare \
+  --url <RPC_URL> \
+  --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
+  get-all-accounts \
+  --revenue-kind Tip \
+  --revenue-name <REVENUE_NAME>
+```
+
+**`--detail`:** after the table, print per-account fields (pubkey, layout, vote, record authority, balance, and pending by epoch).
+
+```sh
+rakurai-revshare \
+  --url <RPC_URL> \
+  --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
+  get-all-accounts \
+  --revenue-kind Tip \
+  --revenue-name <REVENUE_NAME> \
+  --detail
+```
+
+Use `--revenue-kind Mev-share` for MCAs.
+
+### 3.3. `get-pending-record`
 
 Reads the record for one epoch:
 
 ```sh
-rakurai-partner-settle \
+rakurai-revshare \
   --url <RPC_URL> \
   --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
   get-pending-record \
@@ -94,12 +146,12 @@ rakurai-partner-settle \
 - **V1:** `pending_amount = recorded_amount - transferred_amount`
 - **Legacy:** no `transferred_amount`; `pending_amount` is the unclaimed recorded amount (not proof a prior SOL transfer did not occur)
 
-### 3.3. `get-all-pending-records`
+### 3.4. `get-all-pending-records`
 
-Lists every epoch that still needs settlement:
+Lists every epoch that still needs settlement **for one vault** (one vote pubkey):
 
 ```sh
-rakurai-partner-settle \
+rakurai-revshare \
   --url <RPC_URL> \
   --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
   get-all-pending-records \
@@ -110,7 +162,7 @@ rakurai-partner-settle \
 
 Use `--revenue-kind Mev-share` for MCA. Results are ordered by epoch.
 
-### 3.4. `record-revenue` (MCA only)
+### 3.5. `record-revenue` (MCA only)
 
 Records MevShare revenue on the MCA ledger for the **current cluster epoch**. Calls `record_revenue` (legacy) or `record_revenue_v1` (V1). Updates the on-chain ledger only — **no SOL is moved**.
 
@@ -119,7 +171,7 @@ Records MevShare revenue on the MCA ledger for the **current cluster epoch**. Ca
 Requires `--revenue-kind Mev-share`. When post-pack is enabled, Rakurai creates your MCA; you must hold its **`record_authority`** and pass that keypair as `--keypair` (shown by `get-account` as `Record auth`).
 
 ```sh
-rakurai-partner-settle \
+rakurai-revshare \
   --url <RPC_URL> \
   --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
   --keypair <RECORD_AUTHORITY_KEYPAIR> \
@@ -132,12 +184,12 @@ rakurai-partner-settle \
 
 There is no `--epoch` flag: the program attributes the amount to `Clock`’s current epoch. Repeated calls for the same epoch accumulate.
 
-### 3.5. `transfer`
+### 3.6. `transfer`
 
-Settles SOL for an existing epoch record:
+Settles SOL for **one** existing epoch record on **one** validator vault:
 
 ```sh
-rakurai-partner-settle \
+rakurai-revshare \
   --url <RPC_URL> \
   --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
   --keypair <PARTNER_PAYER_KEYPAIR> \
@@ -150,6 +202,45 @@ rakurai-partner-settle \
 ```
 
 If `--amount` is omitted, transfers the full pending amount. Refuses zero, claimed, or over-pending amounts.
+
+Pass `--dry-run` to preview vault/epoch/amount without sending a transaction.
+
+### 3.7. `transfer-all`
+
+Settles **all pending epochs on every vault** matching `--revenue-kind` + `--revenue-name` (all validators). Prints the same vote×epoch pending **table** as `get-all-accounts`, then sends settle/transfer instructions in batches (**10 per transaction** by default; override with `--batch-size`).
+
+Legacy = system transfer; V1 = `settle_revenue` per epoch. Rakurai’s own tip TCA is skipped.
+
+```sh
+# Preview table only
+rakurai-revshare \
+  --url <RPC_URL> \
+  --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
+  --keypair <PARTNER_PAYER_KEYPAIR> \
+  transfer-all \
+  --revenue-kind Tip \
+  --revenue-name <REVENUE_NAME> \
+  --dry-run
+
+# Settle everything pending (default 10 ix/txn)
+rakurai-revshare \
+  --url <RPC_URL> \
+  --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
+  --keypair <PARTNER_PAYER_KEYPAIR> \
+  transfer-all \
+  --revenue-kind Mev-share \
+  --revenue-name <REVENUE_NAME>
+
+# Smaller batches if RPC rejects large txs
+rakurai-revshare \
+  ... \
+  transfer-all \
+  --revenue-kind Tip \
+  --revenue-name <REVENUE_NAME> \
+  --batch-size 4
+```
+
+For MCA, record each epoch first (`record-revenue`) before `transfer-all`.
 
 ---
 
@@ -179,16 +270,16 @@ See [dual vaults (legacy vs V1)](../programs/reward_distribution/README.md#58-du
 1. Register a custom tip account and revenue-share percentage with Rakurai (you receive a `--revenue-name`) — see [Tips FAQ Q4](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/rakurai_tip_manager_faqs#4.-can-i-use-my-own-tip-account-instead-of-rakurais-eight-accounts).
 2. Receive tips in your account during the epoch.
 3. Confirm the TCA epoch record exists (validator recorded it).
-4. Run `get-all-pending-records --revenue-kind Tip` (or `get-pending-record` for one epoch).
-5. After the epoch ends, run `transfer --revenue-kind Tip`.
+4. Run `get-all-pending-records --revenue-kind Tip` (or `get-all-accounts` / `transfer-all` to cover every validator at once).
+5. After the epoch ends, run `transfer --revenue-kind Tip` for one vault, or `transfer-all --revenue-kind Tip` for all vaults.
 6. Keep the transaction signature for reconciliation.
 
 ### 5.2. Post-pack (MCA)
 
 1. Complete post-pack / transaction-landing integration with Rakurai — Rakurai creates your MCA and assigns `--revenue-name` and `record_authority` (you must hold that keypair) — see [MEV revenue sharing](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations#4.-mev-revenue-sharing).
-2. After the epoch ends, run `record-revenue --revenue-kind Mev-share --amount <LAMPORTS>` with the MCA `record_authority` keypair — see [post-epoch record and settle](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations#4.4.-post-epoch-stage-record-and-settle).
-3. Confirm with `get-pending-record` / `get-all-pending-records --revenue-kind Mev-share`.
-4. Run `transfer --revenue-kind Mev-share` to settle SOL into the MCA.
+2. After the epoch ends, run `record-revenue --revenue-kind Mev-share --amount <LAMPORTS>` with the MCA `record_authority` keypair (per validator) — see [post-epoch record and settle](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations#4.4.-post-epoch-stage-record-and-settle).
+3. Confirm with `get-all-accounts` / `get-all-pending-records --revenue-kind Mev-share`.
+4. Run `transfer --revenue-kind Mev-share` for one vault, or `transfer-all --revenue-kind Mev-share` for all pending settlements.
 5. Keep the transaction signatures for reconciliation.
 
 This CLI does not claim/distribute settled funds (manager flow).

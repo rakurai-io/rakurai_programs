@@ -4,8 +4,6 @@ Command-line tool for managing the Rakurai Activation Account (RAA).
 
 **Audience:** Solana validator operators running Rakurai nodes.
 
-**Binary:** `rakurai-activation`
-
 ---
 
 ## 1. Overview

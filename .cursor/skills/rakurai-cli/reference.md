@@ -104,8 +104,8 @@ pub fn sign_and_send_transaction(...) -> Result<(), ...>;
 
 ```toml
 [[bin]]
-name = "rakurai-partner-settle"
-path = "src/bin/rakurai_partner_settle_cli.rs"
+name = "rakurai-revshare"
+path = "src/bin/rakurai_revshare_cli.rs"
 
 [dependencies]
 reward_distribution = { path = "../programs/reward_distribution" }

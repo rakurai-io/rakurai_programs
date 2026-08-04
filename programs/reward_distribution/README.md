@@ -135,7 +135,7 @@ Once settled (TCA or MCA), revenue is split in two parts:
 
 **Note:** If a service does not record and settle within 2 epochs, post-pack access and MCA prioritization stop after a two-epoch grace period.
 
-Partners settle TCA/MCA balances with the [Partner Tip and MevShare Revenue Settlement CLI](../../cli/partner_reward_settlement.md) (`rakurai-partner-settle`: `get-account`, `get-pending-record`, `get-all-pending-records`, `record-revenue` for MCA, `transfer`).
+Partners settle TCA/MCA balances with the [Partner Tip and MevShare Revenue Settlement CLI](../../cli/partner_reward_settlement.md) (`rakurai-revshare`: `get-account`, `get-all-accounts`, `get-pending-record`, `get-all-pending-records`, `record-revenue` for MCA, `transfer`, `transfer-all`).
 
 ### 5.4. Flow
 
