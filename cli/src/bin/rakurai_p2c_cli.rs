@@ -1,5 +1,5 @@
 use {
-    anchor_lang::AccountDeserialize,
+    anchor_lang::{prelude::Pubkey as AnchorPubkey, AccountDeserialize},
     clap::{Args, Parser, Subcommand},
     colored::{ColoredString, Colorize},
     rakurai_cli::{
@@ -19,18 +19,47 @@ use {
         state::{P2CSubscriptionAccount, P2CSubscriptionStatus},
     },
     solana_account_decoder_client_types::UiAccountEncoding,
+    solana_commitment_config::CommitmentConfig,
+    solana_instruction::{AccountMeta, Instruction},
+    solana_pubkey::Pubkey,
     solana_rpc_client::rpc_client::RpcClient,
     solana_rpc_client_api::{
         config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
         filter::{Memcmp, RpcFilterType},
     },
-    solana_sdk::{
-        commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Signer, system_program,
-    },
+    solana_signer::Signer,
+    solana_system_interface::program as system_program,
     std::{error::Error, sync::Arc},
 };
 
 type CliResult<T = ()> = Result<T, Box<dyn Error>>;
+
+fn to_anchor(pubkey: Pubkey) -> AnchorPubkey {
+    AnchorPubkey::new_from_array(pubkey.as_array().clone())
+}
+
+fn from_anchor(pubkey: AnchorPubkey) -> Pubkey {
+    Pubkey::new_from_array(pubkey.to_bytes())
+}
+
+fn to_solana_instruction(
+    mut ix: anchor_lang::solana_program::instruction::Instruction,
+) -> Instruction {
+    let acct_metas: Vec<AccountMeta> = ix
+        .accounts
+        .iter_mut()
+        .map(|acct| AccountMeta {
+            pubkey: Pubkey::new_from_array(acct.pubkey.to_bytes().clone()),
+            is_signer: acct.is_signer,
+            is_writable: acct.is_writable,
+        })
+        .collect();
+    Instruction::new_with_bytes(
+        Pubkey::new_from_array(ix.program_id.to_bytes()),
+        &ix.data,
+        acct_metas,
+    )
+}
 
 /// P2C account name starts immediately after the 8-byte Anchor discriminator.
 const P2C_NAME_OFFSET: usize = 8;
@@ -199,7 +228,9 @@ fn load_p2c(
     vote: Pubkey,
 ) -> CliResult<(Pubkey, P2CSubscriptionAccount)> {
     let name_bytes = name_to_bytes(name)?;
-    let address = derive_p2c_subscription_address(&program_id, &name_bytes, &vote).0;
+    let address = from_anchor(
+        derive_p2c_subscription_address(&to_anchor(program_id), &name_bytes, &to_anchor(vote)).0,
+    );
     let raw = rpc_client
         .get_account(&address)
         .map_err(|_| format!("P2C account does not exist at {address}"))?;
@@ -228,16 +259,20 @@ fn display_p2c(address: Pubkey, account: &P2CSubscriptionAccount, balance: u64) 
         "Name:",
         name_to_string(&account.name).magenta(),
     );
-    print_field("🔑".red(), "Vote:", account.validator_vote.to_string());
+    print_field(
+        "🔑".red(),
+        "Vote:",
+        from_anchor(account.validator_vote).to_string(),
+    );
     print_field(
         "🔏".magenta(),
         "Manager:",
-        account.manager_authority.to_string(),
+        from_anchor(account.manager_authority).to_string(),
     );
     print_field(
         "🔏".magenta(),
         "Record auth (BR):",
-        account.record_authority.to_string(),
+        from_anchor(account.record_authority).to_string(),
     );
     print_field(
         "📊".cyan(),
@@ -289,7 +324,7 @@ fn process_get_all_accounts(
         P2C_NAME_OFFSET,
         name.to_vec(),
     ))];
-    let accounts = rpc_client.get_program_accounts_with_config(
+    let accounts = rpc_client.get_program_ui_accounts_with_config(
         &program_id,
         RpcProgramAccountsConfig {
             filters: Some(filters),
@@ -308,12 +343,15 @@ fn process_get_all_accounts(
     print_field("📝".cyan(), "Name:", args.name.magenta());
     print_field("📦".cyan(), "Found:", accounts.len().to_string().magenta());
 
-    for (address, raw) in accounts {
-        let mut data = raw.data.as_slice();
-        if let Ok(account) = P2CSubscriptionAccount::try_deserialize(&mut data) {
-            if account.name == name {
+    for (address, ui) in accounts {
+        let Some(account) = ui.to_account() else {
+            continue;
+        };
+        let mut data = account.data.as_slice();
+        if let Ok(p2c) = P2CSubscriptionAccount::try_deserialize(&mut data) {
+            if p2c.name == name {
                 println!();
-                display_p2c(address, &account, raw.lamports);
+                display_p2c(address, &p2c, account.lamports);
             }
         }
     }
@@ -336,17 +374,17 @@ fn process_fund(
         args.account.vote_pubkey,
     )?;
     let funder = parse_keypair(keypair_path)?;
-    let instruction = fund_p2c_subscription_ix(
-        program_id,
+    let instruction = to_solana_instruction(fund_p2c_subscription_ix(
+        to_anchor(program_id),
         FundP2CSubscriptionArgs {
             amount: args.amount,
         },
         FundP2CSubscriptionAccounts {
-            p2c_subscription_account: address,
-            funder: funder.pubkey(),
-            system_program: system_program::ID,
+            p2c_subscription_account: to_anchor(address),
+            funder: to_anchor(funder.pubkey()),
+            system_program: to_anchor(system_program::id()),
         },
-    );
+    ));
     print_heading("P2C Fund Prepaid");
     print_field("🔗".cyan(), "Account:", address.to_string().bold().green());
     print_field(
@@ -370,25 +408,22 @@ fn process_record(
         args.account.vote_pubkey,
     )?;
     let authority = parse_keypair(keypair_path)?;
-    if authority.pubkey() != account.manager_authority {
-        return Err(format!(
-            "keypair is not manager_authority {}",
-            account.manager_authority
-        )
-        .into());
+    let manager = from_anchor(account.manager_authority);
+    if authority.pubkey() != manager {
+        return Err(format!("keypair is not manager_authority {manager}").into());
     }
-    let instruction = record_p2c_subscription_ix(
-        program_id,
+    let instruction = to_solana_instruction(record_p2c_subscription_ix(
+        to_anchor(program_id),
         RecordP2CSubscriptionArgs {
             epoch: args.epoch,
             stake: args.stake,
             amount_due: args.amount_due,
         },
         RecordP2CSubscriptionAccounts {
-            p2c_subscription_account: address,
-            manager_authority: authority.pubkey(),
+            p2c_subscription_account: to_anchor(address),
+            manager_authority: to_anchor(authority.pubkey()),
         },
-    );
+    ));
     print_heading("P2C Record Subscription Charge");
     print_field("🔗".cyan(), "Account:", address.to_string().bold().green());
     print_field("🕒".cyan(), "Epoch:", args.epoch.to_string().blue());
@@ -414,26 +449,23 @@ fn process_claim(
         args.account.vote_pubkey,
     )?;
     let manager = parse_keypair(keypair_path)?;
-    if manager.pubkey() != account.manager_authority {
-        return Err(format!(
-            "keypair is not manager_authority {}",
-            account.manager_authority
-        )
-        .into());
+    let manager_authority = from_anchor(account.manager_authority);
+    if manager.pubkey() != manager_authority {
+        return Err(format!("keypair is not manager_authority {manager_authority}").into());
     }
-    let instruction = claim_epoch_p2c_subscription_ix(
-        program_id,
+    let instruction = to_solana_instruction(claim_epoch_p2c_subscription_ix(
+        to_anchor(program_id),
         ClaimEpochP2CSubscriptionArgs {
             epoch: args.epoch,
             force_claim: args.force_claim,
         },
         ClaimEpochP2CSubscriptionAccounts {
-            p2c_subscription_account: address,
-            commission_account: account.commission_account,
-            validator_identity: args.validator_identity,
-            manager_authority: manager.pubkey(),
+            p2c_subscription_account: to_anchor(address),
+            commission_account: to_anchor(from_anchor(account.commission_account)),
+            validator_identity: to_anchor(args.validator_identity),
+            manager_authority: to_anchor(manager.pubkey()),
         },
-    );
+    ));
     print_heading("P2C Claim Epoch");
     print_field("🔗".cyan(), "Account:", address.to_string().bold().green());
     print_field("🕒".cyan(), "Epoch:", args.epoch.to_string().blue());
@@ -465,17 +497,17 @@ fn process_clear_deficit(
         return Err("amount must be greater than zero".into());
     }
     let funder = parse_keypair(keypair_path)?;
-    let instruction = clear_p2c_deficit_ix(
-        program_id,
+    let instruction = to_solana_instruction(clear_p2c_deficit_ix(
+        to_anchor(program_id),
         ClearP2CDeficitArgs { amount: applied },
         ClearP2CDeficitAccounts {
-            p2c_subscription_account: address,
-            commission_account: account.commission_account,
-            validator_identity: args.validator_identity,
-            funder: funder.pubkey(),
-            system_program: system_program::ID,
+            p2c_subscription_account: to_anchor(address),
+            commission_account: to_anchor(from_anchor(account.commission_account)),
+            validator_identity: to_anchor(args.validator_identity),
+            funder: to_anchor(funder.pubkey()),
+            system_program: to_anchor(system_program::id()),
         },
-    );
+    ));
     print_heading("P2C Clear Deficit");
     print_field("🔗".cyan(), "Account:", address.to_string().bold().green());
     print_field(

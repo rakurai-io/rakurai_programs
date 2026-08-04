@@ -30,7 +30,7 @@ Block-engine URLs are where **transaction-landing services submit bundles**. The
 
 ### 2.2. Post-pack (P2C)
 
-Post-pack URLs are where the scheduler **sends transactions** so consumers can run **arbitrage / backrun** bundles. Updates are generated from the **point of no return** — consumers only see transactions just before they become part of the block, which **prevents front-running**. Product guide: [Post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations).
+Post-pack URLs are where the scheduler **sends transactions** so consumers can run **arbitrage / backrun** bundles. Updates are generated from the **point of no return** — consumers only see transactions just before they become part of the block, which **prevents front-running**. Product guide: [Post-pack confirmations](../../../transaction_inclusion/post_pack_confirmations.md).
 
 This is endpoint config only. Prepaid P2C **subscription SOL** is a [PSA](../reward_distribution/README.md#4-psa--prepaid-fee-to-use-post-pack); backrun **revenue share** is an [MCA](../reward_distribution/README.md#5-mca--sharing-post-pack-backrun-profit).
 

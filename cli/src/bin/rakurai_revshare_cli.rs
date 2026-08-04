@@ -1,5 +1,5 @@
 use {
-    anchor_lang::AccountDeserialize,
+    anchor_lang::{prelude::Pubkey as AnchorPubkey, AccountDeserialize},
     clap::{Args, Parser, Subcommand, ValueEnum},
     colored::{ColoredString, Colorize},
     rakurai_cli::{
@@ -19,20 +19,50 @@ use {
             RevenueShareAccountV1,
         },
     },
+    solana_account::Account,
     solana_account_decoder_client_types::UiAccountEncoding,
+    solana_commitment_config::CommitmentConfig,
+    solana_instruction::{AccountMeta, Instruction},
+    solana_pubkey::Pubkey,
+    solana_rent::Rent,
     solana_rpc_client::rpc_client::RpcClient,
     solana_rpc_client_api::{
         config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
         filter::{Memcmp, RpcFilterType},
     },
-    solana_sdk::{
-        account::Account, commitment_config::CommitmentConfig, instruction::Instruction,
-        pubkey::Pubkey, rent::Rent, signature::Signer, system_instruction, system_program,
-    },
+    solana_signer::Signer,
+    solana_system_interface::{instruction as system_instruction, program as system_program},
     std::{error::Error, sync::Arc},
 };
 
 type CliResult<T = ()> = Result<T, Box<dyn Error>>;
+
+fn to_anchor(pubkey: Pubkey) -> AnchorPubkey {
+    AnchorPubkey::new_from_array(pubkey.as_array().clone())
+}
+
+fn from_anchor(pubkey: AnchorPubkey) -> Pubkey {
+    Pubkey::new_from_array(pubkey.to_bytes())
+}
+
+fn to_solana_instruction(
+    mut ix: anchor_lang::solana_program::instruction::Instruction,
+) -> Instruction {
+    let acct_metas: Vec<AccountMeta> = ix
+        .accounts
+        .iter_mut()
+        .map(|acct| AccountMeta {
+            pubkey: Pubkey::new_from_array(acct.pubkey.to_bytes().clone()),
+            is_signer: acct.is_signer,
+            is_writable: acct.is_writable,
+        })
+        .collect();
+    Instruction::new_with_bytes(
+        Pubkey::new_from_array(ix.program_id.to_bytes()),
+        &ix.data,
+        acct_metas,
+    )
+}
 
 /// Anchor account disc + field layout for revenue share headers.
 const SHARE_KIND_OFFSET: usize = 8;
@@ -269,8 +299,8 @@ impl VaultAccount {
 
     fn record_authority(&self) -> Pubkey {
         match self {
-            Self::Legacy { account, .. } => account.record_authority,
-            Self::V1 { account, .. } => account.record_authority,
+            Self::Legacy { account, .. } => from_anchor(account.record_authority),
+            Self::V1 { account, .. } => from_anchor(account.record_authority),
         }
     }
 
@@ -283,8 +313,8 @@ impl VaultAccount {
 
     fn validator_vote(&self) -> Pubkey {
         match self {
-            Self::Legacy { account, .. } => account.validator_vote,
-            Self::V1 { account, .. } => account.validator_vote,
+            Self::Legacy { account, .. } => from_anchor(account.validator_vote),
+            Self::V1 { account, .. } => from_anchor(account.validator_vote),
         }
     }
 
@@ -535,10 +565,14 @@ fn load_target(
 ) -> CliResult<VaultAccount> {
     let name = name_to_bytes(&target.service.revenue_name)?;
     let kind = target.service.revenue_kind.into();
-    let legacy_address =
-        derive_revenue_share_account_address(&program_id, kind, &name, &target.vote_pubkey).0;
-    let v1_address =
-        derive_revenue_share_account_v1_address(&program_id, kind, &name, &target.vote_pubkey).0;
+    let program_id_anchor = to_anchor(program_id);
+    let vote_pubkey = to_anchor(target.vote_pubkey);
+    let legacy_address = from_anchor(
+        derive_revenue_share_account_address(&program_id_anchor, kind, &name, &vote_pubkey).0,
+    );
+    let v1_address = from_anchor(
+        derive_revenue_share_account_v1_address(&program_id_anchor, kind, &name, &vote_pubkey).0,
+    );
     let mut accounts = rpc_client.get_multiple_accounts(&[legacy_address, v1_address])?;
     let v1 = decode_v1(
         v1_address,
@@ -594,7 +628,7 @@ fn load_service_accounts(
         RpcFilterType::Memcmp(Memcmp::new_raw_bytes(NAME_OFFSET, name.to_vec())),
     ];
 
-    let accounts = rpc_client.get_program_accounts_with_config(
+    let accounts = rpc_client.get_program_ui_accounts_with_config(
         &program_id,
         RpcProgramAccountsConfig {
             filters: Some(filters),
@@ -610,8 +644,12 @@ fn load_service_accounts(
     )?;
 
     let mut vaults = Vec::new();
-    for (address, raw) in accounts {
-        if let Some(vault) = decode_for_version(address, raw, program_id, service.account_version)?
+    for (address, ui) in accounts {
+        let Some(account) = ui.to_account() else {
+            continue;
+        };
+        if let Some(vault) =
+            decode_for_version(address, account, program_id, service.account_version)?
         {
             if vault.share_kind() == kind && vault.revenue_name() == name {
                 vaults.push(vault);
@@ -637,14 +675,14 @@ fn display_account(vault: &VaultAccount, balance: u64) {
         VaultAccount::Legacy { account, .. } => (
             account.share_kind,
             &account.name,
-            account.validator_vote,
-            account.record_authority,
+            from_anchor(account.validator_vote),
+            from_anchor(account.record_authority),
         ),
         VaultAccount::V1 { account, .. } => (
             account.share_kind,
             &account.name,
-            account.validator_vote,
-            account.record_authority,
+            from_anchor(account.validator_vote),
+            from_anchor(account.record_authority),
         ),
     };
 
@@ -1052,24 +1090,25 @@ fn process_record_revenue(
     }
 
     let accounts = RecordRevenueShareAccounts {
-        revenue_share_account: vault.address(),
-        record_authority: authority.pubkey(),
+        revenue_share_account: to_anchor(vault.address()),
+        record_authority: to_anchor(authority.pubkey()),
     };
+    let program_id_anchor = to_anchor(program_id);
     let instruction = match &vault {
-        VaultAccount::Legacy { .. } => record_revenue_ix(
-            program_id,
+        VaultAccount::Legacy { .. } => to_solana_instruction(record_revenue_ix(
+            program_id_anchor,
             RecordRevenueArgs {
                 amount: args.amount,
             },
             accounts,
-        ),
-        VaultAccount::V1 { .. } => record_revenue_v1_ix(
-            program_id,
+        )),
+        VaultAccount::V1 { .. } => to_solana_instruction(record_revenue_v1_ix(
+            program_id_anchor,
             RecordRevenueArgs {
                 amount: args.amount,
             },
             accounts,
-        ),
+        )),
     };
 
     let clock_epoch = rpc_client.get_epoch_info()?.epoch;
@@ -1113,15 +1152,15 @@ fn settle_instruction(
         VaultAccount::Legacy { address, .. } => {
             Ok(system_instruction::transfer(&payer, address, amount))
         }
-        VaultAccount::V1 { address, .. } => Ok(settle_revenue_ix(
-            program_id,
+        VaultAccount::V1 { address, .. } => Ok(to_solana_instruction(settle_revenue_ix(
+            to_anchor(program_id),
             SettleRevenueArgs { epoch, amount },
             SettleRevenueAccounts {
-                revenue_share_account: *address,
-                payer,
-                system_program: system_program::ID,
+                revenue_share_account: to_anchor(*address),
+                payer: to_anchor(payer),
+                system_program: to_anchor(system_program::id()),
             },
-        )),
+        ))),
     }
 }
 
