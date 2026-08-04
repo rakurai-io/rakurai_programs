@@ -12,14 +12,14 @@ Inspect, fund, record, and claim Pack-to-Chain (**P2C**) prepaid subscription es
 
 **Post-pack confirmations** are how the Rakurai scheduler streams transaction updates to external consumers over **gRPC** (Jito packet protocol). Updates are sent from the *point of no return*—just before transactions become part of the block—so consumers can react (e.g. backrun / arbitrage bundles) without front-running earlier in the pipeline.
 
-From the official guide ([Post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations)):
+From the official guide ([Post-pack confirmations](../../transaction_inclusion/post_pack_confirmations.md)):
 
 - The validator forwards scheduled transactions to configured post-pack endpoints.
 - Consumers receive `Packet` / `PacketBatch` messages (`StartExpiringPacketStream`).
 - Consumers send back a **bundle** that includes the original post-pack packet(s) unchanged, plus any additional txs.
 - Endpoint registration is coordinated with the Rakurai team (on-chain config + Admin RPC for operators).
 
-**This CLI (`rakurai-p2c`)** manages the on-chain **PSA** (P2C Subscription Account) — prepaid subscription escrow for that post-pack confirmation **user** (per service name + validator vote).
+**This CLI (`rakurai-p2c`)** manages the on-chain **PSA** (P2C Subscription Account) — prepaid subscription escrow for that Pack-to-Chain / post-pack confirmation **user** (per service name + validator vote).
 
 This is **not** MevShare revenue sharing. Sharing post-pack **backrun / MevShare revenue** uses an **MCA** and [`rakurai-revshare`](./partner_reward_settlement.md). Four revenue models: [Reward Distribution](../programs/reward_distribution/README.md).
 

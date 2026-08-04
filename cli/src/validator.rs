@@ -5,18 +5,23 @@ use {
     colored::*,
     rakurai_client_config::{
         sdk::{
-            name_from_str, union_configs, BlockEngineConfig, BlockEngineEntryV1, BlockEngineV1,
-            Config, ConfigLimits, ConfigV1, P2cConfig, P2cEntryV1, P2cV1, Uuid, ValidatorProposal,
+            name_from_str, pubkey_from_str, union_configs, BlockEngineConfig, BlockEngineEntryV1,
+            BlockEngineV1, Config, ConfigLimits, ConfigV1, P2cConfig, P2cEntryV1, P2cV1, Uuid,
+            ValidatorProposal,
             VirtualPriorityConfig, VirtualPriorityEntryV1, VirtualPriorityV1,
         },
         state::{GlobalConfig, ValidatorConfig},
     },
     solana_rpc_client::rpc_client::RpcClient,
-    solana_sdk::pubkey::Pubkey,
-    std::{fs, path::Path, str::FromStr, sync::Arc},
+    solana_pubkey::Pubkey,
+    std::{fs, path::Path, sync::Arc},
 };
 
 use crate::parse_pubkey;
+
+fn fmt_pubkey(pubkey: anchor_lang::prelude::Pubkey) -> Pubkey {
+    Pubkey::new_from_array(pubkey.to_bytes())
+}
 
 #[derive(serde::Deserialize)]
 struct ConfigFile {
@@ -143,8 +148,7 @@ pub fn load_config_from_file(path: &str) -> Result<Config, Box<dyn std::error::E
                     let mut urls = Vec::with_capacity(e.url.len());
                     for u in e.url {
                         urls.push(VirtualPriorityConfig {
-                            key: Pubkey::from_str(u.key.trim())
-                                .map_err(|_| format!("Invalid pubkey: {}", u.key))?,
+                            key: pubkey_from_str(u.key.trim())?,
                             value: u.value,
                         });
                     }
@@ -227,7 +231,7 @@ pub fn display_global_config(cfg: &GlobalConfig, pda: Pubkey) {
     let used = cfg.try_to_vec().map(|v| v.len()).unwrap_or(0);
     println!("{}", "Global Validator Config".bold().underline().blue());
     println!("   PDA: {pda}");
-    println!("   Manager: {}", cfg.manager);
+    println!("   Manager: {}", fmt_pubkey(cfg.manager));
     display_limits(&cfg.limits);
     println!("   Size: {used} bytes (+ 8 discriminator)");
     display_config_payload(&cfg.config);
@@ -237,9 +241,9 @@ pub fn display_validator_config(cfg: &ValidatorConfig, pda: Pubkey) {
     let used = cfg.try_to_vec().map(|v| v.len()).unwrap_or(0);
     println!("{}", "Validator Config".bold().underline().blue());
     println!("   PDA: {pda}");
-    println!("   Manager: {}", cfg.manager);
-    println!("   Operator: {}", cfg.operator);
-    println!("   Vote: {}", cfg.vote);
+    println!("   Manager: {}", fmt_pubkey(cfg.manager));
+    println!("   Operator: {}", fmt_pubkey(cfg.operator));
+    println!("   Vote: {}", fmt_pubkey(cfg.vote));
     display_limits(&cfg.limits);
     println!("   Size: {used} bytes (+ 8 discriminator)");
     display_config_payload(&cfg.config);
@@ -249,8 +253,8 @@ pub fn display_proposal(cfg: &ValidatorProposal, pda: Pubkey) {
     let used = cfg.try_to_vec().map(|v| v.len()).unwrap_or(0);
     println!("{}", "Validator Proposal (pending)".bold().underline().yellow());
     println!("   PDA: {pda}");
-    println!("   Vote: {}", cfg.vote);
-    println!("   Operator: {}", cfg.operator);
+    println!("   Vote: {}", fmt_pubkey(cfg.vote));
+    println!("   Operator: {}", fmt_pubkey(cfg.operator));
     display_limits(&cfg.limits);
     println!("   Size: {used} bytes (+ 8 discriminator)");
     display_config_payload(&cfg.config);

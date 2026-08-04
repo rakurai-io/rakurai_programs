@@ -3,15 +3,13 @@ use {
     bincode::deserialize,
     colored::*,
     rakurai_activation::state::{RakuraiActivationAccount, RakuraiActivationConfigAccount},
+    solana_instruction::Instruction,
+    solana_keypair::{read_keypair_file, Keypair},
+    solana_message::Message,
+    solana_pubkey::Pubkey,
     solana_rpc_client::rpc_client::RpcClient,
-    solana_sdk::{
-        instruction::Instruction,
-        message::Message,
-        pubkey::Pubkey,
-        signature::Keypair,
-        signer::{EncodableKey, Signer},
-        transaction::Transaction,
-    },
+    solana_signer::Signer,
+    solana_transaction::Transaction,
     std::{
         io::{self, Write},
         path::Path,
@@ -65,7 +63,7 @@ pub fn parse_keypair(path: &str) -> Result<Arc<Keypair>, Box<dyn std::error::Err
         )
         .into());
     }
-    Keypair::read_from_file(path)
+    read_keypair_file(path)
         .map(Arc::new)
         .map_err(|e| format!("Failed to read keypair from file {}: {}", expanded_path, e).into())
 }

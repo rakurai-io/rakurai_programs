@@ -539,9 +539,9 @@ pub fn realloc_account_to_fit<'info>(
             let cpi_ctx = CpiContext::new(system_program.to_account_info(), cpi_accounts);
             anchor_lang::system_program::transfer(cpi_ctx, required)?;
         }
-        account.realloc(new_len, false)?;
+        account.resize(new_len)?;
     } else {
-        account.realloc(new_len, false)?;
+        account.resize(new_len)?;
         let excess = lamports.saturating_sub(new_minimum_balance);
         if excess > 0 {
             **account.try_borrow_mut_lamports()? = account
