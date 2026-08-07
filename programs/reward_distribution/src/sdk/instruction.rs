@@ -1178,3 +1178,356 @@ pub fn close_revenue_share_account_v1_ix(
         .to_account_metas(None),
     }
 }
+
+// ---- P2C subscription ----
+
+pub struct InitializeP2CSubscriptionAccountArgs {
+    pub name: [u8; 32],
+    pub record_authority: Pubkey,
+    pub max_epoch_entries: u8,
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
+    pub grace_epochs: u8,
+    pub bump: u8,
+}
+
+pub struct InitializeP2CSubscriptionAccountAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub config: Pubkey,
+    pub validator_vote_account: Pubkey,
+    pub manager_authority: Pubkey,
+    pub system_program: Pubkey,
+}
+
+pub fn initialize_p2c_subscription_account_ix(
+    program_id: Pubkey,
+    args: InitializeP2CSubscriptionAccountArgs,
+    accounts: InitializeP2CSubscriptionAccountAccounts,
+) -> Instruction {
+    let InitializeP2CSubscriptionAccountArgs {
+        name,
+        record_authority,
+        max_epoch_entries,
+        commission_bps,
+        commission_account,
+        grace_epochs,
+        bump,
+    } = args;
+    let InitializeP2CSubscriptionAccountAccounts {
+        p2c_subscription_account,
+        config,
+        validator_vote_account,
+        manager_authority,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::InitializeP2cSubscriptionAccount {
+            name,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+            grace_epochs,
+            bump,
+        }
+        .data(),
+        accounts: crate::accounts::InitializeP2CSubscriptionAccount {
+            p2c_subscription_account,
+            config,
+            validator_vote_account,
+            manager_authority,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct FundP2CSubscriptionArgs {
+    pub amount: u64,
+}
+
+pub struct FundP2CSubscriptionAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub funder: Pubkey,
+    pub system_program: Pubkey,
+}
+
+pub fn fund_p2c_subscription_ix(
+    program_id: Pubkey,
+    args: FundP2CSubscriptionArgs,
+    accounts: FundP2CSubscriptionAccounts,
+) -> Instruction {
+    let FundP2CSubscriptionArgs { amount } = args;
+    let FundP2CSubscriptionAccounts {
+        p2c_subscription_account,
+        funder,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::FundP2cSubscription { amount }.data(),
+        accounts: crate::accounts::FundP2CSubscription {
+            p2c_subscription_account,
+            funder,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct RecordP2CSubscriptionArgs {
+    pub epoch: u64,
+    pub stake: u64,
+    pub amount_due: u64,
+}
+
+pub struct RecordP2CSubscriptionAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub record_authority: Pubkey,
+}
+
+pub fn record_p2c_subscription_ix(
+    program_id: Pubkey,
+    args: RecordP2CSubscriptionArgs,
+    accounts: RecordP2CSubscriptionAccounts,
+) -> Instruction {
+    let RecordP2CSubscriptionArgs {
+        epoch,
+        stake,
+        amount_due,
+    } = args;
+    let RecordP2CSubscriptionAccounts {
+        p2c_subscription_account,
+        record_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::RecordP2cSubscription {
+            epoch,
+            stake,
+            amount_due,
+        }
+        .data(),
+        accounts: crate::accounts::RecordP2CSubscription {
+            p2c_subscription_account,
+            record_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct DeductP2CSubscriptionArgs {
+    pub epoch: u64,
+}
+
+pub struct DeductP2CSubscriptionAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+pub fn deduct_p2c_subscription_ix(
+    program_id: Pubkey,
+    args: DeductP2CSubscriptionArgs,
+    accounts: DeductP2CSubscriptionAccounts,
+) -> Instruction {
+    let DeductP2CSubscriptionArgs { epoch } = args;
+    let DeductP2CSubscriptionAccounts {
+        p2c_subscription_account,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::DeductP2cSubscription { epoch }.data(),
+        accounts: crate::accounts::DeductP2CSubscription {
+            p2c_subscription_account,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct ClaimP2CSubscriptionArgs {
+    pub epoch: u64,
+}
+
+pub struct ClaimP2CSubscriptionAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub commission_account: Pubkey,
+    pub validator_identity: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+pub fn claim_p2c_subscription_ix(
+    program_id: Pubkey,
+    args: ClaimP2CSubscriptionArgs,
+    accounts: ClaimP2CSubscriptionAccounts,
+) -> Instruction {
+    let ClaimP2CSubscriptionArgs { epoch } = args;
+    let ClaimP2CSubscriptionAccounts {
+        p2c_subscription_account,
+        commission_account,
+        validator_identity,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::ClaimP2cSubscription { epoch }.data(),
+        accounts: crate::accounts::ClaimP2CSubscription {
+            p2c_subscription_account,
+            commission_account,
+            validator_identity,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateP2CEpochConvertedToBlockRewardArgs {
+    pub epoch: u64,
+}
+
+pub struct UpdateP2CEpochConvertedToBlockRewardAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub validator_vote_account: Pubkey,
+    pub signer: Pubkey,
+}
+
+pub fn update_p2c_epoch_converted_to_block_reward_ix(
+    program_id: Pubkey,
+    args: UpdateP2CEpochConvertedToBlockRewardArgs,
+    accounts: UpdateP2CEpochConvertedToBlockRewardAccounts,
+) -> Instruction {
+    let UpdateP2CEpochConvertedToBlockRewardArgs { epoch } = args;
+    let UpdateP2CEpochConvertedToBlockRewardAccounts {
+        p2c_subscription_account,
+        validator_vote_account,
+        signer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateP2cEpochConvertedToBlockReward { epoch }.data(),
+        accounts: crate::accounts::UpdateP2CEpochConvertedToBlockReward {
+            p2c_subscription_account,
+            validator_vote_account,
+            signer,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateP2CSubscriptionConfigArgs {
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
+    pub block_reward_conversion_enabled: bool,
+    pub grace_epochs: Option<u8>,
+    pub record_authority: Option<Pubkey>,
+}
+
+pub struct UpdateP2CSubscriptionConfigAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub config: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+pub fn update_p2c_subscription_config_ix(
+    program_id: Pubkey,
+    args: UpdateP2CSubscriptionConfigArgs,
+    accounts: UpdateP2CSubscriptionConfigAccounts,
+) -> Instruction {
+    let UpdateP2CSubscriptionConfigArgs {
+        commission_bps,
+        commission_account,
+        block_reward_conversion_enabled,
+        grace_epochs,
+        record_authority,
+    } = args;
+    let UpdateP2CSubscriptionConfigAccounts {
+        p2c_subscription_account,
+        config,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateP2cSubscriptionConfig {
+            commission_bps,
+            commission_account,
+            block_reward_conversion_enabled,
+            grace_epochs,
+            record_authority,
+        }
+        .data(),
+        accounts: crate::accounts::UpdateP2CSubscriptionConfig {
+            p2c_subscription_account,
+            config,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateP2CDeficitArgs {
+    pub update: crate::state::DeficitUpdate,
+}
+
+pub struct UpdateP2CDeficitAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+pub fn update_p2c_deficit_ix(
+    program_id: Pubkey,
+    args: UpdateP2CDeficitArgs,
+    accounts: UpdateP2CDeficitAccounts,
+) -> Instruction {
+    let UpdateP2CDeficitArgs { update } = args;
+    let UpdateP2CDeficitAccounts {
+        p2c_subscription_account,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateP2cDeficit { update }.data(),
+        accounts: crate::accounts::UpdateP2CDeficit {
+            p2c_subscription_account,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct CloseP2CSubscriptionAccountAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub initializer: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+pub fn close_p2c_subscription_account_ix(
+    program_id: Pubkey,
+    accounts: CloseP2CSubscriptionAccountAccounts,
+) -> Instruction {
+    let CloseP2CSubscriptionAccountAccounts {
+        p2c_subscription_account,
+        initializer,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::CloseP2cSubscriptionAccount {}.data(),
+        accounts: crate::accounts::CloseP2CSubscriptionAccount {
+            p2c_subscription_account,
+            initializer,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
