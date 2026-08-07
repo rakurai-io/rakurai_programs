@@ -704,11 +704,7 @@ pub mod reward_distribution {
         }
 
         invoke(
-            &system_instruction::transfer(
-                ctx.accounts.payer.key,
-                &revenue_key,
-                amount,
-            ),
+            &system_instruction::transfer(ctx.accounts.payer.key, &revenue_key, amount),
             &[
                 ctx.accounts.payer.to_account_info(),
                 ctx.accounts.revenue_share_account.to_account_info(),
@@ -1315,10 +1311,7 @@ pub mod reward_distribution {
     }
 
     /// Manager adjusts cumulative P2C deficit (manual write-off / admin).
-    pub fn update_p2c_deficit(
-        ctx: Context<UpdateP2CDeficit>,
-        update: DeficitUpdate,
-    ) -> Result<()> {
+    pub fn update_p2c_deficit(ctx: Context<UpdateP2CDeficit>, update: DeficitUpdate) -> Result<()> {
         UpdateP2CDeficit::auth(&ctx)?;
 
         let p2c = &mut ctx.accounts.p2c_subscription_account;
@@ -1392,9 +1385,7 @@ pub mod reward_distribution {
     }
 
     /// Closes P2C escrow; rent + residual to initializer. Manager only.
-    pub fn close_p2c_subscription_account(
-        ctx: Context<CloseP2CSubscriptionAccount>,
-    ) -> Result<()> {
+    pub fn close_p2c_subscription_account(ctx: Context<CloseP2CSubscriptionAccount>) -> Result<()> {
         CloseP2CSubscriptionAccount::auth(&ctx)?;
         Ok(())
     }
@@ -2619,17 +2610,16 @@ pub struct RecordP2CSubscription<'info> {
     #[account(mut)]
     pub p2c_subscription_account: Account<'info, P2CSubscriptionAccount>,
 
-    pub record_authority: Signer<'info>,
+    pub manager_authority: Signer<'info>,
 }
 
 impl RecordP2CSubscription<'_> {
     fn auth(ctx: &Context<RecordP2CSubscription>) -> Result<()> {
         ctx.accounts
             .p2c_subscription_account
-            .auth_record_signer(ctx.accounts.record_authority.key())
+            .auth_manager_signer(ctx.accounts.manager_authority.key())
     }
 }
-
 
 #[derive(Accounts)]
 #[instruction(epoch: u64, force_claim: bool)]
@@ -2774,11 +2764,7 @@ impl CloseP2CSubscriptionAccount<'_> {
         ctx.accounts
             .p2c_subscription_account
             .auth_manager_signer(ctx.accounts.manager_authority.key())?;
-        if ctx
-            .accounts
-            .p2c_subscription_account
-            .has_unclaimed_epochs()
-        {
+        if ctx.accounts.p2c_subscription_account.has_unclaimed_epochs() {
             return Err(ErrorCode::P2CHasUnclaimedEpochs.into());
         }
         Ok(())

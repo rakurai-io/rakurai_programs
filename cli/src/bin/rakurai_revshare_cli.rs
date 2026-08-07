@@ -3,8 +3,8 @@ use {
     clap::{Args, Parser, Subcommand, ValueEnum},
     colored::{ColoredString, Colorize},
     rakurai_cli::{
-        get_node_pubkey_from_vote_account, normalize_to_url_if_moniker, parse_keypair, parse_pubkey,
-        sign_and_send_instructions, sign_and_send_transaction,
+        get_node_pubkey_from_vote_account, normalize_to_url_if_moniker, parse_keypair,
+        parse_pubkey, sign_and_send_instructions, sign_and_send_transaction,
     },
     reward_distribution::{
         sdk::{
@@ -1179,12 +1179,7 @@ fn process_record_revenue(
         return Err("record amount must be greater than zero".into());
     }
 
-    let vault = load_target(
-        &rpc_client,
-        program_id,
-        RevenueKind::MevShare,
-        &args.target,
-    )?;
+    let vault = load_target(&rpc_client, program_id, RevenueKind::MevShare, &args.target)?;
     if vault.share_kind() != RevenueKind::MevShare {
         return Err("loaded vault is not an MCA (Mev-share); refusing record-revenue".into());
     }
@@ -1514,7 +1509,9 @@ fn process_transfer_all(
 
 fn vault_commission(vault: &VaultAccount) -> (Pubkey, u16) {
     match vault {
-        VaultAccount::Legacy { account, .. } => (account.commission_account, account.commission_bps),
+        VaultAccount::Legacy { account, .. } => {
+            (account.commission_account, account.commission_bps)
+        }
         VaultAccount::V1 { account, .. } => (account.commission_account, account.commission_bps),
     }
 }
@@ -1528,9 +1525,7 @@ fn process_clear_deficit(
 ) -> CliResult {
     let vault = load_target(&rpc_client, program_id, kind, &args.target)?;
     let VaultAccount::V1 {
-        address,
-        account,
-        ..
+        address, account, ..
     } = &vault
     else {
         return Err("clear-deficit requires a V1 vault (legacy has no deficit field)".into());
@@ -1548,8 +1543,7 @@ fn process_clear_deficit(
 
     // Need validator identity for claim split — pass as account matching vote's node if not provided.
     // Clear deficit ix requires validator_identity remaining account; look up like identity from vote.
-    let identity =
-        get_node_pubkey_from_vote_account(rpc_client.clone(), account.validator_vote)?;
+    let identity = get_node_pubkey_from_vote_account(rpc_client.clone(), account.validator_vote)?;
 
     let funder = parse_keypair(keypair_path)?;
     let (commission_account, commission_bps) = vault_commission(&vault);
@@ -1679,11 +1673,7 @@ fn display_p2c(address: Pubkey, account: &P2CSubscriptionAccount, balance: u64) 
     for e in &account.ledger.entries {
         println!(
             "      epoch {:>6}: due={} deducted={} claimed={} stake={}",
-            e.epoch,
-            e.amount_due,
-            e.amount_deducted,
-            e.claimed,
-            e.stake
+            e.epoch, e.amount_due, e.amount_deducted, e.claimed, e.stake
         );
     }
 }
@@ -1693,8 +1683,7 @@ fn process_p2c_get_account(
     program_id: Pubkey,
     args: P2cAccountArgs,
 ) -> CliResult {
-    let (address, account) =
-        load_p2c(rpc_client, program_id, &args.name.name, args.vote_pubkey)?;
+    let (address, account) = load_p2c(rpc_client, program_id, &args.name.name, args.vote_pubkey)?;
     let balance = rpc_client.get_balance(&address)?;
     display_p2c(address, &account, balance);
     Ok(())
@@ -1791,10 +1780,10 @@ fn process_p2c_record(
         args.account.vote_pubkey,
     )?;
     let authority = parse_keypair(keypair_path)?;
-    if authority.pubkey() != account.record_authority {
+    if authority.pubkey() != account.manager_authority {
         return Err(format!(
-            "keypair is not record_authority {}",
-            account.record_authority
+            "keypair is not manager_authority {}",
+            account.manager_authority
         )
         .into());
     }
@@ -1807,7 +1796,7 @@ fn process_p2c_record(
         },
         RecordP2CSubscriptionAccounts {
             p2c_subscription_account: address,
-            record_authority: authority.pubkey(),
+            manager_authority: authority.pubkey(),
         },
     );
     print_heading("P2C Record Subscription Charge");
@@ -1927,9 +1916,7 @@ fn dispatch_tip(
 ) -> CliResult {
     let kind = RevenueKind::Tip;
     match cmd {
-        TipCommands::GetAccount(args) => {
-            process_get_account(&rpc_client, program_id, kind, args)
-        }
+        TipCommands::GetAccount(args) => process_get_account(&rpc_client, program_id, kind, args),
         TipCommands::GetAllAccounts(args) => {
             process_get_all_accounts(&rpc_client, program_id, kind, args)
         }
@@ -2021,9 +2008,7 @@ fn main() -> CliResult {
 
     match cli.command {
         Commands::Tip(cmd) => dispatch_tip(rpc_client, cli.program_id, &cli.keypair, cmd),
-        Commands::MevShare(cmd) => {
-            dispatch_mevshare(rpc_client, cli.program_id, &cli.keypair, cmd)
-        }
+        Commands::MevShare(cmd) => dispatch_mevshare(rpc_client, cli.program_id, &cli.keypair, cmd),
         Commands::P2cSubscription(cmd) => {
             dispatch_p2c(rpc_client, cli.program_id, &cli.keypair, cmd)
         }

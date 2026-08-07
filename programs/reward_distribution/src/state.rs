@@ -2,7 +2,7 @@ use crate::ErrorCode::{
     AccountValidationFailure, ArithmeticError, EpochAlreadyClaimed,
     EpochAlreadyConvertedToBlockReward, EpochEntryNotFound, EpochNotClaimed,
     InvalidRevenueEpochCapacity, InvalidRevenueName, MaxCommissionFeeBpsExceeded,
-    RevenueManagerNotConfigured, RevenueLedgerFull,
+    RevenueLedgerFull, RevenueManagerNotConfigured,
 };
 use anchor_lang::prelude::*;
 use std::mem::size_of;
@@ -641,8 +641,12 @@ impl RevenueShareAccount {
     /// Records attributed revenue for an epoch (amount only; legacy semantics).
     pub fn record_revenue(&mut self, epoch: u64, amount: u64) -> Result<()> {
         let capacity = self.max_epoch_entries as usize;
-        self.ledger
-            .add(epoch, amount, capacity, !self.block_reward_conversion_enabled)
+        self.ledger.add(
+            epoch,
+            amount,
+            capacity,
+            !self.block_reward_conversion_enabled,
+        )
     }
 
     /// Marks a claimed epoch entry as converted to block rewards.
@@ -887,8 +891,12 @@ impl RevenueShareAccountV1 {
     /// Non-Rakurai: only updates `amount`; callers must use `settle_revenue` (CPI transfer + credit).
     pub fn record_revenue(&mut self, epoch: u64, amount: u64) -> Result<()> {
         let capacity = self.max_epoch_entries as usize;
-        self.ledger
-            .add(epoch, amount, capacity, !self.block_reward_conversion_enabled)?;
+        self.ledger.add(
+            epoch,
+            amount,
+            capacity,
+            !self.block_reward_conversion_enabled,
+        )?;
 
         if self.share_kind == RevenueKind::Tip && self.name == RAKURAI_REVENUE_NAME {
             let entry = self.ledger.get_mut(epoch)?;
@@ -1151,7 +1159,11 @@ impl RevenueShareAccountV1 {
             )?;
         }
         if validator_amount > 0 {
-            RewardCollectionAccount::transfer_lamports(vault, validator_identity, validator_amount)?;
+            RewardCollectionAccount::transfer_lamports(
+                vault,
+                validator_identity,
+                validator_amount,
+            )?;
         }
 
         *deficit = deficit.saturating_sub(applied);
@@ -1292,7 +1304,9 @@ impl P2CSubscriptionLedger {
         let mut total = 0u64;
         for e in &self.entries {
             if !e.claimed {
-                total = total.checked_add(e.amount_deducted).ok_or(ArithmeticError)?;
+                total = total
+                    .checked_add(e.amount_deducted)
+                    .ok_or(ArithmeticError)?;
             }
         }
         Ok(total)
@@ -1316,11 +1330,7 @@ impl P2CSubscriptionAccount {
     }
 
     /// Free prepaid above rent, less unclaimed reservations (pure; no sysvar).
-    pub fn free_balance_from_parts(
-        lamports: u64,
-        min_rent: u64,
-        reserved_unclaimed: u64,
-    ) -> u64 {
+    pub fn free_balance_from_parts(lamports: u64, min_rent: u64, reserved_unclaimed: u64) -> u64 {
         lamports
             .saturating_sub(min_rent)
             .saturating_sub(reserved_unclaimed)
@@ -1557,8 +1567,7 @@ impl P2CSubscriptionAccount {
             claimed: false,
             block_reward_converted: !self.block_reward_conversion_enabled,
         };
-        self.ledger
-            .insert(entry, self.max_epoch_entries as usize)
+        self.ledger.insert(entry, self.max_epoch_entries as usize)
     }
 
     /// How much more can be paid this call, given free prepaid.
@@ -1655,8 +1664,7 @@ impl P2CSubscriptionAccount {
             return Err(RewardsTooLow.into());
         }
 
-        let (commission_amount, validator_amount) =
-            Self::split_claim_amount(paid, commission_bps)?;
+        let (commission_amount, validator_amount) = Self::split_claim_amount(paid, commission_bps)?;
 
         if commission_amount > 0 {
             RewardCollectionAccount::transfer_lamports(
@@ -1687,13 +1695,7 @@ impl P2CSubscriptionAccount {
         let shortfall = if close { remaining_after } else { 0 };
 
         if close {
-            Self::apply_claim_shortfall(
-                deficit,
-                unpaid_streak,
-                status,
-                grace_epochs,
-                shortfall,
-            )?;
+            Self::apply_claim_shortfall(deficit, unpaid_streak, status, grace_epochs, shortfall)?;
             ledger.mark_claimed(epoch)?;
         }
 
@@ -1923,18 +1925,9 @@ mod tests {
     fn deficit_update_apply_variants() {
         assert_eq!(DeficitUpdate::Set { value: 42 }.apply(7).unwrap(), 42);
         assert_eq!(DeficitUpdate::Clear.apply(100).unwrap(), 0);
-        assert_eq!(
-            DeficitUpdate::Increase { amount: 5 }.apply(10).unwrap(),
-            15
-        );
-        assert_eq!(
-            DeficitUpdate::Decrease { amount: 3 }.apply(10).unwrap(),
-            7
-        );
-        assert_eq!(
-            DeficitUpdate::Decrease { amount: 99 }.apply(10).unwrap(),
-            0
-        );
+        assert_eq!(DeficitUpdate::Increase { amount: 5 }.apply(10).unwrap(), 15);
+        assert_eq!(DeficitUpdate::Decrease { amount: 3 }.apply(10).unwrap(), 7);
+        assert_eq!(DeficitUpdate::Decrease { amount: 99 }.apply(10).unwrap(), 0);
     }
 
     #[test]
@@ -2100,11 +2093,11 @@ mod tests {
 
     #[test]
     fn p2c_resolve_claimable_partial_and_zero() {
+        assert_eq!(P2CSubscriptionAccount::resolve_claimable(100, 40), (40, 60));
         assert_eq!(
-            P2CSubscriptionAccount::resolve_claimable(100, 40),
-            (40, 60)
+            P2CSubscriptionAccount::resolve_claimable(100, 100),
+            (100, 0)
         );
-        assert_eq!(P2CSubscriptionAccount::resolve_claimable(100, 100), (100, 0));
         assert_eq!(P2CSubscriptionAccount::resolve_claimable(50, 0), (0, 50));
         assert_eq!(P2CSubscriptionAccount::resolve_claimable(50, 200), (50, 0));
     }
@@ -2154,12 +2147,16 @@ mod tests {
         name[..3].copy_from_slice(b"abc");
         let vote = Pubkey::new_unique();
         let program = Pubkey::new_unique();
-        let (a, _) =
-            Pubkey::find_program_address(&P2CSubscriptionAccount::pda_seeds(&name, &vote), &program);
+        let (a, _) = Pubkey::find_program_address(
+            &P2CSubscriptionAccount::pda_seeds(&name, &vote),
+            &program,
+        );
         let mut name2 = name;
         name2[0] = b'z';
-        let (b, _) =
-            Pubkey::find_program_address(&P2CSubscriptionAccount::pda_seeds(&name2, &vote), &program);
+        let (b, _) = Pubkey::find_program_address(
+            &P2CSubscriptionAccount::pda_seeds(&name2, &vote),
+            &program,
+        );
         assert_ne!(a, b);
     }
 
@@ -2193,14 +2190,22 @@ mod tests {
         let grace = 2u8;
 
         P2CSubscriptionAccount::apply_claim_shortfall(
-            &mut deficit, &mut streak, &mut status, grace, 0,
+            &mut deficit,
+            &mut streak,
+            &mut status,
+            grace,
+            0,
         )
         .unwrap();
         assert_eq!(streak, 0);
         assert_eq!(status, P2CSubscriptionStatus::Active);
 
         P2CSubscriptionAccount::apply_claim_shortfall(
-            &mut deficit, &mut streak, &mut status, grace, 10,
+            &mut deficit,
+            &mut streak,
+            &mut status,
+            grace,
+            10,
         )
         .unwrap();
         assert_eq!(deficit, 10);
@@ -2208,7 +2213,11 @@ mod tests {
         assert_eq!(status, P2CSubscriptionStatus::InGrace);
 
         P2CSubscriptionAccount::apply_claim_shortfall(
-            &mut deficit, &mut streak, &mut status, grace, 5,
+            &mut deficit,
+            &mut streak,
+            &mut status,
+            grace,
+            5,
         )
         .unwrap();
         assert_eq!(deficit, 15);
@@ -2216,7 +2225,11 @@ mod tests {
         assert_eq!(status, P2CSubscriptionStatus::InGrace);
 
         P2CSubscriptionAccount::apply_claim_shortfall(
-            &mut deficit, &mut streak, &mut status, grace, 1,
+            &mut deficit,
+            &mut streak,
+            &mut status,
+            grace,
+            1,
         )
         .unwrap();
         assert_eq!(streak, 3);
@@ -2224,7 +2237,11 @@ mod tests {
 
         // full pay resets
         P2CSubscriptionAccount::apply_claim_shortfall(
-            &mut deficit, &mut streak, &mut status, grace, 0,
+            &mut deficit,
+            &mut streak,
+            &mut status,
+            grace,
+            0,
         )
         .unwrap();
         assert_eq!(streak, 0);
@@ -2239,7 +2256,10 @@ mod tests {
         let mut status = P2CSubscriptionStatus::Suspended;
 
         let applied = P2CSubscriptionAccount::apply_deficit_cleared(
-            &mut deficit, &mut streak, &mut status, 40,
+            &mut deficit,
+            &mut streak,
+            &mut status,
+            40,
         )
         .unwrap();
         assert_eq!(applied, 40);
@@ -2247,7 +2267,10 @@ mod tests {
         assert_eq!(status, P2CSubscriptionStatus::Suspended);
 
         let applied2 = P2CSubscriptionAccount::apply_deficit_cleared(
-            &mut deficit, &mut streak, &mut status, 1000,
+            &mut deficit,
+            &mut streak,
+            &mut status,
+            1000,
         )
         .unwrap();
         assert_eq!(applied2, 60);
@@ -2262,7 +2285,10 @@ mod tests {
         let mut streak = 0u8;
         let mut status = P2CSubscriptionStatus::Active;
         assert!(P2CSubscriptionAccount::apply_deficit_cleared(
-            &mut deficit, &mut streak, &mut status, 10,
+            &mut deficit,
+            &mut streak,
+            &mut status,
+            10,
         )
         .is_err());
     }

@@ -536,8 +536,7 @@ pub fn transfer_client_commission_on_mev_commission_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::TransferClientCommissionOnMevCommission { mev_rewards }
-            .data(),
+        data: crate::instruction::TransferClientCommissionOnMevCommission { mev_rewards }.data(),
         accounts: crate::accounts::TransferClientCommissionOnMevCommission {
             client_commission_account,
             reward_collection_account,
@@ -1365,7 +1364,7 @@ pub struct RecordP2CSubscriptionArgs {
 
 pub struct RecordP2CSubscriptionAccounts {
     pub p2c_subscription_account: Pubkey,
-    pub record_authority: Pubkey,
+    pub manager_authority: Pubkey,
 }
 
 pub fn record_p2c_subscription_ix(
@@ -1380,7 +1379,7 @@ pub fn record_p2c_subscription_ix(
     } = args;
     let RecordP2CSubscriptionAccounts {
         p2c_subscription_account,
-        record_authority,
+        manager_authority,
     } = accounts;
 
     Instruction {
@@ -1393,7 +1392,7 @@ pub fn record_p2c_subscription_ix(
         .data(),
         accounts: crate::accounts::RecordP2CSubscription {
             p2c_subscription_account,
-            record_authority,
+            manager_authority,
         }
         .to_account_metas(None),
     }
@@ -1427,11 +1426,7 @@ pub fn claim_epoch_p2c_subscription_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::ClaimEpochP2cSubscription {
-            epoch,
-            force_claim,
-        }
-        .data(),
+        data: crate::instruction::ClaimEpochP2cSubscription { epoch, force_claim }.data(),
         accounts: crate::accounts::ClaimEpochP2CSubscription {
             p2c_subscription_account,
             commission_account,
