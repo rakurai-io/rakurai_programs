@@ -42,7 +42,7 @@ Use top-level **`mevshare`** for post-pack MCA settlement (includes `record-reve
   Use when you share **post-pack** revenue. Nothing is recorded during leader turns. After the epoch, **you** must **record** the owed amount once on the MCA, then **transfer** SOL into the MCA.
 
 - **P2C** — top-level `p2c-subscription`  
-  Prepaid subscription escrow: fund, record stake/due, claim epoch (partial/force), clear-deficit.
+  Prepaid subscription escrow: fund (anyone), **record/claim with manager**, claim `--force-claim` for deficit close, clear-deficit.
 
 ### MCA setup (post-pack)
 

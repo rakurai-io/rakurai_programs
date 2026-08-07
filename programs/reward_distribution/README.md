@@ -266,13 +266,13 @@ Prepaid fee escrow for Pack-to-Chain (P2C) billing, keyed as `[P2C_SUBSCRIPTION,
 
 | Step | Instruction | Auth |
 |------|-------------|------|
-| Init | `initialize_p2c_subscription_account` | **manager only** (signs + pays rent) |
+| Init | `initialize_p2c_subscription_account` | **manager** (signs + pays rent); sets `record_authority` arg (storage for BR convert) |
 | Fund | `fund_p2c_subscription` (or system transfer into PDA) | any funder |
-| Record | `record_p2c_subscription` | `record_authority` |
-| Claim | `claim_epoch_p2c_subscription` | manager |
+| Record | `record_p2c_subscription` | **manager** |
+| Claim | `claim_epoch_p2c_subscription` | **manager** |
 | Clear deficit | `clear_p2c_deficit` | any funder (transfer in, program deducts + pays commission/identity) |
-| BR flag | `update_p2c_epoch_converted_to_block_reward` | manager / record / identity |
-| Config / deficit write-off / close | `update_p2c_subscription_config`, `update_p2c_deficit`, `close_p2c_subscription_account` | manager |
+| BR flag | `update_p2c_epoch_converted_to_block_reward` | manager **or** `record_authority` **or** validator identity |
+| Config / deficit write-off / close | `update_p2c_subscription_config`, `update_p2c_deficit`, `close_p2c_subscription_account` | **manager** |
 
 - **Claim**: pays `min(remaining due, free prepaid)` to commission + identity; notes paid in `amount_deducted`.
   - Full pay → marks `claimed`.
@@ -281,3 +281,5 @@ Prepaid fee escrow for Pack-to-Chain (P2C) billing, keyed as `[P2C_SUBSCRIPTION,
 - **Clear deficit**: `clear_p2c_deficit(amount)` — funder transfers; program deducts up to open deficit, splits to commission + validator identity, reduces `deficit`. Clearing to 0 resets grace to `Active`.
 - **Close** requires all ledger epochs claimed; residual SOL + rent → initializer.
 - **Convert-to-block** same post-claim flag as TCA/MCA.
+
+`record_authority` is still stored on the account (set at init / config) for convert-to-block only — it does **not** sign epoch records.

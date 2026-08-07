@@ -154,9 +154,9 @@ enum P2cCommands {
     GetAllAccounts(P2cNameArgs),
     /// Fund prepaid balance (does not clear deficit).
     Fund(P2cFundArgs),
-    /// Record stake + amount due for an epoch.
+    /// Record stake + amount due for an epoch (manager).
     Record(P2cRecordArgs),
-    /// Claim epoch fee from prepaid (partial OK; optional force-close with deficit).
+    /// Claim epoch fee from prepaid (manager; partial OK; optional force-close with deficit).
     Claim(P2cClaimArgs),
     /// Clear open deficit (funder transfers; pays commission + identity).
     ClearDeficit(P2cClearDeficitArgs),
@@ -1642,7 +1642,7 @@ fn display_p2c(address: Pubkey, account: &P2CSubscriptionAccount, balance: u64) 
     );
     print_field(
         "🔏".magenta(),
-        "Record auth:",
+        "Record auth (BR):",
         account.record_authority.to_string(),
     );
     print_field(

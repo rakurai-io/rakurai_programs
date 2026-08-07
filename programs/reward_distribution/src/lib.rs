@@ -1185,7 +1185,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Record stake snapshot and amount due for an epoch (once).
+    /// Record stake snapshot and amount due for an epoch (once). Manager only.
     pub fn record_p2c_subscription(
         ctx: Context<RecordP2CSubscription>,
         epoch: u64,

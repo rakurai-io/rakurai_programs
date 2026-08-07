@@ -1231,9 +1231,10 @@ pub struct P2CSubscriptionAccount {
     pub validator_vote: Pubkey,
     /// Who paid rent; receives residual on close.
     pub initializer: Pubkey,
-    /// Creates (via ix signer), claims, config, close.
+    /// Creates PDA (pays rent), records epoch charges, claims, config, close.
     pub manager_authority: Pubkey,
-    /// Signs `record_p2c_subscription`.
+    /// Optional extra signer for convert-to-block (with manager / validator identity).
+    /// Not used for `record_p2c_subscription` (manager-only).
     pub record_authority: Pubkey,
     pub max_epoch_entries: u8,
     /// e.g. 2000 = 20% to `commission_account` on claim.

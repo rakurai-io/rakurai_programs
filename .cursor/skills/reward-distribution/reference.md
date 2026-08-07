@@ -47,6 +47,24 @@ Source: `programs/reward_distribution/src/` (v0.3.0).
 
 ---
 
+## P2C subscription escrow
+
+PDA: `[P2C_SUBSCRIPTION, name[32], vote]`. Manager-only create/operations for ledger; anyone can fund.
+
+| Instruction | Signer | Notes |
+|-------------|--------|-------|
+| initialize_p2c_subscription_account | manager_authority | Pays rent; stores `record_authority` for BR convert |
+| fund_p2c_subscription | any funder | Or plain SOL transfer into PDA |
+| record_p2c_subscription | **manager_authority** | Upload epoch stake + amount_due |
+| claim_epoch_p2c_subscription | **manager_authority** | Pay `min(remaining, free)`; `force_claim` closes with deficit |
+| clear_p2c_deficit | any funder | Transfer + pay commission/identity against deficit |
+| update_p2c_epoch_converted_to_block_reward | manager **or** record_authority **or** vote identity | Post-claim only |
+| update_p2c_subscription_config / update_p2c_deficit / close | manager_authority | Close blocked if unclaimed epochs |
+
+`record_authority` does **not** sign epoch records — only convert-to-block (optional path).
+
+---
+
 ## SDK derives
 
 - `derive_revenue_share_account_address` / `derive_tip_collection_account_address` → legacy
