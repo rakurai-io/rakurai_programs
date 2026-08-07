@@ -21,8 +21,7 @@ After the epoch ends, the usual flow is:
 rakurai-revshare \
   --url <RPC_URL> \
   --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
-  get-all-accounts \
-  --revenue-kind Tip \
+  tip get-all-accounts \
   --revenue-name <REVENUE_NAME>
 
 # 2. Settle everything pending (dry-run first if you like)
@@ -30,18 +29,20 @@ rakurai-revshare \
   --url <RPC_URL> \
   --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
   --keypair <PARTNER_PAYER_KEYPAIR> \
-  transfer-all \
-  --revenue-kind Tip \
+  tip transfer-all \
   --revenue-name <REVENUE_NAME>
 ```
 
-Swap `--revenue-kind` to `Mev-share` for post-pack MCA settlement. **MCA** also needs `record-revenue` per validator/epoch before `transfer-all`. For flags, dry-run, batch size, single-vault transfer, and other details, see the [Commands](#3-commands) subcommands below.
+Use top-level **`mevshare`** for post-pack MCA settlement (includes `record-revenue`). Use **`p2c-subscription`** for P2C prepaid escrow. **MCA** needs `record-revenue` per validator/epoch before `transfer-all`. For flags, dry-run, batch size, single-vault transfer, and other details, see the [Commands](#3-commands) subcommands below.
 
-- **TCA (Tips Collection Account)** — `--revenue-kind Tip`  
+- **TCA** — top-level `tip`  
   Use when you run a **custom tip account**. Tips land in your account; the **validator records** the owed share in the TCA each leader turn. After the epoch, you only **transfer** that amount into the TCA.
 
-- **MCA (MevShare Collection Account)** — `--revenue-kind Mev-share`  
+- **MCA** — top-level `mevshare`  
   Use when you share **post-pack** revenue. Nothing is recorded during leader turns. After the epoch, **you** must **record** the owed amount once on the MCA, then **transfer** SOL into the MCA.
+
+- **P2C** — top-level `p2c-subscription`  
+  Prepaid subscription escrow: fund, record stake/due, deduct, claim, clear-deficit.
 
 ### MCA setup (post-pack)
 

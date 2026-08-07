@@ -3,20 +3,27 @@ use {
     clap::{Args, Parser, Subcommand, ValueEnum},
     colored::{ColoredString, Colorize},
     rakurai_cli::{
-        normalize_to_url_if_moniker, parse_keypair, parse_pubkey, sign_and_send_instructions,
-        sign_and_send_transaction,
+        get_node_pubkey_from_vote_account, normalize_to_url_if_moniker, parse_keypair, parse_pubkey,
+        sign_and_send_instructions, sign_and_send_transaction,
     },
     reward_distribution::{
         sdk::{
-            derive_revenue_share_account_address, derive_revenue_share_account_v1_address,
+            derive_p2c_subscription_address, derive_revenue_share_account_address,
+            derive_revenue_share_account_v1_address,
             instruction::{
-                record_revenue_ix, record_revenue_v1_ix, settle_revenue_ix, RecordRevenueArgs,
+                claim_p2c_subscription_ix, clear_deficit_v1_ix, clear_p2c_deficit_ix,
+                deduct_p2c_subscription_ix, fund_p2c_subscription_ix, record_p2c_subscription_ix,
+                record_revenue_ix, record_revenue_v1_ix, settle_revenue_ix, ClaimP2CSubscriptionArgs,
+                ClaimP2CSubscriptionAccounts, ClearDeficitV1Accounts, ClearDeficitV1Args,
+                ClearP2CDeficitAccounts, ClearP2CDeficitArgs, DeductP2CSubscriptionAccounts,
+                DeductP2CSubscriptionArgs, FundP2CSubscriptionAccounts, FundP2CSubscriptionArgs,
+                RecordP2CSubscriptionAccounts, RecordP2CSubscriptionArgs, RecordRevenueArgs,
                 RecordRevenueShareAccounts, SettleRevenueAccounts, SettleRevenueArgs,
             },
         },
         state::{
-            EpochAmountEntry, EpochAmountEntryV1, RevenueKind, RevenueShareAccount,
-            RevenueShareAccountV1,
+            EpochAmountEntry, EpochAmountEntryV1, P2CSubscriptionAccount, P2CSubscriptionStatus,
+            RevenueKind, RevenueShareAccount, RevenueShareAccountV1,
         },
     },
     solana_account_decoder_client_types::UiAccountEncoding,
@@ -44,7 +51,7 @@ const DEFAULT_TRANSFER_ALL_BATCH_SIZE: usize = 10;
 #[command(
     author,
     version,
-    about = "Partner Tip and MevShare Revenue Settlement CLI for TCA/MCA vaults",
+    about = "Partner Tip, MevShare, and P2C subscription CLI for Reward Distribution vaults",
     arg_required_else_help = true,
     color = clap::ColorChoice::Always
 )]
@@ -52,7 +59,7 @@ struct Cli {
     #[command(subcommand)]
     command: Commands,
 
-    /// Path to the Solana keypair used as transfer payer.
+    /// Path to the Solana keypair used as transfer payer / authority.
     #[arg(short, long, global = true, default_value = "~/.config/solana/id.json")]
     keypair: String,
 
@@ -77,38 +84,79 @@ struct Cli {
     program_id: Pubkey,
 }
 
+/// Top-level product groups (TCA tip / MCA mevshare / P2C subscription).
 #[derive(Subcommand)]
 enum Commands {
-    /// Fetch and display one TCA or MCA (requires vote pubkey).
+    /// Custom tip vaults (TCA) — kind Tip is fixed; no record-revenue.
+    #[command(subcommand)]
+    Tip(TipCommands),
+
+    /// Post-pack MevShare vaults (MCA).
+    #[command(name = "mevshare", alias = "mev-share", subcommand)]
+    MevShare(MevShareCommands),
+
+    /// P2C prepaid subscription escrow.
+    #[command(name = "p2c-subscription", aliases = ["p2c", "p2cSubscription"], subcommand)]
+    P2cSubscription(P2cCommands),
+}
+
+/// Shared TCA tip subcommands (settlement + inspect).
+#[derive(Subcommand)]
+enum TipCommands {
+    /// Fetch and display one TCA for a validator.
     GetAccount(AccountArgs),
-    /// List every TCA or MCA for a service (`--revenue-kind` + `--revenue-name`).
+    /// List every TCA for a service name.
     GetAllAccounts(GetAllAccountsArgs),
     /// Show the unclaimed/unsettled record for one epoch.
     GetPendingRecord(PendingRecordArgs),
-    /// Show every epoch record that still has an amount pending settlement.
+    /// Show every epoch record that still needs settle.
     GetAllPendingRecords(AccountArgs),
-    /// Record MCA MevShare revenue for the current epoch (post-pack partners).
-    RecordRevenue(RecordRevenueCliArgs),
-    /// Transfer SOL into a vault for one recorded epoch.
+    /// Transfer SOL into a TCA for one recorded epoch.
     Transfer(TransferArgs),
-    /// Settle all pending epochs for every vault matching this service.
+    /// Settle all pending epochs for every matching TCA.
     TransferAll(TransferAllArgs),
+    /// Clear open V1 vault deficit (funder transfers; pays commission + identity).
+    ClearDeficit(ClearDeficitArgs),
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
-enum ShareKindArg {
-    Tip,
-    #[value(name = "Mev-share", aliases = ["mev-share", "MevShare"])]
-    MevShare,
+/// MCA mevshare subcommands (tip set + record-revenue).
+#[derive(Subcommand)]
+enum MevShareCommands {
+    /// Fetch and display one MCA for a validator.
+    GetAccount(AccountArgs),
+    /// List every MCA for a service name.
+    GetAllAccounts(GetAllAccountsArgs),
+    /// Show the unclaimed/unsettled record for one epoch.
+    GetPendingRecord(PendingRecordArgs),
+    /// Show every epoch record that still needs settle.
+    GetAllPendingRecords(AccountArgs),
+    /// Record MevShare revenue for the current epoch (MCA record authority).
+    RecordRevenue(RecordRevenueCliArgs),
+    /// Transfer SOL into an MCA for one recorded epoch.
+    Transfer(TransferArgs),
+    /// Settle all pending epochs for every matching MCA.
+    TransferAll(TransferAllArgs),
+    /// Clear open V1 vault deficit (funder transfers; pays commission + identity).
+    ClearDeficit(ClearDeficitArgs),
 }
 
-impl From<ShareKindArg> for RevenueKind {
-    fn from(value: ShareKindArg) -> Self {
-        match value {
-            ShareKindArg::Tip => RevenueKind::Tip,
-            ShareKindArg::MevShare => RevenueKind::MevShare,
-        }
-    }
+/// P2C subscription escrow subcommands.
+#[derive(Subcommand)]
+enum P2cCommands {
+    /// Fetch and display one P2C subscription escrow.
+    GetAccount(P2cAccountArgs),
+    /// List every P2C account for a service name.
+    GetAllAccounts(P2cNameArgs),
+    /// Fund prepaid balance (does not clear deficit).
+    Fund(P2cFundArgs),
+    /// Record stake + amount due for an epoch.
+    Record(P2cRecordArgs),
+    /// Partial-deduct free prepaid into an epoch entry.
+    Deduct(P2cEpochArgs),
+    /// Claim deducted amount after epoch ends (manager).
+    Claim(P2cClaimArgs),
+    /// Clear open deficit (funder transfers; pays commission + identity).
+    ClearDeficit(P2cClearDeficitArgs),
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
@@ -121,17 +169,14 @@ enum AccountVersion {
     V1,
 }
 
+/// Service name + vault layout (kind comes from `tip` / `mevshare` parent).
 #[derive(Args, Clone)]
 struct ServiceArgs {
-    /// TCA (`Tip`) or MCA (`Mev-share`).
-    #[arg(long = "revenue-kind", value_enum, required = true)]
-    revenue_kind: ShareKindArg,
-
-    /// Service revenue name (unique id assigned by Rakurai; PDA seed).
+    /// Service name (unique id assigned by Rakurai; PDA seed).
     #[arg(long = "revenue-name", required = true)]
     revenue_name: String,
 
-    /// Select the PDA layout. Defaults to auto (include both layouts when listing).
+    /// Select the PDA layout. Defaults to auto (prefer V1).
     #[arg(
         long = "account-version",
         alias = "vault-version",
@@ -215,6 +260,98 @@ struct TransferAllArgs {
     batch_size: usize,
 
     /// Preview pending settlements without sending transactions.
+    #[arg(long, default_value_t = false)]
+    dry_run: bool,
+}
+
+#[derive(Args)]
+struct ClearDeficitArgs {
+    #[command(flatten)]
+    target: TargetArgs,
+
+    /// Lamports to apply toward deficit. Defaults to full open deficit.
+    #[arg(short = 'x', long)]
+    amount: Option<u64>,
+
+    #[arg(long, default_value_t = false)]
+    dry_run: bool,
+}
+
+#[derive(Args)]
+struct P2cNameArgs {
+    /// P2C service name (PDA seed).
+    #[arg(long = "name", alias = "revenue-name", required = true)]
+    name: String,
+}
+
+#[derive(Args)]
+struct P2cAccountArgs {
+    #[command(flatten)]
+    name: P2cNameArgs,
+
+    #[arg(short = 'v', long = "vote-pubkey", required = true, value_parser = parse_pubkey)]
+    vote_pubkey: Pubkey,
+}
+
+#[derive(Args)]
+struct P2cFundArgs {
+    #[command(flatten)]
+    account: P2cAccountArgs,
+
+    #[arg(short = 'x', long, required = true)]
+    amount: u64,
+}
+
+#[derive(Args)]
+struct P2cRecordArgs {
+    #[command(flatten)]
+    account: P2cAccountArgs,
+
+    #[arg(short, long, required = true)]
+    epoch: u64,
+
+    /// Off-chain stake snapshot for this epoch.
+    #[arg(long, required = true)]
+    stake: u64,
+
+    /// Fee due for the epoch (lamports).
+    #[arg(short = 'x', long = "amount-due", required = true)]
+    amount_due: u64,
+}
+
+#[derive(Args)]
+struct P2cEpochArgs {
+    #[command(flatten)]
+    account: P2cAccountArgs,
+
+    #[arg(short, long, required = true)]
+    epoch: u64,
+}
+
+#[derive(Args)]
+struct P2cClaimArgs {
+    #[command(flatten)]
+    account: P2cAccountArgs,
+
+    #[arg(short, long, required = true)]
+    epoch: u64,
+
+    /// Validator identity receiving the non-commission share.
+    #[arg(long = "validator-identity", required = true, value_parser = parse_pubkey)]
+    validator_identity: Pubkey,
+}
+
+#[derive(Args)]
+struct P2cClearDeficitArgs {
+    #[command(flatten)]
+    account: P2cAccountArgs,
+
+    #[arg(short = 'x', long)]
+    amount: Option<u64>,
+
+    #[arg(long = "validator-identity", required = true, value_parser = parse_pubkey)]
+    validator_identity: Pubkey,
+
     #[arg(long, default_value_t = false)]
     dry_run: bool,
 }
@@ -531,10 +668,10 @@ fn decode_for_version(
 fn load_target(
     rpc_client: &RpcClient,
     program_id: Pubkey,
+    kind: RevenueKind,
     target: &TargetArgs,
 ) -> CliResult<VaultAccount> {
     let name = name_to_bytes(&target.service.revenue_name)?;
-    let kind = target.service.revenue_kind.into();
     let legacy_address =
         derive_revenue_share_account_address(&program_id, kind, &name, &target.vote_pubkey).0;
     let v1_address =
@@ -582,10 +719,10 @@ fn share_kind_byte(kind: RevenueKind) -> u8 {
 fn load_service_accounts(
     rpc_client: &RpcClient,
     program_id: Pubkey,
+    kind: RevenueKind,
     service: &ServiceArgs,
 ) -> CliResult<Vec<VaultAccount>> {
     let name = name_to_bytes(&service.revenue_name)?;
-    let kind: RevenueKind = service.revenue_kind.into();
     let filters = vec![
         RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
             SHARE_KIND_OFFSET,
@@ -901,8 +1038,13 @@ fn print_pending_pivot_table(by_vote: &PendingByVote, epochs: &[u64], grand_tota
     println!();
 }
 
-fn process_get_account(rpc_client: &RpcClient, program_id: Pubkey, args: AccountArgs) -> CliResult {
-    let vault = load_target(rpc_client, program_id, &args.target)?;
+fn process_get_account(
+    rpc_client: &RpcClient,
+    program_id: Pubkey,
+    kind: RevenueKind,
+    args: AccountArgs,
+) -> CliResult {
+    let vault = load_target(rpc_client, program_id, kind, &args.target)?;
     let balance = rpc_client.get_balance(&vault.address())?;
     display_account(&vault, balance);
     Ok(())
@@ -911,10 +1053,10 @@ fn process_get_account(rpc_client: &RpcClient, program_id: Pubkey, args: Account
 fn process_get_all_accounts(
     rpc_client: &RpcClient,
     program_id: Pubkey,
+    kind: RevenueKind,
     args: GetAllAccountsArgs,
 ) -> CliResult {
-    let vaults = load_service_accounts(rpc_client, program_id, &args.service)?;
-    let kind: RevenueKind = args.service.revenue_kind.into();
+    let vaults = load_service_accounts(rpc_client, program_id, kind, &args.service)?;
 
     print_heading("Service Revenue Accounts");
     print_field("📝".cyan(), "Type:", kind_name(kind).magenta());
@@ -924,7 +1066,7 @@ fn process_get_all_accounts(
     if vaults.is_empty() {
         println!(
             "\n   {}",
-            "No TCA/MCA found for this revenue-kind + revenue-name.".yellow()
+            "No vaults found for this product + revenue-name.".yellow()
         );
         return Ok(());
     }
@@ -987,9 +1129,10 @@ fn process_get_all_accounts(
 fn process_get_pending(
     rpc_client: &RpcClient,
     program_id: Pubkey,
+    kind: RevenueKind,
     args: PendingRecordArgs,
 ) -> CliResult {
-    let vault = load_target(rpc_client, program_id, &args.target)?;
+    let vault = load_target(rpc_client, program_id, kind, &args.target)?;
     let pending = vault.pending(args.epoch)?;
     display_pending(&vault, args.epoch, &pending);
     Ok(())
@@ -998,9 +1141,10 @@ fn process_get_pending(
 fn process_get_all_pending(
     rpc_client: &RpcClient,
     program_id: Pubkey,
+    kind: RevenueKind,
     args: AccountArgs,
 ) -> CliResult {
-    let vault = load_target(rpc_client, program_id, &args.target)?;
+    let vault = load_target(rpc_client, program_id, kind, &args.target)?;
     let records = vault.all_pending();
 
     print_heading("Pending Revenue Records");
@@ -1024,18 +1168,16 @@ fn process_record_revenue(
     keypair_path: &str,
     args: RecordRevenueCliArgs,
 ) -> CliResult {
-    if args.target.service.revenue_kind != ShareKindArg::MevShare {
-        return Err(
-            "record-revenue is for MCA post-pack partners only; use --revenue-kind Mev-share. \
-             TCA tip amounts are recorded by the validator during leader turns."
-                .into(),
-        );
-    }
     if args.amount == 0 {
         return Err("record amount must be greater than zero".into());
     }
 
-    let vault = load_target(&rpc_client, program_id, &args.target)?;
+    let vault = load_target(
+        &rpc_client,
+        program_id,
+        RevenueKind::MevShare,
+        &args.target,
+    )?;
     if vault.share_kind() != RevenueKind::MevShare {
         return Err("loaded vault is not an MCA (Mev-share); refusing record-revenue".into());
     }
@@ -1129,9 +1271,10 @@ fn process_transfer(
     rpc_client: Arc<RpcClient>,
     program_id: Pubkey,
     keypair_path: &str,
+    kind: RevenueKind,
     args: TransferArgs,
 ) -> CliResult {
-    let vault = load_target(&rpc_client, program_id, &args.target)?;
+    let vault = load_target(&rpc_client, program_id, kind, &args.target)?;
     let pending = vault.pending(args.epoch)?;
     if pending.claimed {
         return Err(format!("epoch {} is already claimed", args.epoch).into());
@@ -1193,15 +1336,15 @@ fn process_transfer_all(
     rpc_client: Arc<RpcClient>,
     program_id: Pubkey,
     keypair_path: &str,
+    kind: RevenueKind,
     args: TransferAllArgs,
 ) -> CliResult {
     if args.batch_size == 0 {
         return Err("--batch-size must be at least 1".into());
     }
 
-    let vaults = load_service_accounts(&rpc_client, program_id, &args.service)?;
+    let vaults = load_service_accounts(&rpc_client, program_id, kind, &args.service)?;
     let payer = parse_keypair(keypair_path)?;
-    let kind: RevenueKind = args.service.revenue_kind.into();
 
     let mut jobs = Vec::new();
     for vault in &vaults {
@@ -1264,7 +1407,6 @@ fn process_transfer_all(
             "Sending batch of {} settlement(s)",
             instructions.len()
         ));
-        // Preview this batch briefly (vote + epoch).
         for job in chunk {
             println!(
                 "   {}  {}  epoch {:>6}  {} lamports",
@@ -1286,6 +1428,527 @@ fn process_transfer_all(
     Ok(())
 }
 
+fn vault_commission(vault: &VaultAccount) -> (Pubkey, u16) {
+    match vault {
+        VaultAccount::Legacy { account, .. } => (account.commission_account, account.commission_bps),
+        VaultAccount::V1 { account, .. } => (account.commission_account, account.commission_bps),
+    }
+}
+
+fn process_clear_deficit(
+    rpc_client: Arc<RpcClient>,
+    program_id: Pubkey,
+    keypair_path: &str,
+    kind: RevenueKind,
+    args: ClearDeficitArgs,
+) -> CliResult {
+    let vault = load_target(&rpc_client, program_id, kind, &args.target)?;
+    let VaultAccount::V1 {
+        address,
+        account,
+        ..
+    } = &vault
+    else {
+        return Err("clear-deficit requires a V1 vault (legacy has no deficit field)".into());
+    };
+
+    let open = account.deficit;
+    if open == 0 {
+        return Err("vault has no open deficit".into());
+    }
+    let amount = args.amount.unwrap_or(open);
+    if amount == 0 {
+        return Err("amount must be greater than zero".into());
+    }
+    let applied = amount.min(open);
+
+    // Need validator identity for claim split — pass as account matching vote's node if not provided.
+    // Clear deficit ix requires validator_identity remaining account; look up like identity from vote.
+    let identity =
+        get_node_pubkey_from_vote_account(rpc_client.clone(), account.validator_vote)?;
+
+    let funder = parse_keypair(keypair_path)?;
+    let (commission_account, commission_bps) = vault_commission(&vault);
+    let instruction = clear_deficit_v1_ix(
+        program_id,
+        ClearDeficitV1Args { amount: applied },
+        ClearDeficitV1Accounts {
+            revenue_share_account: *address,
+            commission_account,
+            validator_identity: identity,
+            funder: funder.pubkey(),
+            system_program: system_program::ID,
+        },
+    );
+
+    print_heading("Clear Revenue-Share V1 Deficit");
+    print_field("🔗".cyan(), "Vault:", address.to_string().bold().green());
+    print_field(
+        "💰".yellow(),
+        "Open deficit:",
+        format_total_with_sol(open).yellow(),
+    );
+    print_field(
+        "💰".green(),
+        "Clear amount:",
+        format_total_with_sol(applied).yellow(),
+    );
+    print_field(
+        "📝".cyan(),
+        "Commission bps:",
+        commission_bps.to_string().magenta(),
+    );
+    print_field(
+        "🔏".magenta(),
+        "Commission acct:",
+        commission_account.to_string(),
+    );
+    print_field("🔑".red(), "Identity:", identity.to_string());
+    print_field("🔑".red(), "Funder:", funder.pubkey().to_string());
+    if args.dry_run {
+        println!(
+            "\n   {}",
+            "Dry run only — no transaction was sent.".yellow()
+        );
+        return Ok(());
+    }
+    sign_and_send_transaction(rpc_client, instruction, &funder)
+}
+
+// ---- P2C subscription helpers ----
+
+/// P2C account name starts immediately after the 8-byte Anchor discriminator.
+const P2C_NAME_OFFSET: usize = 8;
+
+fn load_p2c(
+    rpc_client: &RpcClient,
+    program_id: Pubkey,
+    name: &str,
+    vote: Pubkey,
+) -> CliResult<(Pubkey, P2CSubscriptionAccount)> {
+    let name_bytes = name_to_bytes(name)?;
+    let address = derive_p2c_subscription_address(&program_id, &name_bytes, &vote).0;
+    let raw = rpc_client
+        .get_account(&address)
+        .map_err(|_| format!("P2C account does not exist at {address}"))?;
+    if raw.owner != program_id {
+        return Err(format!("account {address} owner mismatch").into());
+    }
+    let mut data = raw.data.as_slice();
+    let account = P2CSubscriptionAccount::try_deserialize(&mut data)
+        .map_err(|e| format!("failed to deserialize P2C account: {e}"))?;
+    Ok((address, account))
+}
+
+fn status_name(s: P2CSubscriptionStatus) -> &'static str {
+    match s {
+        P2CSubscriptionStatus::Active => "Active",
+        P2CSubscriptionStatus::InGrace => "InGrace",
+        P2CSubscriptionStatus::Suspended => "Suspended",
+    }
+}
+
+fn display_p2c(address: Pubkey, account: &P2CSubscriptionAccount, balance: u64) {
+    print_heading("P2C Subscription Escrow");
+    print_field("🔗".cyan(), "Pubkey:", address.to_string().bold().green());
+    print_field(
+        "📝".cyan(),
+        "Name:",
+        name_to_string(&account.name).magenta(),
+    );
+    print_field("🔑".red(), "Vote:", account.validator_vote.to_string());
+    print_field(
+        "🔏".magenta(),
+        "Manager:",
+        account.manager_authority.to_string(),
+    );
+    print_field(
+        "🔏".magenta(),
+        "Record auth:",
+        account.record_authority.to_string(),
+    );
+    print_field(
+        "📊".cyan(),
+        "Status:",
+        status_name(account.status).magenta(),
+    );
+    print_field(
+        "💰".yellow(),
+        "Deficit:",
+        format_total_with_sol(account.deficit).yellow(),
+    );
+    print_field(
+        "📝".cyan(),
+        "Commission bps:",
+        account.commission_bps.to_string().blue(),
+    );
+    print_field(
+        "💰".green(),
+        "Balance:",
+        format_total_with_sol(balance).yellow(),
+    );
+    print_field(
+        "📦".cyan(),
+        "Ledger epochs:",
+        account.ledger.entries.len().to_string().blue(),
+    );
+    for e in &account.ledger.entries {
+        println!(
+            "      epoch {:>6}: due={} deducted={} claimed={} stake={}",
+            e.epoch,
+            e.amount_due,
+            e.amount_deducted,
+            e.claimed,
+            e.stake
+        );
+    }
+}
+
+fn process_p2c_get_account(
+    rpc_client: &RpcClient,
+    program_id: Pubkey,
+    args: P2cAccountArgs,
+) -> CliResult {
+    let (address, account) =
+        load_p2c(rpc_client, program_id, &args.name.name, args.vote_pubkey)?;
+    let balance = rpc_client.get_balance(&address)?;
+    display_p2c(address, &account, balance);
+    Ok(())
+}
+
+fn process_p2c_get_all_accounts(
+    rpc_client: &RpcClient,
+    program_id: Pubkey,
+    args: P2cNameArgs,
+) -> CliResult {
+    let name = name_to_bytes(&args.name)?;
+    let filters = vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+        P2C_NAME_OFFSET,
+        name.to_vec(),
+    ))];
+    let accounts = rpc_client.get_program_accounts_with_config(
+        &program_id,
+        RpcProgramAccountsConfig {
+            filters: Some(filters),
+            account_config: RpcAccountInfoConfig {
+                encoding: Some(UiAccountEncoding::Base64),
+                data_slice: None,
+                commitment: Some(CommitmentConfig::confirmed()),
+                min_context_slot: None,
+            },
+            with_context: None,
+            sort_results: None,
+        },
+    )?;
+
+    print_heading("P2C Subscription Accounts");
+    print_field("📝".cyan(), "Name:", args.name.magenta());
+    print_field("📦".cyan(), "Found:", accounts.len().to_string().magenta());
+
+    for (address, raw) in accounts {
+        let mut data = raw.data.as_slice();
+        if let Ok(account) = P2CSubscriptionAccount::try_deserialize(&mut data) {
+            if account.name == name {
+                println!();
+                display_p2c(address, &account, raw.lamports);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn process_p2c_fund(
+    rpc_client: Arc<RpcClient>,
+    program_id: Pubkey,
+    keypair_path: &str,
+    args: P2cFundArgs,
+) -> CliResult {
+    if args.amount == 0 {
+        return Err("amount must be greater than zero".into());
+    }
+    let (address, _) = load_p2c(
+        &rpc_client,
+        program_id,
+        &args.account.name.name,
+        args.account.vote_pubkey,
+    )?;
+    let funder = parse_keypair(keypair_path)?;
+    let instruction = fund_p2c_subscription_ix(
+        program_id,
+        FundP2CSubscriptionArgs {
+            amount: args.amount,
+        },
+        FundP2CSubscriptionAccounts {
+            p2c_subscription_account: address,
+            funder: funder.pubkey(),
+            system_program: system_program::ID,
+        },
+    );
+    print_heading("P2C Fund Prepaid");
+    print_field("🔗".cyan(), "Account:", address.to_string().bold().green());
+    print_field(
+        "💰".green(),
+        "Amount:",
+        format_total_with_sol(args.amount).yellow(),
+    );
+    sign_and_send_transaction(rpc_client, instruction, &funder)
+}
+
+fn process_p2c_record(
+    rpc_client: Arc<RpcClient>,
+    program_id: Pubkey,
+    keypair_path: &str,
+    args: P2cRecordArgs,
+) -> CliResult {
+    let (address, account) = load_p2c(
+        &rpc_client,
+        program_id,
+        &args.account.name.name,
+        args.account.vote_pubkey,
+    )?;
+    let authority = parse_keypair(keypair_path)?;
+    if authority.pubkey() != account.record_authority {
+        return Err(format!(
+            "keypair is not record_authority {}",
+            account.record_authority
+        )
+        .into());
+    }
+    let instruction = record_p2c_subscription_ix(
+        program_id,
+        RecordP2CSubscriptionArgs {
+            epoch: args.epoch,
+            stake: args.stake,
+            amount_due: args.amount_due,
+        },
+        RecordP2CSubscriptionAccounts {
+            p2c_subscription_account: address,
+            record_authority: authority.pubkey(),
+        },
+    );
+    print_heading("P2C Record Subscription Charge");
+    print_field("🔗".cyan(), "Account:", address.to_string().bold().green());
+    print_field("🕒".cyan(), "Epoch:", args.epoch.to_string().blue());
+    print_field("📝".cyan(), "Stake:", args.stake.to_string().blue());
+    print_field(
+        "💰".green(),
+        "Due:",
+        format_total_with_sol(args.amount_due).yellow(),
+    );
+    sign_and_send_transaction(rpc_client, instruction, &authority)
+}
+
+fn process_p2c_deduct(
+    rpc_client: Arc<RpcClient>,
+    program_id: Pubkey,
+    keypair_path: &str,
+    args: P2cEpochArgs,
+) -> CliResult {
+    let (address, account) = load_p2c(
+        &rpc_client,
+        program_id,
+        &args.account.name.name,
+        args.account.vote_pubkey,
+    )?;
+    let manager = parse_keypair(keypair_path)?;
+    if manager.pubkey() != account.manager_authority {
+        return Err(format!(
+            "keypair is not manager_authority {}",
+            account.manager_authority
+        )
+        .into());
+    }
+    let instruction = deduct_p2c_subscription_ix(
+        program_id,
+        DeductP2CSubscriptionArgs { epoch: args.epoch },
+        DeductP2CSubscriptionAccounts {
+            p2c_subscription_account: address,
+            manager_authority: manager.pubkey(),
+        },
+    );
+    print_heading("P2C Deduct Epoch");
+    print_field("🔗".cyan(), "Account:", address.to_string().bold().green());
+    print_field("🕒".cyan(), "Epoch:", args.epoch.to_string().blue());
+    sign_and_send_transaction(rpc_client, instruction, &manager)
+}
+
+fn process_p2c_claim(
+    rpc_client: Arc<RpcClient>,
+    program_id: Pubkey,
+    keypair_path: &str,
+    args: P2cClaimArgs,
+) -> CliResult {
+    let (address, account) = load_p2c(
+        &rpc_client,
+        program_id,
+        &args.account.name.name,
+        args.account.vote_pubkey,
+    )?;
+    let manager = parse_keypair(keypair_path)?;
+    if manager.pubkey() != account.manager_authority {
+        return Err(format!(
+            "keypair is not manager_authority {}",
+            account.manager_authority
+        )
+        .into());
+    }
+    let instruction = claim_p2c_subscription_ix(
+        program_id,
+        ClaimP2CSubscriptionArgs { epoch: args.epoch },
+        ClaimP2CSubscriptionAccounts {
+            p2c_subscription_account: address,
+            commission_account: account.commission_account,
+            validator_identity: args.validator_identity,
+            manager_authority: manager.pubkey(),
+        },
+    );
+    print_heading("P2C Claim Epoch");
+    print_field("🔗".cyan(), "Account:", address.to_string().bold().green());
+    print_field("🕒".cyan(), "Epoch:", args.epoch.to_string().blue());
+    sign_and_send_transaction(rpc_client, instruction, &manager)
+}
+
+fn process_p2c_clear_deficit(
+    rpc_client: Arc<RpcClient>,
+    program_id: Pubkey,
+    keypair_path: &str,
+    args: P2cClearDeficitArgs,
+) -> CliResult {
+    let (address, account) = load_p2c(
+        &rpc_client,
+        program_id,
+        &args.account.name.name,
+        args.account.vote_pubkey,
+    )?;
+    if account.deficit == 0 {
+        return Err("P2C account has no open deficit".into());
+    }
+    let applied = args.amount.unwrap_or(account.deficit).min(account.deficit);
+    if applied == 0 {
+        return Err("amount must be greater than zero".into());
+    }
+    let funder = parse_keypair(keypair_path)?;
+    let instruction = clear_p2c_deficit_ix(
+        program_id,
+        ClearP2CDeficitArgs { amount: applied },
+        ClearP2CDeficitAccounts {
+            p2c_subscription_account: address,
+            commission_account: account.commission_account,
+            validator_identity: args.validator_identity,
+            funder: funder.pubkey(),
+            system_program: system_program::ID,
+        },
+    );
+    print_heading("P2C Clear Deficit");
+    print_field("🔗".cyan(), "Account:", address.to_string().bold().green());
+    print_field(
+        "💰".yellow(),
+        "Open deficit:",
+        format_total_with_sol(account.deficit).yellow(),
+    );
+    print_field(
+        "💰".green(),
+        "Clear amount:",
+        format_total_with_sol(applied).yellow(),
+    );
+    if args.dry_run {
+        println!(
+            "\n   {}",
+            "Dry run only — no transaction was sent.".yellow()
+        );
+        return Ok(());
+    }
+    sign_and_send_transaction(rpc_client, instruction, &funder)
+}
+
+fn dispatch_tip(
+    rpc_client: Arc<RpcClient>,
+    program_id: Pubkey,
+    keypair: &str,
+    cmd: TipCommands,
+) -> CliResult {
+    let kind = RevenueKind::Tip;
+    match cmd {
+        TipCommands::GetAccount(args) => {
+            process_get_account(&rpc_client, program_id, kind, args)
+        }
+        TipCommands::GetAllAccounts(args) => {
+            process_get_all_accounts(&rpc_client, program_id, kind, args)
+        }
+        TipCommands::GetPendingRecord(args) => {
+            process_get_pending(&rpc_client, program_id, kind, args)
+        }
+        TipCommands::GetAllPendingRecords(args) => {
+            process_get_all_pending(&rpc_client, program_id, kind, args)
+        }
+        TipCommands::Transfer(args) => {
+            process_transfer(rpc_client, program_id, keypair, kind, args)
+        }
+        TipCommands::TransferAll(args) => {
+            process_transfer_all(rpc_client, program_id, keypair, kind, args)
+        }
+        TipCommands::ClearDeficit(args) => {
+            process_clear_deficit(rpc_client, program_id, keypair, kind, args)
+        }
+    }
+}
+
+fn dispatch_mevshare(
+    rpc_client: Arc<RpcClient>,
+    program_id: Pubkey,
+    keypair: &str,
+    cmd: MevShareCommands,
+) -> CliResult {
+    let kind = RevenueKind::MevShare;
+    match cmd {
+        MevShareCommands::GetAccount(args) => {
+            process_get_account(&rpc_client, program_id, kind, args)
+        }
+        MevShareCommands::GetAllAccounts(args) => {
+            process_get_all_accounts(&rpc_client, program_id, kind, args)
+        }
+        MevShareCommands::GetPendingRecord(args) => {
+            process_get_pending(&rpc_client, program_id, kind, args)
+        }
+        MevShareCommands::GetAllPendingRecords(args) => {
+            process_get_all_pending(&rpc_client, program_id, kind, args)
+        }
+        MevShareCommands::RecordRevenue(args) => {
+            process_record_revenue(rpc_client, program_id, keypair, args)
+        }
+        MevShareCommands::Transfer(args) => {
+            process_transfer(rpc_client, program_id, keypair, kind, args)
+        }
+        MevShareCommands::TransferAll(args) => {
+            process_transfer_all(rpc_client, program_id, keypair, kind, args)
+        }
+        MevShareCommands::ClearDeficit(args) => {
+            process_clear_deficit(rpc_client, program_id, keypair, kind, args)
+        }
+    }
+}
+
+fn dispatch_p2c(
+    rpc_client: Arc<RpcClient>,
+    program_id: Pubkey,
+    keypair: &str,
+    cmd: P2cCommands,
+) -> CliResult {
+    match cmd {
+        P2cCommands::GetAccount(args) => process_p2c_get_account(&rpc_client, program_id, args),
+        P2cCommands::GetAllAccounts(args) => {
+            process_p2c_get_all_accounts(&rpc_client, program_id, args)
+        }
+        P2cCommands::Fund(args) => process_p2c_fund(rpc_client, program_id, keypair, args),
+        P2cCommands::Record(args) => process_p2c_record(rpc_client, program_id, keypair, args),
+        P2cCommands::Deduct(args) => process_p2c_deduct(rpc_client, program_id, keypair, args),
+        P2cCommands::Claim(args) => process_p2c_claim(rpc_client, program_id, keypair, args),
+        P2cCommands::ClearDeficit(args) => {
+            process_p2c_clear_deficit(rpc_client, program_id, keypair, args)
+        }
+    }
+}
+
 fn main() -> CliResult {
     let cli = Cli::parse();
     let rpc_client = Arc::new(RpcClient::new_with_commitment(
@@ -1294,22 +1957,12 @@ fn main() -> CliResult {
     ));
 
     match cli.command {
-        Commands::GetAccount(args) => process_get_account(&rpc_client, cli.program_id, args),
-        Commands::GetAllAccounts(args) => {
-            process_get_all_accounts(&rpc_client, cli.program_id, args)
+        Commands::Tip(cmd) => dispatch_tip(rpc_client, cli.program_id, &cli.keypair, cmd),
+        Commands::MevShare(cmd) => {
+            dispatch_mevshare(rpc_client, cli.program_id, &cli.keypair, cmd)
         }
-        Commands::GetPendingRecord(args) => process_get_pending(&rpc_client, cli.program_id, args),
-        Commands::GetAllPendingRecords(args) => {
-            process_get_all_pending(&rpc_client, cli.program_id, args)
-        }
-        Commands::RecordRevenue(args) => {
-            process_record_revenue(rpc_client, cli.program_id, &cli.keypair, args)
-        }
-        Commands::Transfer(args) => {
-            process_transfer(rpc_client, cli.program_id, &cli.keypair, args)
-        }
-        Commands::TransferAll(args) => {
-            process_transfer_all(rpc_client, cli.program_id, &cli.keypair, args)
+        Commands::P2cSubscription(cmd) => {
+            dispatch_p2c(rpc_client, cli.program_id, &cli.keypair, cmd)
         }
     }
 }

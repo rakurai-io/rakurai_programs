@@ -13,7 +13,7 @@ The `rakurai_cli` crate ships two binaries:
 | Binary | Audience | Purpose |
 | ------ | -------- | ------- |
 | `rakurai-activation` | Validator operators | Manage Rakurai Activation Accounts (RAA): init, scheduler control, commission, show |
-| `rakurai-revshare` | Transaction-landing / post-pack partners | Partner Tip and MevShare Revenue Settlement — list vaults, record MCA MevShare, settle one or all pending |
+| `rakurai-revshare` | Transaction-landing / post-pack partners | Tip / MevShare / P2C: list vaults, settle, record MCA, manage P2C escrow |
 
 ---
 
