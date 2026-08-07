@@ -917,6 +917,47 @@ pub fn update_deficit_ix(
     }
 }
 
+pub struct ClearDeficitV1Args {
+    pub amount: u64,
+}
+
+pub struct ClearDeficitV1Accounts {
+    pub revenue_share_account: Pubkey,
+    pub commission_account: Pubkey,
+    pub validator_identity: Pubkey,
+    pub funder: Pubkey,
+    pub system_program: Pubkey,
+}
+
+/// Funder transfers; TCAV1 clears deficit and pays commission + identity.
+pub fn clear_deficit_v1_ix(
+    program_id: Pubkey,
+    args: ClearDeficitV1Args,
+    accounts: ClearDeficitV1Accounts,
+) -> Instruction {
+    let ClearDeficitV1Args { amount } = args;
+    let ClearDeficitV1Accounts {
+        revenue_share_account,
+        commission_account,
+        validator_identity,
+        funder,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::ClearDeficitV1 { amount }.data(),
+        accounts: crate::accounts::ClearDeficitV1 {
+            revenue_share_account,
+            commission_account,
+            validator_identity,
+            funder,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
 pub struct ClaimRevenueArgs {
     pub epoch: u64,
 }
@@ -1499,6 +1540,47 @@ pub fn update_p2c_deficit_ix(
         accounts: crate::accounts::UpdateP2CDeficit {
             p2c_subscription_account,
             manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct ClearP2CDeficitArgs {
+    pub amount: u64,
+}
+
+pub struct ClearP2CDeficitAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub commission_account: Pubkey,
+    pub validator_identity: Pubkey,
+    pub funder: Pubkey,
+    pub system_program: Pubkey,
+}
+
+/// User transfers SOL; program deducts up to deficit and pays commission + identity.
+pub fn clear_p2c_deficit_ix(
+    program_id: Pubkey,
+    args: ClearP2CDeficitArgs,
+    accounts: ClearP2CDeficitAccounts,
+) -> Instruction {
+    let ClearP2CDeficitArgs { amount } = args;
+    let ClearP2CDeficitAccounts {
+        p2c_subscription_account,
+        commission_account,
+        validator_identity,
+        funder,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::ClearP2cDeficit { amount }.data(),
+        accounts: crate::accounts::ClearP2CDeficit {
+            p2c_subscription_account,
+            commission_account,
+            validator_identity,
+            funder,
+            system_program,
         }
         .to_account_metas(None),
     }

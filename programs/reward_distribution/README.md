@@ -146,6 +146,7 @@ Partners settle TCA/MCA balances with the [Partner Tip and MevShare Revenue Sett
 | **Record** | `record_revenue` (amount only) | `record_revenue_v1` (Rakurai tip also credits `transferred_amount`) |
 | **Settle** | N/A (claim needs vault lamports ≥ `amount`) | `settle_revenue` / `update_transferred_amount` |
 | **Claim** | `claim_revenue` (pays `amount`) | `claim_revenue_v1` (pays `transferred_amount`; deficit; Rakurai name skips commission) |
+| **Clear deficit** | — | `clear_deficit_v1` (funder transfers; deduct up to deficit → commission + identity) |
 | **Close** | `close_revenue_share_account` | `close_revenue_share_account_v1` |
 
 ### 5.5. TipsAndMevShareConfigAccount
@@ -186,7 +187,7 @@ Instructions: `initialize_tips_and_mev_share_config`, `update_tips_and_mev_share
 | Field | Legacy (`RevenueShareAccount`) | V1 (`RevenueShareAccountV1`) |
 |-------|--------------------------------|------------------------------|
 | `ledger` | `RevenueLedger` → `Vec<EpochAmountEntry>` | `RevenueLedgerV1` → `Vec<EpochAmountEntryV1>` |
-| `deficit` | — | `u64` cumulative unpaid shortfall; manager adjusts via `update_deficit` |
+| `deficit` | — | `u64` cumulative unpaid shortfall; manager write-off via `update_deficit`; funder clear via `clear_deficit_v1` |
 
 **Ledger entry layouts:**
 
@@ -223,7 +224,7 @@ pub struct EpochAmountEntryV1 {
 }
 ```
 
-`record_revenue` / `record_revenue_v1` updates `amount`. For the **Rakurai tip TCAV1** only, `record_revenue_v1` also credits `transferred_amount` (tip-manager deposits SOL in the same drain tx). Non-Rakurai V1 vaults call `settle_revenue` (system-transfer + credit) or `update_transferred_amount` (credit only, after a direct SOL send). `claim_revenue_v1` pays `transferred_amount`, accrues `deficit` when underfunded (`amount > transferred`), and sets `claimed = true`. Legacy `claim_revenue` pays recorded `amount` and has no `deficit` / `transferred_amount`.
+`record_revenue` / `record_revenue_v1` updates `amount`. For the **Rakurai tip TCAV1** only, `record_revenue_v1` also credits `transferred_amount` (tip-manager deposits SOL in the same drain tx). Non-Rakurai V1 vaults call `settle_revenue` (system-transfer + credit) or `update_transferred_amount` (credit only, after a direct SOL send). `claim_revenue_v1` pays `transferred_amount`, accrues `deficit` when underfunded (`amount > transferred`), and sets `claimed = true`. Later shortfalls can be settled with `clear_deficit_v1` (funder transfers; vault deducts up to deficit and pays commission + identity). Legacy `claim_revenue` pays recorded `amount` and has no `deficit` / `transferred_amount`.
 
 ### 5.7. How to check status
 
@@ -262,8 +263,19 @@ Legacy and V1 vaults coexist. Each is created once per `(seed space, share_kind,
 
 Prepaid fee escrow for Pack-to-Chain (P2C) billing, keyed as `[P2C_SUBSCRIPTION, name, vote]`.
 
-- **Manager-only create** (`initialize_p2c_subscription_account`): manager signs and pays rent.
-- User **funds** the PDA; each epoch **record** stores `stake` + `amount_due`.
-- **Partial deduct**: `amount_deducted += min(remaining_due, free_balance)` — never fails solely because the escrow is underfunded; top-up and re-deduct while unclaimed.
-- **Claim** pays only `amount_deducted` (`commission_bps` → commission account, rest → validator identity). Remaining due → account `deficit` and grace streak (default 2 epochs → `InGrace` / `Suspended`).
-- **Convert-to-block** mirrors revenue share after claim.
+| Step | Instruction | Auth |
+|------|-------------|------|
+| Init | `initialize_p2c_subscription_account` | **manager only** (signs + pays rent) |
+| Fund | `fund_p2c_subscription` | any funder |
+| Record | `record_p2c_subscription` | `record_authority` |
+| Deduct | `deduct_p2c_subscription` | manager (partial OK) |
+| Claim | `claim_p2c_subscription` | manager |
+| Clear deficit | `clear_p2c_deficit` | any funder (transfer in, program deducts + pays commission/identity) |
+| BR flag | `update_p2c_epoch_converted_to_block_reward` | manager / record / identity |
+| Config / deficit write-off / close | `update_p2c_subscription_config`, `update_p2c_deficit`, `close_p2c_subscription_account` | manager |
+
+- **Partial deduct**: `amount_deducted += min(remaining_due, free_balance)` — still succeeds when underfunded; top-up and re-deduct while unclaimed.
+- **Claim** pays only `amount_deducted` (`commission_bps` → commission, rest → identity). Unpaid rem → `deficit` + grace (`Active` / `InGrace` / `Suspended`, default grace = 2).
+- **Clear deficit**: `clear_p2c_deficit(amount)` — funder transfers; program deducts up to open deficit, splits to commission + validator identity, reduces `deficit`. Clearing to 0 resets grace to `Active`.
+- **Close** requires all ledger epochs claimed; residual SOL + rent → initializer.
+- **Convert-to-block** same post-claim flag as TCA/MCA.

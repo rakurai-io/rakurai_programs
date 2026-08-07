@@ -835,6 +835,64 @@ pub mod reward_distribution {
         Ok(())
     }
 
+    /// Funder deposits SOL; vault deducts up to open deficit and pays commission + validator.
+    /// Same split as `claim_revenue_v1` (Rakurai tip forces 0 commission). Partial clear OK.
+    pub fn clear_deficit_v1(ctx: Context<ClearDeficitV1>, amount: u64) -> Result<()> {
+        if amount == 0 {
+            return Err(RewardsTooLow.into());
+        }
+        if ctx.accounts.revenue_share_account.deficit == 0 {
+            return Err(NoDeficit.into());
+        }
+
+        let applied = amount.min(ctx.accounts.revenue_share_account.deficit);
+
+        invoke(
+            &system_instruction::transfer(
+                ctx.accounts.funder.key,
+                &ctx.accounts.revenue_share_account.key(),
+                applied,
+            ),
+            &[
+                ctx.accounts.funder.to_account_info(),
+                ctx.accounts.revenue_share_account.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+        )?;
+
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        let share_kind = revenue_share_account.share_kind;
+        let commission_bps = if revenue_share_account.is_rakurai_tip_tca() {
+            0
+        } else {
+            revenue_share_account.commission_bps
+        };
+        let key = revenue_share_account.key();
+        let vault_info = revenue_share_account.to_account_info();
+        let acc: &mut RevenueShareAccountV1 = &mut *revenue_share_account;
+
+        let (paid, commission_amount, validator_amount) = RevenueShareAccountV1::clear_deficit(
+            &mut acc.deficit,
+            vault_info,
+            ctx.accounts.commission_account.to_account_info(),
+            ctx.accounts.validator_identity.to_account_info(),
+            commission_bps,
+            applied,
+        )?;
+
+        emit!(RevenueDeficitClearedEvent {
+            revenue_share_account: key,
+            share_kind,
+            funder: ctx.accounts.funder.key(),
+            amount_paid: paid,
+            commission_amount,
+            validator_amount,
+            deficit_remaining: acc.deficit,
+        });
+
+        Ok(())
+    }
+
     /// Updates revenue share config (`commission_bps`, `commission_account`, `block_reward_conversion_enabled`). Manager authority only.
     pub fn update_revenue_share_config(
         ctx: Context<UpdateRevenueShareConfig>,
@@ -1203,7 +1261,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Manager adjusts cumulative P2C deficit.
+    /// Manager adjusts cumulative P2C deficit (manual write-off / admin).
     pub fn update_p2c_deficit(
         ctx: Context<UpdateP2CDeficit>,
         update: DeficitUpdate,
@@ -1220,6 +1278,61 @@ pub mod reward_distribution {
             deficit: p2c.deficit,
             update,
             authority: ctx.accounts.manager_authority.key(),
+        });
+
+        Ok(())
+    }
+
+    /// Funder deposits SOL; escrow deducts up to open `deficit` and pays commission + identity.
+    /// Partial clear OK. Fully clearing deficit resets grace to Active.
+    pub fn clear_p2c_deficit(ctx: Context<ClearP2CDeficit>, amount: u64) -> Result<()> {
+        if amount == 0 {
+            return Err(RewardsTooLow.into());
+        }
+        if ctx.accounts.p2c_subscription_account.deficit == 0 {
+            return Err(NoDeficit.into());
+        }
+
+        let applied = amount.min(ctx.accounts.p2c_subscription_account.deficit);
+
+        invoke(
+            &system_instruction::transfer(
+                ctx.accounts.funder.key,
+                &ctx.accounts.p2c_subscription_account.key(),
+                applied,
+            ),
+            &[
+                ctx.accounts.funder.to_account_info(),
+                ctx.accounts.p2c_subscription_account.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+        )?;
+
+        let p2c = &mut ctx.accounts.p2c_subscription_account;
+        let p2c_key = p2c.key();
+        let commission_bps = p2c.commission_bps;
+        let p2c_info = p2c.to_account_info();
+        let acc: &mut P2CSubscriptionAccount = &mut *p2c;
+
+        let (paid, commission_amount, validator_amount) = P2CSubscriptionAccount::clear_deficit(
+            &mut acc.deficit,
+            &mut acc.unpaid_streak,
+            &mut acc.status,
+            p2c_info,
+            ctx.accounts.commission_account.to_account_info(),
+            ctx.accounts.validator_identity.to_account_info(),
+            commission_bps,
+            applied,
+        )?;
+
+        emit!(P2CDeficitClearedEvent {
+            p2c_subscription_account: p2c_key,
+            funder: ctx.accounts.funder.key(),
+            amount_paid: paid,
+            commission_amount,
+            validator_amount,
+            deficit_remaining: acc.deficit,
+            status: acc.status,
         });
 
         Ok(())
@@ -1379,6 +1492,12 @@ pub enum ErrorCode {
 
     #[msg("P2C epoch fee already recorded for this epoch.")]
     P2CEpochAlreadyRecorded,
+
+    #[msg("P2C subscription still has unclaimed epoch entries and cannot be closed.")]
+    P2CHasUnclaimedEpochs,
+
+    #[msg("No outstanding deficit to clear.")]
+    NoDeficit,
 }
 
 /// Closes a `ClaimStatus` account and refunds lamports to the payer.
@@ -2061,6 +2180,29 @@ impl UpdateDeficit<'_> {
     }
 }
 
+/// Funder transfers SOL; TCAV1 deducts up to deficit and pays commission + identity.
+#[derive(Accounts)]
+pub struct ClearDeficitV1<'info> {
+    #[account(mut)]
+    pub revenue_share_account: Account<'info, RevenueShareAccountV1>,
+
+    /// CHECK: must match vault `commission_account`.
+    #[account(
+        mut,
+        constraint = commission_account.key() == revenue_share_account.commission_account @ Unauthorized
+    )]
+    pub commission_account: AccountInfo<'info>,
+
+    /// CHECK: validator identity receives remainder.
+    #[account(mut)]
+    pub validator_identity: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub funder: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
 /// Marks a claimed epoch as converted to block rewards (`block_reward_converted` false → true).
 #[derive(Accounts)]
 #[instruction(epoch: u64)]
@@ -2372,6 +2514,29 @@ pub struct FundP2CSubscription<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// Deposit SOL toward open deficit; deduct and pay commission + validator.
+#[derive(Accounts)]
+pub struct ClearP2CDeficit<'info> {
+    #[account(mut)]
+    pub p2c_subscription_account: Account<'info, P2CSubscriptionAccount>,
+
+    /// CHECK: receives commission portion of the deficit clear.
+    #[account(
+        mut,
+        constraint = commission_account.key() == p2c_subscription_account.commission_account @ Unauthorized
+    )]
+    pub commission_account: AccountInfo<'info>,
+
+    /// CHECK: receives remainder of the deficit clear.
+    #[account(mut)]
+    pub validator_identity: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub funder: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
 #[derive(Accounts)]
 pub struct RecordP2CSubscription<'info> {
     #[account(mut)]
@@ -2545,7 +2710,15 @@ impl CloseP2CSubscriptionAccount<'_> {
     fn auth(ctx: &Context<CloseP2CSubscriptionAccount>) -> Result<()> {
         ctx.accounts
             .p2c_subscription_account
-            .auth_manager_signer(ctx.accounts.manager_authority.key())
+            .auth_manager_signer(ctx.accounts.manager_authority.key())?;
+        if ctx
+            .accounts
+            .p2c_subscription_account
+            .has_unclaimed_epochs()
+        {
+            return Err(ErrorCode::P2CHasUnclaimedEpochs.into());
+        }
+        Ok(())
     }
 }
 
@@ -2720,6 +2893,17 @@ pub struct RevenueDeficitUpdatedEvent {
 }
 
 #[event]
+pub struct RevenueDeficitClearedEvent {
+    pub revenue_share_account: Pubkey,
+    pub share_kind: RevenueKind,
+    pub funder: Pubkey,
+    pub amount_paid: u64,
+    pub commission_amount: u64,
+    pub validator_amount: u64,
+    pub deficit_remaining: u64,
+}
+
+#[event]
 pub struct RevenueShareConfigUpdatedEvent {
     pub revenue_share_account: Pubkey,
     pub share_kind: RevenueKind,
@@ -2812,4 +2996,15 @@ pub struct P2CDeficitUpdatedEvent {
     pub deficit: u64,
     pub update: DeficitUpdate,
     pub authority: Pubkey,
+}
+
+#[event]
+pub struct P2CDeficitClearedEvent {
+    pub p2c_subscription_account: Pubkey,
+    pub funder: Pubkey,
+    pub amount_paid: u64,
+    pub commission_amount: u64,
+    pub validator_amount: u64,
+    pub deficit_remaining: u64,
+    pub status: P2CSubscriptionStatus,
 }
