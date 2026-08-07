@@ -1103,6 +1103,421 @@ impl RevenueShareAccountV1 {
     }
 }
 
+// ---------------------------------------------------------------------------
+// P2C prepaid subscription escrow
+// ---------------------------------------------------------------------------
+
+/// Fixed header bytes after the 8-byte Anchor discriminator, before the ledger vec.
+pub const P2C_SUBSCRIPTION_FIXED_PREFIX_LEN: usize = 32 // name
+    + 32 // validator_vote
+    + 32 // initializer
+    + 32 // manager_authority
+    + 32 // record_authority
+    + 1  // max_epoch_entries
+    + 2  // commission_bps
+    + 32 // commission_account
+    + 1  // grace_epochs
+    + 1  // block_reward_conversion_enabled
+    + 1  // unpaid_streak
+    + 1  // status
+    + 8; // deficit
+
+/// Service eligibility for P2C (clients/ops read this; program does not call out).
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub enum P2CSubscriptionStatus {
+    #[default]
+    Active = 0,
+    /// unpaid_streak in 1..=grace_epochs
+    InGrace = 1,
+    /// unpaid_streak > grace_epochs
+    Suspended = 2,
+}
+
+/// Per-epoch prepaid fee row for a P2C subscription escrow.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct P2CEpochEntry {
+    pub epoch: u64,
+    /// Off-chain stake snapshot used to price this epoch.
+    pub stake: u64,
+    /// Fee due for the epoch.
+    pub amount_due: u64,
+    /// Lamports reserved from prepaid free balance for this epoch (partial deduct OK).
+    pub amount_deducted: u64,
+    /// Whether `amount_deducted` has been paid out (commission + identity).
+    pub claimed: bool,
+    /// Same lifecycle flag as revenue share after claim.
+    pub block_reward_converted: bool,
+}
+
+/// Epoch fee ledger for a P2C subscription escrow.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default, Debug, PartialEq, Eq)]
+pub struct P2CSubscriptionLedger {
+    pub entries: Vec<P2CEpochEntry>,
+}
+
+/// Prepaid P2C subscription escrow per `(name, validator_vote)`.
+/// PDA: `[P2C_SUBSCRIPTION, name, vote]`. Manager-only create.
+#[account]
+pub struct P2CSubscriptionAccount {
+    pub name: [u8; 32],
+    pub validator_vote: Pubkey,
+    /// Who paid rent; receives residual on close.
+    pub initializer: Pubkey,
+    /// Creates (via ix signer), claims, config, close, deduct.
+    pub manager_authority: Pubkey,
+    /// Signs `record_p2c_subscription`.
+    pub record_authority: Pubkey,
+    pub max_epoch_entries: u8,
+    /// e.g. 2000 = 20% to `commission_account` on claim.
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
+    /// Consecutive unpaid finished epochs allowed before Suspended (default 2).
+    pub grace_epochs: u8,
+    pub block_reward_conversion_enabled: bool,
+    pub unpaid_streak: u8,
+    pub status: P2CSubscriptionStatus,
+    /// Cumulative shortfall closed on underfunded claims.
+    pub deficit: u64,
+    pub ledger: P2CSubscriptionLedger,
+    pub bump: u8,
+}
+
+impl P2CSubscriptionLedger {
+    pub fn get_mut(&mut self, epoch: u64) -> Result<&mut P2CEpochEntry> {
+        self.entries
+            .iter_mut()
+            .find(|e| e.epoch == epoch)
+            .ok_or(EpochEntryNotFound.into())
+    }
+
+    pub fn get(&self, epoch: u64) -> Result<&P2CEpochEntry> {
+        self.entries
+            .iter()
+            .find(|e| e.epoch == epoch)
+            .ok_or(EpochEntryNotFound.into())
+    }
+
+    /// Insert a new epoch row; evict oldest claimed if at capacity.
+    pub fn insert(&mut self, entry: P2CEpochEntry, capacity: usize) -> Result<()> {
+        if self.entries.iter().any(|e| e.epoch == entry.epoch) {
+            return Err(crate::ErrorCode::P2CEpochAlreadyRecorded.into());
+        }
+
+        if self.entries.len() < capacity {
+            self.entries.push(entry);
+            return Ok(());
+        }
+
+        let mut oldest_claimed_idx: Option<usize> = None;
+        let mut oldest_claimed_epoch = u64::MAX;
+        for (i, e) in self.entries.iter().enumerate() {
+            if e.claimed && e.epoch < oldest_claimed_epoch {
+                oldest_claimed_epoch = e.epoch;
+                oldest_claimed_idx = Some(i);
+            }
+        }
+
+        let evict_idx = oldest_claimed_idx.ok_or(RevenueLedgerFull)?;
+        self.entries[evict_idx] = entry;
+        Ok(())
+    }
+
+    pub fn mark_claimed(&mut self, epoch: u64) -> Result<()> {
+        let entry = self.get_mut(epoch)?;
+        if entry.claimed {
+            return Err(EpochAlreadyClaimed.into());
+        }
+        entry.claimed = true;
+        Ok(())
+    }
+
+    /// Sum of unclaimed `amount_deducted` (reserved, not free for new deducts).
+    pub fn reserved_unclaimed(&self) -> Result<u64> {
+        let mut total = 0u64;
+        for e in &self.entries {
+            if !e.claimed {
+                total = total.checked_add(e.amount_deducted).ok_or(ArithmeticError)?;
+            }
+        }
+        Ok(total)
+    }
+}
+
+impl P2CSubscriptionAccount {
+    pub const SEED: &'static [u8] = b"P2C_SUBSCRIPTION";
+    pub const DEFAULT_GRACE_EPOCHS: u8 = 2;
+
+    pub fn pda_seeds<'a>(name: &'a [u8; 32], validator_vote: &'a Pubkey) -> [&'a [u8]; 3] {
+        [Self::SEED, name.as_ref(), validator_vote.as_ref()]
+    }
+
+    pub fn space_for(max_epoch_entries: usize) -> usize {
+        HEADER_SIZE
+            + P2C_SUBSCRIPTION_FIXED_PREFIX_LEN
+            + 4 // vec length
+            + max_epoch_entries * size_of::<P2CEpochEntry>()
+            + 1 // bump
+    }
+
+    /// Free prepaid balance: lamports above rent, less unclaimed deductions.
+    pub fn free_balance(lamports: u64, data_len: usize, reserved_unclaimed: u64) -> Result<u64> {
+        let rent = Rent::get()?;
+        let min_rent = rent.minimum_balance(data_len);
+        let above_rent = lamports.saturating_sub(min_rent);
+        Ok(above_rent.saturating_sub(reserved_unclaimed))
+    }
+
+    pub fn populate_on_init(
+        &mut self,
+        name: [u8; 32],
+        validator_vote: Pubkey,
+        initializer: Pubkey,
+        manager_authority: Pubkey,
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        grace_epochs: u8,
+        bump: u8,
+    ) -> Result<()> {
+        self.name = name;
+        self.validator_vote = validator_vote;
+        self.initializer = initializer;
+        self.manager_authority = manager_authority;
+        self.record_authority = record_authority;
+        self.max_epoch_entries = max_epoch_entries;
+        self.commission_bps = commission_bps;
+        self.commission_account = commission_account;
+        self.grace_epochs = if grace_epochs == 0 {
+            Self::DEFAULT_GRACE_EPOCHS
+        } else {
+            grace_epochs
+        };
+        self.block_reward_conversion_enabled = false;
+        self.unpaid_streak = 0;
+        self.status = P2CSubscriptionStatus::Active;
+        self.deficit = 0;
+        self.ledger = P2CSubscriptionLedger::default();
+        self.bump = bump;
+        self.validate()
+    }
+
+    pub fn validate_init_params(
+        name: [u8; 32],
+        manager_authority: Pubkey,
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        max_commission_bps: u16,
+    ) -> Result<()> {
+        if name == [0u8; 32] {
+            return Err(InvalidRevenueName.into());
+        }
+        if manager_authority == Pubkey::default() || record_authority == Pubkey::default() {
+            return Err(AccountValidationFailure.into());
+        }
+        if max_epoch_entries == 0 || max_epoch_entries as usize > MAX_REVENUE_EPOCH_ENTRIES_CAP {
+            return Err(InvalidRevenueEpochCapacity.into());
+        }
+        validate_commission(commission_bps, commission_account, max_commission_bps)?;
+        Ok(())
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        Self::validate_init_params(
+            self.name,
+            self.manager_authority,
+            self.record_authority,
+            self.max_epoch_entries,
+            self.commission_bps,
+            self.commission_account,
+            MAX_COMMISSION_BPS,
+        )?;
+        if self.validator_vote == Pubkey::default() || self.initializer == Pubkey::default() {
+            return Err(AccountValidationFailure.into());
+        }
+        Ok(())
+    }
+
+    pub fn auth_manager_signer(&self, signer: Pubkey) -> Result<()> {
+        if signer != self.manager_authority {
+            return Err(crate::ErrorCode::Unauthorized.into());
+        }
+        Ok(())
+    }
+
+    pub fn auth_record_signer(&self, signer: Pubkey) -> Result<()> {
+        if signer != self.record_authority {
+            return Err(crate::ErrorCode::Unauthorized.into());
+        }
+        Ok(())
+    }
+
+    /// Record a new epoch charge once.
+    pub fn record(&mut self, epoch: u64, stake: u64, amount_due: u64) -> Result<()> {
+        if amount_due == 0 {
+            return Err(crate::ErrorCode::RewardsTooLow.into());
+        }
+        let entry = P2CEpochEntry {
+            epoch,
+            stake,
+            amount_due,
+            amount_deducted: 0,
+            claimed: false,
+            block_reward_converted: !self.block_reward_conversion_enabled,
+        };
+        self.ledger
+            .insert(entry, self.max_epoch_entries as usize)
+    }
+
+    /// Partial deduct: take min(remaining_due, free_balance). Never fails for shortfall alone.
+    /// Returns `(delta, amount_deducted, amount_due)`.
+    pub fn deduct(&mut self, epoch: u64, free_balance: u64) -> Result<(u64, u64, u64)> {
+        let entry = self.ledger.get_mut(epoch)?;
+        if entry.claimed {
+            return Err(EpochAlreadyClaimed.into());
+        }
+
+        let remaining = entry.amount_due.saturating_sub(entry.amount_deducted);
+        let delta = remaining.min(free_balance);
+        entry.amount_deducted = entry
+            .amount_deducted
+            .checked_add(delta)
+            .ok_or(ArithmeticError)?;
+
+        Ok((delta, entry.amount_deducted, entry.amount_due))
+    }
+
+    pub fn mark_epoch_converted_to_block_reward(&mut self, epoch: u64) -> Result<()> {
+        let entry = self.ledger.get_mut(epoch)?;
+        if !entry.claimed {
+            return Err(EpochNotClaimed.into());
+        }
+        if entry.block_reward_converted {
+            return Err(EpochAlreadyConvertedToBlockReward.into());
+        }
+        entry.block_reward_converted = true;
+        Ok(())
+    }
+
+    pub fn update_config(
+        &mut self,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        block_reward_conversion_enabled: bool,
+        grace_epochs: Option<u8>,
+        record_authority: Option<Pubkey>,
+    ) -> Result<()> {
+        self.commission_bps = commission_bps;
+        self.commission_account = commission_account;
+        self.block_reward_conversion_enabled = block_reward_conversion_enabled;
+        if let Some(g) = grace_epochs {
+            self.grace_epochs = if g == 0 {
+                Self::DEFAULT_GRACE_EPOCHS
+            } else {
+                g
+            };
+        }
+        if let Some(ra) = record_authority {
+            self.record_authority = ra;
+        }
+        self.validate()
+    }
+
+    /// Claim reserved `amount_deducted`; underfund shortfall → `deficit` and grace streak.
+    /// Returns `(commission, validator, claimable, shortfall)`.
+    pub fn claim(
+        ledger: &mut P2CSubscriptionLedger,
+        deficit: &mut u64,
+        unpaid_streak: &mut u8,
+        status: &mut P2CSubscriptionStatus,
+        grace_epochs: u8,
+        p2c_account: AccountInfo,
+        commission_account: AccountInfo,
+        validator_identity: AccountInfo,
+        commission_bps: u16,
+        epoch: u64,
+    ) -> Result<(u64, u64, u64, u64)> {
+        use crate::ErrorCode::*;
+
+        let current_epoch = Clock::get()?.epoch;
+        if current_epoch <= epoch {
+            return Err(PrematureRevenueClaim.into());
+        }
+
+        let (amount_due, amount_deducted) = {
+            let entry = ledger
+                .entries
+                .iter()
+                .find(|e| e.epoch == epoch)
+                .ok_or(EpochEntryNotFound)?;
+            if entry.claimed {
+                return Err(EpochAlreadyClaimed.into());
+            }
+            if entry.amount_deducted == 0 {
+                return Err(RewardsTooLow.into());
+            }
+            (entry.amount_due, entry.amount_deducted)
+        };
+
+        let claimable = amount_deducted;
+        let shortfall = amount_due.saturating_sub(claimable);
+
+        let commission_amount = if commission_bps == 0 {
+            0
+        } else {
+            claimable
+                .checked_mul(commission_bps as u64)
+                .ok_or(ArithmeticError)?
+                .checked_div(10_000)
+                .ok_or(ArithmeticError)?
+        };
+        let validator_amount = claimable
+            .checked_sub(commission_amount)
+            .ok_or(ArithmeticError)?;
+
+        let rent = Rent::get()?;
+        let min_rent = rent.minimum_balance(p2c_account.data_len());
+        let available = p2c_account.lamports().saturating_sub(min_rent);
+        if available < claimable {
+            return Err(RewardsTooLow.into());
+        }
+
+        if commission_amount > 0 {
+            RewardCollectionAccount::transfer_lamports(
+                p2c_account.clone(),
+                commission_account,
+                commission_amount,
+            )?;
+        }
+        if validator_amount > 0 {
+            RewardCollectionAccount::transfer_lamports(
+                p2c_account,
+                validator_identity,
+                validator_amount,
+            )?;
+        }
+
+        if shortfall > 0 {
+            *deficit = deficit.checked_add(shortfall).ok_or(ArithmeticError)?;
+            *unpaid_streak = unpaid_streak.saturating_add(1);
+            if *unpaid_streak > grace_epochs {
+                *status = P2CSubscriptionStatus::Suspended;
+            } else {
+                *status = P2CSubscriptionStatus::InGrace;
+            }
+        } else {
+            *unpaid_streak = 0;
+            *status = P2CSubscriptionStatus::Active;
+        }
+
+        ledger.mark_claimed(epoch)?;
+
+        Ok((commission_amount, validator_amount, claimable, shortfall))
+    }
+}
+
 /// Stores claim status for a given leaf in the Merkle tree.
 #[account]
 #[derive(Default)]
@@ -1467,5 +1882,105 @@ mod tests {
         acc.ledger.mark_claimed(10).unwrap();
         acc.mark_epoch_converted_to_block_reward(10).unwrap();
         assert!(acc.mark_epoch_converted_to_block_reward(10).is_err());
+    }
+
+    fn test_p2c_account(convert: bool) -> P2CSubscriptionAccount {
+        P2CSubscriptionAccount {
+            name: {
+                let mut n = [0u8; 32];
+                n[..3].copy_from_slice(b"p2c");
+                n
+            },
+            validator_vote: Pubkey::new_unique(),
+            initializer: Pubkey::new_unique(),
+            manager_authority: Pubkey::new_unique(),
+            record_authority: Pubkey::new_unique(),
+            max_epoch_entries: 4,
+            commission_bps: 2000,
+            commission_account: Pubkey::new_unique(),
+            grace_epochs: 2,
+            block_reward_conversion_enabled: convert,
+            unpaid_streak: 0,
+            status: P2CSubscriptionStatus::Active,
+            deficit: 0,
+            ledger: P2CSubscriptionLedger::default(),
+            bump: 0,
+        }
+    }
+
+    #[test]
+    fn p2c_record_once_and_partial_deduct() {
+        let mut acc = test_p2c_account(true);
+        acc.record(10, 1_000_000, 100).unwrap();
+        assert_eq!(acc.ledger.entries[0].amount_due, 100);
+        assert!(!acc.ledger.entries[0].block_reward_converted);
+
+        let (delta, deducted, due) = acc.deduct(10, 40).unwrap();
+        assert_eq!(delta, 40);
+        assert_eq!(deducted, 40);
+        assert_eq!(due, 100);
+
+        let (delta2, deducted2, _) = acc.deduct(10, 50).unwrap();
+        assert_eq!(delta2, 50);
+        assert_eq!(deducted2, 90);
+
+        let (delta3, deducted3, _) = acc.deduct(10, 100).unwrap();
+        assert_eq!(delta3, 10);
+        assert_eq!(deducted3, 100);
+    }
+
+    #[test]
+    fn p2c_partial_deduct_zero_free_ok() {
+        let mut acc = test_p2c_account(false);
+        acc.record(5, 10, 50).unwrap();
+        let (delta, deducted, due) = acc.deduct(5, 0).unwrap();
+        assert_eq!(delta, 0);
+        assert_eq!(deducted, 0);
+        assert_eq!(due, 50);
+        assert!(acc.ledger.entries[0].block_reward_converted);
+    }
+
+    #[test]
+    fn p2c_record_rejects_duplicate_epoch() {
+        let mut acc = test_p2c_account(false);
+        acc.record(1, 1, 10).unwrap();
+        assert!(acc.record(1, 1, 10).is_err());
+    }
+
+    #[test]
+    fn p2c_ledger_reserved_unclaimed() {
+        let mut acc = test_p2c_account(false);
+        acc.record(1, 1, 100).unwrap();
+        acc.record(2, 1, 50).unwrap();
+        acc.deduct(1, 30).unwrap();
+        acc.deduct(2, 20).unwrap();
+        assert_eq!(acc.ledger.reserved_unclaimed().unwrap(), 50);
+        acc.ledger.mark_claimed(1).unwrap();
+        assert_eq!(acc.ledger.reserved_unclaimed().unwrap(), 20);
+    }
+
+    #[test]
+    fn p2c_convert_requires_claimed() {
+        let mut acc = test_p2c_account(true);
+        acc.record(7, 1, 10).unwrap();
+        assert!(acc.mark_epoch_converted_to_block_reward(7).is_err());
+        acc.ledger.mark_claimed(7).unwrap();
+        acc.mark_epoch_converted_to_block_reward(7).unwrap();
+        assert!(acc.ledger.entries[0].block_reward_converted);
+    }
+
+    #[test]
+    fn p2c_pda_seeds_include_name_and_vote() {
+        let mut name = [0u8; 32];
+        name[..3].copy_from_slice(b"abc");
+        let vote = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let (a, _) =
+            Pubkey::find_program_address(&P2CSubscriptionAccount::pda_seeds(&name, &vote), &program);
+        let mut name2 = name;
+        name2[0] = b'z';
+        let (b, _) =
+            Pubkey::find_program_address(&P2CSubscriptionAccount::pda_seeds(&name2, &vote), &program);
+        assert_ne!(a, b);
     }
 }
