@@ -23,10 +23,11 @@ pub mod state;
 
 pub use state::{
     validate_commission, ClaimStatus, DeficitUpdate, EpochAmountEntry, EpochAmountEntryV1,
-    MerkleRoot, MevShareCollectionAccount, MevShareCollectionAccountV1, RevenueKind, RevenueLedger,
-    RevenueLedgerV1, RevenueShareAccount, RevenueShareAccountV1, RewardCollectionAccount,
-    RewardDistributionConfigAccount, TipsAndMevShareConfigAccount, TipsCollectionAccount,
-    TipsCollectionAccountV1, RAKURAI_REVENUE_NAME,
+    MerkleRoot, MevShareCollectionAccount, MevShareCollectionAccountV1, P2CEpochEntry,
+    P2CSubscriptionAccount, P2CSubscriptionLedger, P2CSubscriptionStatus, RevenueKind,
+    RevenueLedger, RevenueLedgerV1, RevenueShareAccount, RevenueShareAccountV1,
+    RewardCollectionAccount, RewardDistributionConfigAccount, TipsAndMevShareConfigAccount,
+    TipsCollectionAccount, TipsCollectionAccountV1, RAKURAI_REVENUE_NAME,
 };
 
 declare_id!("A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB");
@@ -980,6 +981,257 @@ pub mod reward_distribution {
 
         Ok(())
     }
+
+    // ---- P2C subscription escrow ----
+
+    /// Manager-only create of a prepaid P2C subscription PDA (`P2C_SUBSCRIPTION` + name + vote).
+    pub fn initialize_p2c_subscription_account(
+        ctx: Context<InitializeP2CSubscriptionAccount>,
+        name: [u8; 32],
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        grace_epochs: u8,
+        bump: u8,
+    ) -> Result<()> {
+        InitializeP2CSubscriptionAccount::auth(
+            &ctx,
+            name,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+        )?;
+
+        let manager = ctx.accounts.manager_authority.key();
+        let p2c = &mut ctx.accounts.p2c_subscription_account;
+        p2c.populate_on_init(
+            name,
+            ctx.accounts.validator_vote_account.key(),
+            manager,
+            manager,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+            grace_epochs,
+            bump,
+        )?;
+
+        emit!(P2CSubscriptionInitializedEvent {
+            p2c_subscription_account: p2c.key(),
+            name,
+            validator_vote: p2c.validator_vote,
+            manager_authority: manager,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+            grace_epochs: p2c.grace_epochs,
+        });
+
+        Ok(())
+    }
+
+    /// Top up prepaid SOL on the P2C escrow (any funder).
+    pub fn fund_p2c_subscription(ctx: Context<FundP2CSubscription>, amount: u64) -> Result<()> {
+        if amount == 0 {
+            return Err(RewardsTooLow.into());
+        }
+
+        invoke(
+            &system_instruction::transfer(
+                ctx.accounts.funder.key,
+                &ctx.accounts.p2c_subscription_account.key(),
+                amount,
+            ),
+            &[
+                ctx.accounts.funder.to_account_info(),
+                ctx.accounts.p2c_subscription_account.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+        )?;
+
+        emit!(P2CSubscriptionFundedEvent {
+            p2c_subscription_account: ctx.accounts.p2c_subscription_account.key(),
+            funder: ctx.accounts.funder.key(),
+            amount,
+        });
+
+        Ok(())
+    }
+
+    /// Record stake snapshot and amount due for an epoch (once).
+    pub fn record_p2c_subscription(
+        ctx: Context<RecordP2CSubscription>,
+        epoch: u64,
+        stake: u64,
+        amount_due: u64,
+    ) -> Result<()> {
+        RecordP2CSubscription::auth(&ctx)?;
+
+        let p2c = &mut ctx.accounts.p2c_subscription_account;
+        p2c.record(epoch, stake, amount_due)?;
+
+        emit!(P2CSubscriptionRecordedEvent {
+            p2c_subscription_account: p2c.key(),
+            epoch,
+            stake,
+            amount_due,
+        });
+
+        Ok(())
+    }
+
+    /// Partial deduct from free prepaid balance into epoch `amount_deducted`.
+    pub fn deduct_p2c_subscription(
+        ctx: Context<DeductP2CSubscription>,
+        epoch: u64,
+    ) -> Result<()> {
+        DeductP2CSubscription::auth(&ctx)?;
+
+        let p2c = &mut ctx.accounts.p2c_subscription_account;
+        let reserved = p2c.ledger.reserved_unclaimed()?;
+        let free = P2CSubscriptionAccount::free_balance(
+            p2c.to_account_info().lamports(),
+            p2c.to_account_info().data_len(),
+            reserved,
+        )?;
+        let (delta, amount_deducted, amount_due) = p2c.deduct(epoch, free)?;
+
+        emit!(P2CSubscriptionDeductedEvent {
+            p2c_subscription_account: p2c.key(),
+            epoch,
+            delta,
+            amount_deducted,
+            amount_due,
+        });
+
+        Ok(())
+    }
+
+    /// Pays `amount_deducted` to commission + validator identity; underfund → deficit + grace.
+    pub fn claim_p2c_subscription(ctx: Context<ClaimP2CSubscription>, epoch: u64) -> Result<()> {
+        ClaimP2CSubscription::auth(&ctx)?;
+
+        let p2c = &mut ctx.accounts.p2c_subscription_account;
+        let p2c_key = p2c.key();
+        let commission_bps = p2c.commission_bps;
+        let grace_epochs = p2c.grace_epochs;
+        let p2c_info = p2c.to_account_info();
+        let acc: &mut P2CSubscriptionAccount = &mut *p2c;
+
+        let (commission_amount, validator_amount, claimable, shortfall) =
+            P2CSubscriptionAccount::claim(
+                &mut acc.ledger,
+                &mut acc.deficit,
+                &mut acc.unpaid_streak,
+                &mut acc.status,
+                grace_epochs,
+                p2c_info,
+                ctx.accounts.commission_account.to_account_info(),
+                ctx.accounts.validator_identity.to_account_info(),
+                commission_bps,
+                epoch,
+            )?;
+
+        emit!(P2CSubscriptionClaimedEvent {
+            p2c_subscription_account: p2c_key,
+            validator_identity: ctx.accounts.validator_identity.key(),
+            commission_account: ctx.accounts.commission_account.key(),
+            epoch,
+            commission_amount,
+            validator_amount,
+            claimable,
+            shortfall,
+            deficit: acc.deficit,
+            status: acc.status,
+        });
+
+        Ok(())
+    }
+
+    /// Marks a claimed P2C epoch as converted to block rewards.
+    pub fn update_p2c_epoch_converted_to_block_reward(
+        ctx: Context<UpdateP2CEpochConvertedToBlockReward>,
+        epoch: u64,
+    ) -> Result<()> {
+        UpdateP2CEpochConvertedToBlockReward::auth(&ctx)?;
+
+        let p2c = &mut ctx.accounts.p2c_subscription_account;
+        p2c.mark_epoch_converted_to_block_reward(epoch)?;
+
+        emit!(P2CEpochConvertedToBlockRewardEvent {
+            p2c_subscription_account: p2c.key(),
+            epoch,
+            authority: ctx.accounts.signer.key(),
+        });
+
+        Ok(())
+    }
+
+    /// Manager updates commission, grace, BR flag, optional record authority.
+    pub fn update_p2c_subscription_config(
+        ctx: Context<UpdateP2CSubscriptionConfig>,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        block_reward_conversion_enabled: bool,
+        grace_epochs: Option<u8>,
+        record_authority: Option<Pubkey>,
+    ) -> Result<()> {
+        UpdateP2CSubscriptionConfig::auth(&ctx, commission_bps, commission_account)?;
+
+        let p2c = &mut ctx.accounts.p2c_subscription_account;
+        p2c.update_config(
+            commission_bps,
+            commission_account,
+            block_reward_conversion_enabled,
+            grace_epochs,
+            record_authority,
+        )?;
+
+        emit!(P2CSubscriptionConfigUpdatedEvent {
+            p2c_subscription_account: p2c.key(),
+            commission_bps,
+            commission_account,
+            block_reward_conversion_enabled,
+            grace_epochs: p2c.grace_epochs,
+            record_authority: p2c.record_authority,
+        });
+
+        Ok(())
+    }
+
+    /// Manager adjusts cumulative P2C deficit.
+    pub fn update_p2c_deficit(
+        ctx: Context<UpdateP2CDeficit>,
+        update: DeficitUpdate,
+    ) -> Result<()> {
+        UpdateP2CDeficit::auth(&ctx)?;
+
+        let p2c = &mut ctx.accounts.p2c_subscription_account;
+        let previous = p2c.deficit;
+        p2c.deficit = update.apply(previous)?;
+
+        emit!(P2CDeficitUpdatedEvent {
+            p2c_subscription_account: p2c.key(),
+            previous_deficit: previous,
+            deficit: p2c.deficit,
+            update,
+            authority: ctx.accounts.manager_authority.key(),
+        });
+
+        Ok(())
+    }
+
+    /// Closes P2C escrow; rent + residual to initializer. Manager only.
+    pub fn close_p2c_subscription_account(
+        ctx: Context<CloseP2CSubscriptionAccount>,
+    ) -> Result<()> {
+        CloseP2CSubscriptionAccount::auth(&ctx)?;
+        Ok(())
+    }
 }
 
 fn initialize_reward_collection_account_inner(
@@ -1124,6 +1376,9 @@ pub enum ErrorCode {
 
     #[msg("Revenue share account data length does not match the expected layout for this instruction.")]
     InvalidRevenueShareLayout,
+
+    #[msg("P2C epoch fee already recorded for this epoch.")]
+    P2CEpochAlreadyRecorded,
 }
 
 /// Closes a `ClaimStatus` account and refunds lamports to the payer.
@@ -2042,6 +2297,258 @@ impl UpdateEpochConvertedToBlockRewardV1<'_> {
     }
 }
 
+// ---- P2C subscription account contexts ----
+
+/// Manager-only init of prepaid P2C subscription escrow.
+#[derive(Accounts)]
+#[instruction(
+    name: [u8; 32],
+    _record_authority: Pubkey,
+    max_epoch_entries: u8,
+    _commission_bps: u16,
+    _commission_account: Pubkey,
+    _grace_epochs: u8,
+    _bump: u8
+)]
+pub struct InitializeP2CSubscriptionAccount<'info> {
+    #[account(
+        init,
+        payer = manager_authority,
+        space = P2CSubscriptionAccount::space_for(max_epoch_entries as usize),
+        seeds = [
+            P2CSubscriptionAccount::SEED,
+            name.as_ref(),
+            validator_vote_account.key().as_ref(),
+        ],
+        bump,
+    )]
+    pub p2c_subscription_account: Account<'info, P2CSubscriptionAccount>,
+
+    #[account(
+        seeds = [RewardDistributionConfigAccount::SEED],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, RewardDistributionConfigAccount>,
+
+    /// CHECK: vote key used in PDA seeds.
+    pub validator_vote_account: AccountInfo<'info>,
+
+    /// Manager creates and funds rent for the PDA (only manager may create).
+    #[account(mut)]
+    pub manager_authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+impl InitializeP2CSubscriptionAccount<'_> {
+    fn auth(
+        ctx: &Context<InitializeP2CSubscriptionAccount>,
+        name: [u8; 32],
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
+    ) -> Result<()> {
+        P2CSubscriptionAccount::validate_init_params(
+            name,
+            ctx.accounts.manager_authority.key(),
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+            ctx.accounts.config.max_commission_bps,
+        )
+    }
+}
+
+#[derive(Accounts)]
+pub struct FundP2CSubscription<'info> {
+    #[account(mut)]
+    pub p2c_subscription_account: Account<'info, P2CSubscriptionAccount>,
+
+    #[account(mut)]
+    pub funder: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct RecordP2CSubscription<'info> {
+    #[account(mut)]
+    pub p2c_subscription_account: Account<'info, P2CSubscriptionAccount>,
+
+    pub record_authority: Signer<'info>,
+}
+
+impl RecordP2CSubscription<'_> {
+    fn auth(ctx: &Context<RecordP2CSubscription>) -> Result<()> {
+        ctx.accounts
+            .p2c_subscription_account
+            .auth_record_signer(ctx.accounts.record_authority.key())
+    }
+}
+
+#[derive(Accounts)]
+pub struct DeductP2CSubscription<'info> {
+    #[account(mut)]
+    pub p2c_subscription_account: Account<'info, P2CSubscriptionAccount>,
+
+    pub manager_authority: Signer<'info>,
+}
+
+impl DeductP2CSubscription<'_> {
+    fn auth(ctx: &Context<DeductP2CSubscription>) -> Result<()> {
+        ctx.accounts
+            .p2c_subscription_account
+            .auth_manager_signer(ctx.accounts.manager_authority.key())
+    }
+}
+
+#[derive(Accounts)]
+pub struct ClaimP2CSubscription<'info> {
+    #[account(mut)]
+    pub p2c_subscription_account: Account<'info, P2CSubscriptionAccount>,
+
+    /// CHECK: receives commission portion on claim.
+    #[account(
+        mut,
+        constraint = commission_account.key() == p2c_subscription_account.commission_account @ Unauthorized
+    )]
+    pub commission_account: AccountInfo<'info>,
+
+    /// CHECK: receives remainder on claim (validator identity path).
+    #[account(mut)]
+    pub validator_identity: AccountInfo<'info>,
+
+    pub manager_authority: Signer<'info>,
+}
+
+impl ClaimP2CSubscription<'_> {
+    fn auth(ctx: &Context<ClaimP2CSubscription>) -> Result<()> {
+        ctx.accounts
+            .p2c_subscription_account
+            .auth_manager_signer(ctx.accounts.manager_authority.key())
+    }
+}
+
+#[derive(Accounts)]
+#[instruction(epoch: u64)]
+pub struct UpdateP2CEpochConvertedToBlockReward<'info> {
+    #[account(mut)]
+    pub p2c_subscription_account: Account<'info, P2CSubscriptionAccount>,
+
+    /// CHECK: must match `validator_vote` when signer is validator identity.
+    pub validator_vote_account: AccountInfo<'info>,
+
+    pub signer: Signer<'info>,
+}
+
+impl UpdateP2CEpochConvertedToBlockReward<'_> {
+    fn auth(ctx: &Context<UpdateP2CEpochConvertedToBlockReward>) -> Result<()> {
+        use rakurai_vote_state::VoteState;
+
+        let acc = &ctx.accounts.p2c_subscription_account;
+        let signer = ctx.accounts.signer.key();
+
+        if signer == acc.manager_authority || signer == acc.record_authority {
+            return Ok(());
+        }
+
+        let vote = &ctx.accounts.validator_vote_account;
+        if vote.key() != acc.validator_vote {
+            return Err(Unauthorized.into());
+        }
+        if vote.owner != &solana_program::vote::program::id() {
+            return Err(Unauthorized.into());
+        }
+        let node = VoteState::deserialize_node_pubkey(vote).map_err(|_| Unauthorized)?;
+        if node != signer {
+            return Err(Unauthorized.into());
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct UpdateP2CSubscriptionConfig<'info> {
+    #[account(mut)]
+    pub p2c_subscription_account: Account<'info, P2CSubscriptionAccount>,
+
+    #[account(
+        seeds = [RewardDistributionConfigAccount::SEED],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, RewardDistributionConfigAccount>,
+
+    pub manager_authority: Signer<'info>,
+}
+
+impl UpdateP2CSubscriptionConfig<'_> {
+    fn auth(
+        ctx: &Context<UpdateP2CSubscriptionConfig>,
+        commission_bps: u16,
+        commission_account: Pubkey,
+    ) -> Result<()> {
+        ctx.accounts
+            .p2c_subscription_account
+            .auth_manager_signer(ctx.accounts.manager_authority.key())?;
+        validate_commission(
+            commission_bps,
+            commission_account,
+            ctx.accounts.config.max_commission_bps,
+        )
+    }
+}
+
+#[derive(Accounts)]
+pub struct UpdateP2CDeficit<'info> {
+    #[account(mut)]
+    pub p2c_subscription_account: Account<'info, P2CSubscriptionAccount>,
+
+    pub manager_authority: Signer<'info>,
+}
+
+impl UpdateP2CDeficit<'_> {
+    fn auth(ctx: &Context<UpdateP2CDeficit>) -> Result<()> {
+        ctx.accounts
+            .p2c_subscription_account
+            .auth_manager_signer(ctx.accounts.manager_authority.key())
+    }
+}
+
+#[derive(Accounts)]
+pub struct CloseP2CSubscriptionAccount<'info> {
+    #[account(
+        mut,
+        close = initializer,
+        seeds = [
+            P2CSubscriptionAccount::SEED,
+            p2c_subscription_account.name.as_ref(),
+            p2c_subscription_account.validator_vote.as_ref(),
+        ],
+        bump = p2c_subscription_account.bump,
+    )]
+    pub p2c_subscription_account: Account<'info, P2CSubscriptionAccount>,
+
+    /// CHECK: receives rent; must match stored `initializer`.
+    #[account(
+        mut,
+        constraint = initializer.key() == p2c_subscription_account.initializer @ Unauthorized,
+    )]
+    pub initializer: AccountInfo<'info>,
+
+    pub manager_authority: Signer<'info>,
+}
+
+impl CloseP2CSubscriptionAccount<'_> {
+    fn auth(ctx: &Context<CloseP2CSubscriptionAccount>) -> Result<()> {
+        ctx.accounts
+            .p2c_subscription_account
+            .auth_manager_signer(ctx.accounts.manager_authority.key())
+    }
+}
+
 // Events
 
 // Emitted when a new RewardCollectionAccount is initialized.
@@ -2227,5 +2734,82 @@ pub struct RevenueEpochConvertedToBlockRewardUpdatedEvent {
     pub revenue_share_account: Pubkey,
     pub share_kind: RevenueKind,
     pub epoch: u64,
+    pub authority: Pubkey,
+}
+
+#[event]
+pub struct P2CSubscriptionInitializedEvent {
+    pub p2c_subscription_account: Pubkey,
+    pub name: [u8; 32],
+    pub validator_vote: Pubkey,
+    pub manager_authority: Pubkey,
+    pub record_authority: Pubkey,
+    pub max_epoch_entries: u8,
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
+    pub grace_epochs: u8,
+}
+
+#[event]
+pub struct P2CSubscriptionFundedEvent {
+    pub p2c_subscription_account: Pubkey,
+    pub funder: Pubkey,
+    pub amount: u64,
+}
+
+#[event]
+pub struct P2CSubscriptionRecordedEvent {
+    pub p2c_subscription_account: Pubkey,
+    pub epoch: u64,
+    pub stake: u64,
+    pub amount_due: u64,
+}
+
+#[event]
+pub struct P2CSubscriptionDeductedEvent {
+    pub p2c_subscription_account: Pubkey,
+    pub epoch: u64,
+    pub delta: u64,
+    pub amount_deducted: u64,
+    pub amount_due: u64,
+}
+
+#[event]
+pub struct P2CSubscriptionClaimedEvent {
+    pub p2c_subscription_account: Pubkey,
+    pub validator_identity: Pubkey,
+    pub commission_account: Pubkey,
+    pub epoch: u64,
+    pub commission_amount: u64,
+    pub validator_amount: u64,
+    pub claimable: u64,
+    pub shortfall: u64,
+    pub deficit: u64,
+    pub status: P2CSubscriptionStatus,
+}
+
+#[event]
+pub struct P2CEpochConvertedToBlockRewardEvent {
+    pub p2c_subscription_account: Pubkey,
+    pub epoch: u64,
+    pub authority: Pubkey,
+}
+
+#[event]
+pub struct P2CSubscriptionConfigUpdatedEvent {
+    pub p2c_subscription_account: Pubkey,
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
+    pub block_reward_conversion_enabled: bool,
+    pub grace_epochs: u8,
+    pub record_authority: Pubkey,
+}
+
+#[event]
+pub struct P2CDeficitUpdatedEvent {
+    pub p2c_subscription_account: Pubkey,
+    pub previous_deficit: u64,
+    pub deficit: u64,
+    pub update: DeficitUpdate,
     pub authority: Pubkey,
 }
