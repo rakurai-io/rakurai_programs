@@ -13,12 +13,14 @@ use {
             instruction::{
                 claim_p2c_subscription_ix, clear_deficit_v1_ix, clear_p2c_deficit_ix,
                 deduct_p2c_subscription_ix, fund_p2c_subscription_ix, record_p2c_subscription_ix,
-                record_revenue_ix, record_revenue_v1_ix, settle_revenue_ix, ClaimP2CSubscriptionArgs,
+                record_and_transfer_ix, record_revenue_ix, record_revenue_v1_ix, settle_revenue_ix,
+                ClaimP2CSubscriptionArgs,
                 ClaimP2CSubscriptionAccounts, ClearDeficitV1Accounts, ClearDeficitV1Args,
                 ClearP2CDeficitAccounts, ClearP2CDeficitArgs, DeductP2CSubscriptionAccounts,
                 DeductP2CSubscriptionArgs, FundP2CSubscriptionAccounts, FundP2CSubscriptionArgs,
-                RecordP2CSubscriptionAccounts, RecordP2CSubscriptionArgs, RecordRevenueArgs,
-                RecordRevenueShareAccounts, SettleRevenueAccounts, SettleRevenueArgs,
+                RecordP2CSubscriptionAccounts, RecordP2CSubscriptionArgs, RecordAndTransferAccounts,
+                RecordAndTransferArgs, RecordRevenueArgs, RecordRevenueShareAccounts,
+                SettleRevenueAccounts, SettleRevenueArgs,
             },
         },
         state::{
@@ -113,6 +115,8 @@ enum TipCommands {
     GetAllPendingRecords(AccountArgs),
     /// Transfer SOL into a TCA for one recorded epoch.
     Transfer(TransferArgs),
+    /// Record + settle SOL for the current epoch in one ix (V1 custom TCA only).
+    RecordAndTransfer(RecordRevenueCliArgs),
     /// Settle all pending epochs for every matching TCA.
     TransferAll(TransferAllArgs),
     /// Clear open V1 vault deficit (funder transfers; pays commission + identity).
@@ -132,6 +136,8 @@ enum MevShareCommands {
     GetAllPendingRecords(AccountArgs),
     /// Record MevShare revenue for the current epoch (MCA record authority).
     RecordRevenue(RecordRevenueCliArgs),
+    /// Record + settle SOL for the current epoch in one ix (V1 MCA only).
+    RecordAndTransfer(RecordRevenueCliArgs),
     /// Transfer SOL into an MCA for one recorded epoch.
     Transfer(TransferArgs),
     /// Settle all pending epochs for every matching MCA.
@@ -1237,6 +1243,83 @@ fn process_record_revenue(
     sign_and_send_transaction(rpc_client, instruction, &authority)
 }
 
+/// Record + settle current epoch on V1 non-Rakurai vaults (record_authority pays SOL).
+fn process_record_and_transfer(
+    rpc_client: Arc<RpcClient>,
+    program_id: Pubkey,
+    keypair_path: &str,
+    kind: RevenueKind,
+    args: RecordRevenueCliArgs,
+) -> CliResult {
+    if args.amount == 0 {
+        return Err("amount must be greater than zero".into());
+    }
+
+    let vault = load_target(&rpc_client, program_id, kind, &args.target)?;
+    let VaultAccount::V1 { .. } = &vault else {
+        return Err(
+            "record-and-transfer requires a V1 vault; use record-revenue + transfer on legacy"
+                .into(),
+        );
+    };
+    if vault.is_rakurai_tip_tca() {
+        return Err(
+            "Rakurai tip TCA credits transfer on record automatically; record-and-transfer is blocked"
+                .into(),
+        );
+    }
+
+    let authority = parse_keypair(keypair_path)?;
+    let expected = vault.record_authority();
+    if authority.pubkey() != expected {
+        return Err(format!(
+            "keypair {} is not the record_authority {}; use the authority assigned at vault init",
+            authority.pubkey(),
+            expected
+        )
+        .into());
+    }
+
+    let instruction = record_and_transfer_ix(
+        program_id,
+        RecordAndTransferArgs {
+            amount: args.amount,
+        },
+        RecordAndTransferAccounts {
+            revenue_share_account: vault.address(),
+            record_authority: authority.pubkey(),
+            payer: authority.pubkey(),
+            system_program: system_program::id(),
+        },
+    );
+
+    let clock_epoch = rpc_client.get_epoch_info()?.epoch;
+
+    print_heading("Partner Record And Transfer");
+    print_field(
+        "🔗".cyan(),
+        "Vault:",
+        vault.address().to_string().bold().green(),
+    );
+    print_field("📦".cyan(), "Account:", vault.version_name().blue());
+    print_field(
+        "🕒".cyan(),
+        "Epoch:",
+        format!("{clock_epoch} (current cluster epoch)").blue(),
+    );
+    print_field(
+        "💰".green(),
+        "Amount:",
+        format_total_with_sol(args.amount).yellow(),
+    );
+    print_field(
+        "🔏".magenta(),
+        "Signer (record auth + payer):",
+        authority.pubkey().to_string(),
+    );
+    sign_and_send_transaction(rpc_client, instruction, &authority)
+}
+
 fn settle_instruction(
     program_id: Pubkey,
     vault: &VaultAccount,
@@ -1884,6 +1967,9 @@ fn dispatch_tip(
         TipCommands::Transfer(args) => {
             process_transfer(rpc_client, program_id, keypair, kind, args)
         }
+        TipCommands::RecordAndTransfer(args) => {
+            process_record_and_transfer(rpc_client, program_id, keypair, kind, args)
+        }
         TipCommands::TransferAll(args) => {
             process_transfer_all(rpc_client, program_id, keypair, kind, args)
         }
@@ -1915,6 +2001,9 @@ fn dispatch_mevshare(
         }
         MevShareCommands::RecordRevenue(args) => {
             process_record_revenue(rpc_client, program_id, keypair, args)
+        }
+        MevShareCommands::RecordAndTransfer(args) => {
+            process_record_and_transfer(rpc_client, program_id, keypair, kind, args)
         }
         MevShareCommands::Transfer(args) => {
             process_transfer(rpc_client, program_id, keypair, kind, args)

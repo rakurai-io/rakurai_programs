@@ -819,6 +819,44 @@ pub fn record_revenue_v1_ix(
     }
 }
 
+pub struct RecordAndTransferArgs {
+    pub amount: u64,
+}
+
+pub struct RecordAndTransferAccounts {
+    pub revenue_share_account: Pubkey,
+    pub record_authority: Pubkey,
+    pub payer: Pubkey,
+    pub system_program: Pubkey,
+}
+
+/// Record amount for the current epoch and settle SOL in one instruction (V1 vaults).
+pub fn record_and_transfer_ix(
+    program_id: Pubkey,
+    args: RecordAndTransferArgs,
+    accounts: RecordAndTransferAccounts,
+) -> Instruction {
+    let RecordAndTransferArgs { amount } = args;
+    let RecordAndTransferAccounts {
+        revenue_share_account,
+        record_authority,
+        payer,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::RecordAndTransfer { amount }.data(),
+        accounts: crate::accounts::RecordAndTransfer {
+            revenue_share_account,
+            record_authority,
+            payer,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
 pub struct SettleRevenueArgs {
     pub epoch: u64,
     pub amount: u64,

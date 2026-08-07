@@ -676,6 +676,75 @@ pub mod reward_distribution {
         Ok(())
     }
 
+    /// Record attributed amount and settle SOL in one ix on TCAV1 / MCAV1 (non-Rakurai tip).
+    /// Current epoch only. Auth: `record_authority`. Payer funds the transfer (may be same signer).
+    pub fn record_and_transfer(ctx: Context<RecordAndTransfer>, amount: u64) -> Result<()> {
+        RecordAndTransfer::auth(&ctx)?;
+
+        if ctx.accounts.revenue_share_account.is_rakurai_tip_tca() {
+            // Rakurai tip auto-credits transferred on record; transfer would double-count.
+            return Err(Unauthorized.into());
+        }
+        if amount == 0 {
+            return Err(RewardsTooLow.into());
+        }
+
+        let epoch = Clock::get()?.epoch;
+        let revenue_key = ctx.accounts.revenue_share_account.key();
+        let share_kind = ctx.accounts.revenue_share_account.share_kind;
+
+        {
+            let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+            revenue_share_account.record_revenue(epoch, amount)?;
+            // Ensure entry is unclaimed before CPI (new epoch is always unclaimed).
+            let entry = revenue_share_account.ledger.get_mut(epoch)?;
+            if entry.claimed {
+                return Err(EpochAlreadyClaimed.into());
+            }
+        }
+
+        invoke(
+            &system_instruction::transfer(
+                ctx.accounts.payer.key,
+                &revenue_key,
+                amount,
+            ),
+            &[
+                ctx.accounts.payer.to_account_info(),
+                ctx.accounts.revenue_share_account.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+        )?;
+
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        revenue_share_account.credit_transferred(epoch, amount)?;
+
+        let transferred_amount = revenue_share_account
+            .ledger
+            .entries
+            .iter()
+            .find(|e| e.epoch == epoch)
+            .map(|e| e.transferred_amount)
+            .unwrap_or(0);
+
+        emit!(RevenueRecordedEvent {
+            revenue_share_account: revenue_key,
+            share_kind,
+            epoch,
+            amount,
+        });
+        emit!(RevenueSettledEvent {
+            revenue_share_account: revenue_key,
+            share_kind,
+            epoch,
+            amount,
+            payer: ctx.accounts.payer.key(),
+            transferred_amount,
+        });
+
+        Ok(())
+    }
+
     /// For non-Rakurai TCAV1 vaults: CPI system-transfer SOL into the vault, then `credit_transferred`.
     pub fn settle_revenue(ctx: Context<SettleRevenue>, epoch: u64, amount: u64) -> Result<()> {
         if ctx.accounts.revenue_share_account.is_rakurai_tip_tca() {
@@ -2086,6 +2155,30 @@ pub struct RecordRevenueV1<'info> {
 
 impl RecordRevenueV1<'_> {
     fn auth(ctx: &Context<RecordRevenueV1>) -> Result<()> {
+        ctx.accounts
+            .revenue_share_account
+            .auth_record_signer(ctx.accounts.record_authority.key())
+    }
+}
+
+/// Record + settle SOL for the current epoch on a TCAV1 / MCAV1 vault.
+#[derive(Accounts)]
+#[instruction(amount: u64)]
+pub struct RecordAndTransfer<'info> {
+    #[account(mut)]
+    pub revenue_share_account: Account<'info, RevenueShareAccountV1>,
+
+    pub record_authority: Signer<'info>,
+
+    /// Funds the settle transfer (may equal `record_authority`).
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+impl RecordAndTransfer<'_> {
+    fn auth(ctx: &Context<RecordAndTransfer>) -> Result<()> {
         ctx.accounts
             .revenue_share_account
             .auth_record_signer(ctx.accounts.record_authority.key())

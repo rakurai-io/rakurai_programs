@@ -144,6 +144,7 @@ Partners settle TCA/MCA balances with the [Partner Tip and MevShare Revenue Sett
 | **Config** | RD config + full init args | One-time `initialize_tips_and_mev_share_config` |
 | **Init** | `initialize_revenue_share_account` | `initialize_revenue_share_account_v1` |
 | **Record** | `record_revenue` (amount only) | `record_revenue_v1` (Rakurai tip also credits `transferred_amount`) |
+| **Record+transfer** | N/A | `record_and_transfer` (record + settle current epoch in one ix; non-Rakurai tip) |
 | **Settle** | N/A (claim needs vault lamports ≥ `amount`) | `settle_revenue` / `update_transferred_amount` |
 | **Claim** | `claim_revenue` (pays `amount`) | `claim_revenue_v1` (pays `transferred_amount`; deficit; Rakurai name skips commission) |
 | **Clear deficit** | — | `clear_deficit_v1` (funder transfers; deduct up to deficit → commission + identity) |

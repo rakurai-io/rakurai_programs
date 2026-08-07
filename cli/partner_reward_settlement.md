@@ -250,6 +250,7 @@ For MCA, record each epoch first (`record-revenue`) before `transfer-all`.
 | | Legacy | V1 |
 | --- | --- | --- |
 | Record (MCA) | `record_revenue` | `record_revenue_v1` |
+| Record+transfer (V1) | N/A | `record_and_transfer` (current epoch; non-Rakurai tip) |
 | Transfer | System transfer into the vault | `settle_revenue` (transfer + credit `transferred_amount`) |
 | Retry risk | Can double-fund if you re-run transfer without checking balance/signature | Ledger tracks what was already transferred |
 | Force layout | `--account-version legacy` | `--account-version v1` |
