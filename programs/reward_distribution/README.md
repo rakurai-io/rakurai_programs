@@ -257,3 +257,13 @@ SDK: `derive_revenue_share_account_address` (legacy), `derive_revenue_share_acco
 Legacy and V1 vaults coexist. Each is created once per `(seed space, share_kind, name, vote)`. Manager authority closes them when unused.
 
 ---
+
+## 7. P2C subscription escrow
+
+Prepaid fee escrow for Pack-to-Chain (P2C) billing, keyed as `[P2C_SUBSCRIPTION, name, vote]`.
+
+- **Manager-only create** (`initialize_p2c_subscription_account`): manager signs and pays rent.
+- User **funds** the PDA; each epoch **record** stores `stake` + `amount_due`.
+- **Partial deduct**: `amount_deducted += min(remaining_due, free_balance)` — never fails solely because the escrow is underfunded; top-up and re-deduct while unclaimed.
+- **Claim** pays only `amount_deducted` (`commission_bps` → commission account, rest → validator identity). Remaining due → account `deficit` and grace streak (default 2 epochs → `InGrace` / `Suspended`).
+- **Convert-to-block** mirrors revenue share after claim.
