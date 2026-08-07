@@ -1211,36 +1211,16 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Partial deduct from free prepaid balance into epoch `amount_deducted`.
-    pub fn deduct_p2c_subscription(
-        ctx: Context<DeductP2CSubscription>,
+    /// Claim epoch fee from prepaid SOL.
+    ///
+    /// Pays `min(remaining due, free prepaid)` to commission + identity and notes it.
+    /// Marks claimed when fully paid, or when `force_claim` closes with the rest as `deficit`.
+    pub fn claim_epoch_p2c_subscription(
+        ctx: Context<ClaimEpochP2CSubscription>,
         epoch: u64,
+        force_claim: bool,
     ) -> Result<()> {
-        DeductP2CSubscription::auth(&ctx)?;
-
-        let p2c = &mut ctx.accounts.p2c_subscription_account;
-        let reserved = p2c.ledger.reserved_unclaimed()?;
-        let free = P2CSubscriptionAccount::free_balance(
-            p2c.to_account_info().lamports(),
-            p2c.to_account_info().data_len(),
-            reserved,
-        )?;
-        let (delta, amount_deducted, amount_due) = p2c.deduct(epoch, free)?;
-
-        emit!(P2CSubscriptionDeductedEvent {
-            p2c_subscription_account: p2c.key(),
-            epoch,
-            delta,
-            amount_deducted,
-            amount_due,
-        });
-
-        Ok(())
-    }
-
-    /// Pays `amount_deducted` to commission + validator identity; underfund → deficit + grace.
-    pub fn claim_p2c_subscription(ctx: Context<ClaimP2CSubscription>, epoch: u64) -> Result<()> {
-        ClaimP2CSubscription::auth(&ctx)?;
+        ClaimEpochP2CSubscription::auth(&ctx)?;
 
         let p2c = &mut ctx.accounts.p2c_subscription_account;
         let p2c_key = p2c.key();
@@ -1249,8 +1229,8 @@ pub mod reward_distribution {
         let p2c_info = p2c.to_account_info();
         let acc: &mut P2CSubscriptionAccount = &mut *p2c;
 
-        let (commission_amount, validator_amount, claimable, shortfall) =
-            P2CSubscriptionAccount::claim(
+        let (commission_amount, validator_amount, paid, amount_deducted, shortfall, closed) =
+            P2CSubscriptionAccount::claim_epoch(
                 &mut acc.ledger,
                 &mut acc.deficit,
                 &mut acc.unpaid_streak,
@@ -1261,6 +1241,7 @@ pub mod reward_distribution {
                 ctx.accounts.validator_identity.to_account_info(),
                 commission_bps,
                 epoch,
+                force_claim,
             )?;
 
         emit!(P2CSubscriptionClaimedEvent {
@@ -1270,8 +1251,11 @@ pub mod reward_distribution {
             epoch,
             commission_amount,
             validator_amount,
-            claimable,
+            paid,
+            amount_deducted,
             shortfall,
+            force_claim,
+            closed,
             deficit: acc.deficit,
             status: acc.status,
         });
@@ -2646,24 +2630,10 @@ impl RecordP2CSubscription<'_> {
     }
 }
 
-#[derive(Accounts)]
-pub struct DeductP2CSubscription<'info> {
-    #[account(mut)]
-    pub p2c_subscription_account: Account<'info, P2CSubscriptionAccount>,
-
-    pub manager_authority: Signer<'info>,
-}
-
-impl DeductP2CSubscription<'_> {
-    fn auth(ctx: &Context<DeductP2CSubscription>) -> Result<()> {
-        ctx.accounts
-            .p2c_subscription_account
-            .auth_manager_signer(ctx.accounts.manager_authority.key())
-    }
-}
 
 #[derive(Accounts)]
-pub struct ClaimP2CSubscription<'info> {
+#[instruction(epoch: u64, force_claim: bool)]
+pub struct ClaimEpochP2CSubscription<'info> {
     #[account(mut)]
     pub p2c_subscription_account: Account<'info, P2CSubscriptionAccount>,
 
@@ -2681,8 +2651,8 @@ pub struct ClaimP2CSubscription<'info> {
     pub manager_authority: Signer<'info>,
 }
 
-impl ClaimP2CSubscription<'_> {
-    fn auth(ctx: &Context<ClaimP2CSubscription>) -> Result<()> {
+impl ClaimEpochP2CSubscription<'_> {
+    fn auth(ctx: &Context<ClaimEpochP2CSubscription>) -> Result<()> {
         ctx.accounts
             .p2c_subscription_account
             .auth_manager_signer(ctx.accounts.manager_authority.key())
@@ -3043,15 +3013,6 @@ pub struct P2CSubscriptionRecordedEvent {
 }
 
 #[event]
-pub struct P2CSubscriptionDeductedEvent {
-    pub p2c_subscription_account: Pubkey,
-    pub epoch: u64,
-    pub delta: u64,
-    pub amount_deducted: u64,
-    pub amount_due: u64,
-}
-
-#[event]
 pub struct P2CSubscriptionClaimedEvent {
     pub p2c_subscription_account: Pubkey,
     pub validator_identity: Pubkey,
@@ -3059,8 +3020,15 @@ pub struct P2CSubscriptionClaimedEvent {
     pub epoch: u64,
     pub commission_amount: u64,
     pub validator_amount: u64,
-    pub claimable: u64,
+    /// Lamports paid this instruction.
+    pub paid: u64,
+    /// Running total paid for the epoch.
+    pub amount_deducted: u64,
+    /// Written to deficit only when `closed` (full pay or force_claim).
     pub shortfall: u64,
+    pub force_claim: bool,
+    /// Epoch marked claimed this instruction.
+    pub closed: bool,
     pub deficit: u64,
     pub status: P2CSubscriptionStatus,
 }

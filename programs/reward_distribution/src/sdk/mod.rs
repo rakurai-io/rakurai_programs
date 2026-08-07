@@ -130,7 +130,7 @@ pub fn derive_mev_share_collection_account_v1_address(
 }
 
 /// Derives a P2C subscription escrow PDA: `[P2C_SUBSCRIPTION, name, vote]`.
-/// Manager-only create; prepaid free balance with partial epoch deducts.
+/// Manager-only create; prepaid free balance; claim_epoch with partial + force_claim.
 pub fn derive_p2c_subscription_address(
     reward_distribution_program_id: &Pubkey,
     name: &[u8; 32],

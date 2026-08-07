@@ -1197,9 +1197,9 @@ pub struct P2CEpochEntry {
     pub stake: u64,
     /// Fee due for the epoch.
     pub amount_due: u64,
-    /// Lamports reserved from prepaid free balance for this epoch (partial deduct OK).
+    /// Lamports paid out on claim for this epoch (`min(due, free prepaid)`).
     pub amount_deducted: u64,
-    /// Whether `amount_deducted` has been paid out (commission + identity).
+    /// Whether this epoch has been claimed (payout attempted).
     pub claimed: bool,
     /// Same lifecycle flag as revenue share after claim.
     pub block_reward_converted: bool,
@@ -1219,7 +1219,7 @@ pub struct P2CSubscriptionAccount {
     pub validator_vote: Pubkey,
     /// Who paid rent; receives residual on close.
     pub initializer: Pubkey,
-    /// Creates (via ix signer), claims, config, close, deduct.
+    /// Creates (via ix signer), claims, config, close.
     pub manager_authority: Pubkey,
     /// Signs `record_p2c_subscription`.
     pub record_authority: Pubkey,
@@ -1287,7 +1287,7 @@ impl P2CSubscriptionLedger {
         Ok(())
     }
 
-    /// Sum of unclaimed `amount_deducted` (reserved, not free for new deducts).
+    /// Sum of unclaimed `amount_deducted` (normally 0 — reserved only mid-claim).
     pub fn reserved_unclaimed(&self) -> Result<u64> {
         let mut total = 0u64;
         for e in &self.entries {
@@ -1561,22 +1561,11 @@ impl P2CSubscriptionAccount {
             .insert(entry, self.max_epoch_entries as usize)
     }
 
-    /// Partial deduct: take min(remaining_due, free_balance). Never fails for shortfall alone.
-    /// Returns `(delta, amount_deducted, amount_due)`.
-    pub fn deduct(&mut self, epoch: u64, free_balance: u64) -> Result<(u64, u64, u64)> {
-        let entry = self.ledger.get_mut(epoch)?;
-        if entry.claimed {
-            return Err(EpochAlreadyClaimed.into());
-        }
-
-        let remaining = entry.amount_due.saturating_sub(entry.amount_deducted);
-        let delta = remaining.min(free_balance);
-        entry.amount_deducted = entry
-            .amount_deducted
-            .checked_add(delta)
-            .ok_or(ArithmeticError)?;
-
-        Ok((delta, entry.amount_deducted, entry.amount_due))
+    /// How much more can be paid this call, given free prepaid.
+    pub fn resolve_claimable(remaining_due: u64, free_balance: u64) -> (u64, u64) {
+        let paid = remaining_due.min(free_balance);
+        let still_short = remaining_due.saturating_sub(paid);
+        (paid, still_short)
     }
 
     pub fn mark_epoch_converted_to_block_reward(&mut self, epoch: u64) -> Result<()> {
@@ -1615,9 +1604,15 @@ impl P2CSubscriptionAccount {
         self.validate()
     }
 
-    /// Claim reserved `amount_deducted`; underfund shortfall → `deficit` and grace streak.
-    /// Returns `(commission, validator, claimable, shortfall)`.
-    pub fn claim(
+    /// Pay from free prepaid against this epoch.
+    ///
+    /// - Always notes and transfers `min(remaining_due, free)`.
+    /// - Marks `claimed` when fully paid (`amount_deducted >= amount_due`).
+    /// - Or, if `force_claim`, marks claimed with any leftover as `deficit` (+ grace).
+    /// - Without `force_claim` and still underfunded: leaves epoch open (partial noted).
+    ///
+    /// Returns `(commission, validator, paid_this_ix, amount_deducted, shortfall, closed)`.
+    pub fn claim_epoch(
         ledger: &mut P2CSubscriptionLedger,
         deficit: &mut u64,
         unpaid_streak: &mut u8,
@@ -1628,7 +1623,8 @@ impl P2CSubscriptionAccount {
         validator_identity: AccountInfo,
         commission_bps: u16,
         epoch: u64,
-    ) -> Result<(u64, u64, u64, u64)> {
+        force_claim: bool,
+    ) -> Result<(u64, u64, u64, u64, u64, bool)> {
         use crate::ErrorCode::*;
 
         let current_epoch = Clock::get()?.epoch;
@@ -1636,7 +1632,7 @@ impl P2CSubscriptionAccount {
             return Err(PrematureRevenueClaim.into());
         }
 
-        let (amount_due, amount_deducted) = {
+        let (amount_due, prior_deducted) = {
             let entry = ledger
                 .entries
                 .iter()
@@ -1645,50 +1641,70 @@ impl P2CSubscriptionAccount {
             if entry.claimed {
                 return Err(EpochAlreadyClaimed.into());
             }
-            if entry.amount_deducted == 0 {
-                return Err(RewardsTooLow.into());
-            }
             (entry.amount_due, entry.amount_deducted)
         };
 
-        let claimable = amount_deducted;
-        let shortfall = amount_due.saturating_sub(claimable);
-        let (commission_amount, validator_amount) =
-            Self::split_claim_amount(claimable, commission_bps)?;
-
+        let remaining = amount_due.saturating_sub(prior_deducted);
         let rent = Rent::get()?;
         let min_rent = rent.minimum_balance(p2c_account.data_len());
-        let available = p2c_account.lamports().saturating_sub(min_rent);
-        if available < claimable {
+        // Prior partial payments already left the PDA; free is just spendable lamports.
+        let free = Self::free_balance_from_parts(p2c_account.lamports(), min_rent, 0);
+        let (paid, _) = Self::resolve_claimable(remaining, free);
+
+        if paid == 0 && !force_claim && remaining > 0 {
             return Err(RewardsTooLow.into());
         }
+
+        let (commission_amount, validator_amount) =
+            Self::split_claim_amount(paid, commission_bps)?;
 
         if commission_amount > 0 {
             RewardCollectionAccount::transfer_lamports(
                 p2c_account.clone(),
-                commission_account,
+                commission_account.clone(),
                 commission_amount,
             )?;
         }
         if validator_amount > 0 {
             RewardCollectionAccount::transfer_lamports(
-                p2c_account,
+                p2c_account.clone(),
                 validator_identity,
                 validator_amount,
             )?;
         }
 
-        Self::apply_claim_shortfall(
-            deficit,
-            unpaid_streak,
-            status,
-            grace_epochs,
+        let amount_deducted = {
+            let entry = ledger.get_mut(epoch)?;
+            entry.amount_deducted = entry
+                .amount_deducted
+                .checked_add(paid)
+                .ok_or(ArithmeticError)?;
+            entry.amount_deducted
+        };
+
+        let remaining_after = amount_due.saturating_sub(amount_deducted);
+        let close = remaining_after == 0 || force_claim;
+        let shortfall = if close { remaining_after } else { 0 };
+
+        if close {
+            Self::apply_claim_shortfall(
+                deficit,
+                unpaid_streak,
+                status,
+                grace_epochs,
+                shortfall,
+            )?;
+            ledger.mark_claimed(epoch)?;
+        }
+
+        Ok((
+            commission_amount,
+            validator_amount,
+            paid,
+            amount_deducted,
             shortfall,
-        )?;
-
-        ledger.mark_claimed(epoch)?;
-
-        Ok((commission_amount, validator_amount, claimable, shortfall))
+            close,
+        ))
     }
 }
 
@@ -2083,35 +2099,24 @@ mod tests {
     }
 
     #[test]
-    fn p2c_record_once_and_partial_deduct() {
-        let mut acc = test_p2c_account(true);
-        acc.record(10, 1_000_000, 100).unwrap();
-        assert_eq!(acc.ledger.entries[0].amount_due, 100);
-        assert!(!acc.ledger.entries[0].block_reward_converted);
-
-        let (delta, deducted, due) = acc.deduct(10, 40).unwrap();
-        assert_eq!(delta, 40);
-        assert_eq!(deducted, 40);
-        assert_eq!(due, 100);
-
-        let (delta2, deducted2, _) = acc.deduct(10, 50).unwrap();
-        assert_eq!(delta2, 50);
-        assert_eq!(deducted2, 90);
-
-        let (delta3, deducted3, _) = acc.deduct(10, 100).unwrap();
-        assert_eq!(delta3, 10);
-        assert_eq!(deducted3, 100);
+    fn p2c_resolve_claimable_partial_and_zero() {
+        assert_eq!(
+            P2CSubscriptionAccount::resolve_claimable(100, 40),
+            (40, 60)
+        );
+        assert_eq!(P2CSubscriptionAccount::resolve_claimable(100, 100), (100, 0));
+        assert_eq!(P2CSubscriptionAccount::resolve_claimable(50, 0), (0, 50));
+        assert_eq!(P2CSubscriptionAccount::resolve_claimable(50, 200), (50, 0));
     }
 
     #[test]
-    fn p2c_partial_deduct_zero_free_ok() {
-        let mut acc = test_p2c_account(false);
-        acc.record(5, 10, 50).unwrap();
-        let (delta, deducted, due) = acc.deduct(5, 0).unwrap();
-        assert_eq!(delta, 0);
-        assert_eq!(deducted, 0);
-        assert_eq!(due, 50);
-        assert!(acc.ledger.entries[0].block_reward_converted);
+    fn p2c_record_once_and_sets_due() {
+        let mut acc = test_p2c_account(true);
+        acc.record(10, 1_000_000, 100).unwrap();
+        assert_eq!(acc.ledger.entries[0].amount_due, 100);
+        assert_eq!(acc.ledger.entries[0].amount_deducted, 0);
+        assert!(!acc.ledger.entries[0].claimed);
+        assert!(!acc.ledger.entries[0].block_reward_converted);
     }
 
     #[test]
@@ -2126,8 +2131,8 @@ mod tests {
         let mut acc = test_p2c_account(false);
         acc.record(1, 1, 100).unwrap();
         acc.record(2, 1, 50).unwrap();
-        acc.deduct(1, 30).unwrap();
-        acc.deduct(2, 20).unwrap();
+        acc.ledger.entries[0].amount_deducted = 30;
+        acc.ledger.entries[1].amount_deducted = 20;
         assert_eq!(acc.ledger.reserved_unclaimed().unwrap(), 50);
         acc.ledger.mark_claimed(1).unwrap();
         assert_eq!(acc.ledger.reserved_unclaimed().unwrap(), 20);

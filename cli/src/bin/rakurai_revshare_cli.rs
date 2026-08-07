@@ -11,15 +11,14 @@ use {
             derive_p2c_subscription_address, derive_revenue_share_account_address,
             derive_revenue_share_account_v1_address,
             instruction::{
-                claim_p2c_subscription_ix, clear_deficit_v1_ix, clear_p2c_deficit_ix,
-                deduct_p2c_subscription_ix, fund_p2c_subscription_ix, record_p2c_subscription_ix,
-                record_and_transfer_ix, record_revenue_ix, record_revenue_v1_ix, settle_revenue_ix,
-                ClaimP2CSubscriptionArgs,
-                ClaimP2CSubscriptionAccounts, ClearDeficitV1Accounts, ClearDeficitV1Args,
-                ClearP2CDeficitAccounts, ClearP2CDeficitArgs, DeductP2CSubscriptionAccounts,
-                DeductP2CSubscriptionArgs, FundP2CSubscriptionAccounts, FundP2CSubscriptionArgs,
-                RecordP2CSubscriptionAccounts, RecordP2CSubscriptionArgs, RecordAndTransferAccounts,
-                RecordAndTransferArgs, RecordRevenueArgs, RecordRevenueShareAccounts,
+                claim_epoch_p2c_subscription_ix, clear_deficit_v1_ix, clear_p2c_deficit_ix,
+                fund_p2c_subscription_ix, record_and_transfer_ix, record_p2c_subscription_ix,
+                record_revenue_ix, record_revenue_v1_ix, settle_revenue_ix,
+                ClaimEpochP2CSubscriptionAccounts, ClaimEpochP2CSubscriptionArgs,
+                ClearDeficitV1Accounts, ClearDeficitV1Args, ClearP2CDeficitAccounts,
+                ClearP2CDeficitArgs, FundP2CSubscriptionAccounts, FundP2CSubscriptionArgs,
+                RecordAndTransferAccounts, RecordAndTransferArgs, RecordP2CSubscriptionAccounts,
+                RecordP2CSubscriptionArgs, RecordRevenueArgs, RecordRevenueShareAccounts,
                 SettleRevenueAccounts, SettleRevenueArgs,
             },
         },
@@ -157,9 +156,7 @@ enum P2cCommands {
     Fund(P2cFundArgs),
     /// Record stake + amount due for an epoch.
     Record(P2cRecordArgs),
-    /// Partial-deduct free prepaid into an epoch entry.
-    Deduct(P2cEpochArgs),
-    /// Claim deducted amount after epoch ends (manager).
+    /// Claim epoch fee from prepaid (partial OK; optional force-close with deficit).
     Claim(P2cClaimArgs),
     /// Clear open deficit (funder transfers; pays commission + identity).
     ClearDeficit(P2cClearDeficitArgs),
@@ -345,6 +342,10 @@ struct P2cClaimArgs {
     /// Validator identity receiving the non-commission share.
     #[arg(long = "validator-identity", required = true, value_parser = parse_pubkey)]
     validator_identity: Pubkey,
+
+    /// Close epoch even when underfunded; remaining due is added to deficit.
+    #[arg(long = "force-claim", default_value_t = false)]
+    force_claim: bool,
 }
 
 #[derive(Args)]
@@ -1821,40 +1822,6 @@ fn process_p2c_record(
     sign_and_send_transaction(rpc_client, instruction, &authority)
 }
 
-fn process_p2c_deduct(
-    rpc_client: Arc<RpcClient>,
-    program_id: Pubkey,
-    keypair_path: &str,
-    args: P2cEpochArgs,
-) -> CliResult {
-    let (address, account) = load_p2c(
-        &rpc_client,
-        program_id,
-        &args.account.name.name,
-        args.account.vote_pubkey,
-    )?;
-    let manager = parse_keypair(keypair_path)?;
-    if manager.pubkey() != account.manager_authority {
-        return Err(format!(
-            "keypair is not manager_authority {}",
-            account.manager_authority
-        )
-        .into());
-    }
-    let instruction = deduct_p2c_subscription_ix(
-        program_id,
-        DeductP2CSubscriptionArgs { epoch: args.epoch },
-        DeductP2CSubscriptionAccounts {
-            p2c_subscription_account: address,
-            manager_authority: manager.pubkey(),
-        },
-    );
-    print_heading("P2C Deduct Epoch");
-    print_field("🔗".cyan(), "Account:", address.to_string().bold().green());
-    print_field("🕒".cyan(), "Epoch:", args.epoch.to_string().blue());
-    sign_and_send_transaction(rpc_client, instruction, &manager)
-}
-
 fn process_p2c_claim(
     rpc_client: Arc<RpcClient>,
     program_id: Pubkey,
@@ -1875,10 +1842,13 @@ fn process_p2c_claim(
         )
         .into());
     }
-    let instruction = claim_p2c_subscription_ix(
+    let instruction = claim_epoch_p2c_subscription_ix(
         program_id,
-        ClaimP2CSubscriptionArgs { epoch: args.epoch },
-        ClaimP2CSubscriptionAccounts {
+        ClaimEpochP2CSubscriptionArgs {
+            epoch: args.epoch,
+            force_claim: args.force_claim,
+        },
+        ClaimEpochP2CSubscriptionAccounts {
             p2c_subscription_account: address,
             commission_account: account.commission_account,
             validator_identity: args.validator_identity,
@@ -1888,6 +1858,11 @@ fn process_p2c_claim(
     print_heading("P2C Claim Epoch");
     print_field("🔗".cyan(), "Account:", address.to_string().bold().green());
     print_field("🕒".cyan(), "Epoch:", args.epoch.to_string().blue());
+    print_field(
+        "⚡".yellow(),
+        "Force claim:",
+        args.force_claim.to_string().blue(),
+    );
     sign_and_send_transaction(rpc_client, instruction, &manager)
 }
 
@@ -2030,7 +2005,6 @@ fn dispatch_p2c(
         }
         P2cCommands::Fund(args) => process_p2c_fund(rpc_client, program_id, keypair, args),
         P2cCommands::Record(args) => process_p2c_record(rpc_client, program_id, keypair, args),
-        P2cCommands::Deduct(args) => process_p2c_deduct(rpc_client, program_id, keypair, args),
         P2cCommands::Claim(args) => process_p2c_claim(rpc_client, program_id, keypair, args),
         P2cCommands::ClearDeficit(args) => {
             process_p2c_clear_deficit(rpc_client, program_id, keypair, args)

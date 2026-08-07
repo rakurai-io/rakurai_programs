@@ -267,16 +267,17 @@ Prepaid fee escrow for Pack-to-Chain (P2C) billing, keyed as `[P2C_SUBSCRIPTION,
 | Step | Instruction | Auth |
 |------|-------------|------|
 | Init | `initialize_p2c_subscription_account` | **manager only** (signs + pays rent) |
-| Fund | `fund_p2c_subscription` | any funder |
+| Fund | `fund_p2c_subscription` (or system transfer into PDA) | any funder |
 | Record | `record_p2c_subscription` | `record_authority` |
-| Deduct | `deduct_p2c_subscription` | manager (partial OK) |
-| Claim | `claim_p2c_subscription` | manager |
+| Claim | `claim_epoch_p2c_subscription` | manager |
 | Clear deficit | `clear_p2c_deficit` | any funder (transfer in, program deducts + pays commission/identity) |
 | BR flag | `update_p2c_epoch_converted_to_block_reward` | manager / record / identity |
 | Config / deficit write-off / close | `update_p2c_subscription_config`, `update_p2c_deficit`, `close_p2c_subscription_account` | manager |
 
-- **Partial deduct**: `amount_deducted += min(remaining_due, free_balance)` — still succeeds when underfunded; top-up and re-deduct while unclaimed.
-- **Claim** pays only `amount_deducted` (`commission_bps` → commission, rest → identity). Unpaid rem → `deficit` + grace (`Active` / `InGrace` / `Suspended`, default grace = 2).
+- **Claim**: pays `min(remaining due, free prepaid)` to commission + identity; notes paid in `amount_deducted`.
+  - Full pay → marks `claimed`.
+  - Underfunded without `force_claim` → leaves epoch open (top up and claim again).
+  - `force_claim=true` when underfunded → marks `claimed`, books shortfall as **`deficit`** + grace (`Active` / `InGrace` / `Suspended`, default grace = 2).
 - **Clear deficit**: `clear_p2c_deficit(amount)` — funder transfers; program deducts up to open deficit, splits to commission + validator identity, reduces `deficit`. Clearing to 0 resets grace to `Active`.
 - **Close** requires all ledger epochs claimed; residual SOL + rent → initializer.
 - **Convert-to-block** same post-claim flag as TCA/MCA.

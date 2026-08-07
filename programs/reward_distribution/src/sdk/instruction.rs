@@ -1399,55 +1399,26 @@ pub fn record_p2c_subscription_ix(
     }
 }
 
-pub struct DeductP2CSubscriptionArgs {
+pub struct ClaimEpochP2CSubscriptionArgs {
     pub epoch: u64,
+    /// If true and due is not fully prepaid, mark claimed and book shortfall as deficit.
+    pub force_claim: bool,
 }
 
-pub struct DeductP2CSubscriptionAccounts {
-    pub p2c_subscription_account: Pubkey,
-    pub manager_authority: Pubkey,
-}
-
-pub fn deduct_p2c_subscription_ix(
-    program_id: Pubkey,
-    args: DeductP2CSubscriptionArgs,
-    accounts: DeductP2CSubscriptionAccounts,
-) -> Instruction {
-    let DeductP2CSubscriptionArgs { epoch } = args;
-    let DeductP2CSubscriptionAccounts {
-        p2c_subscription_account,
-        manager_authority,
-    } = accounts;
-
-    Instruction {
-        program_id,
-        data: crate::instruction::DeductP2cSubscription { epoch }.data(),
-        accounts: crate::accounts::DeductP2CSubscription {
-            p2c_subscription_account,
-            manager_authority,
-        }
-        .to_account_metas(None),
-    }
-}
-
-pub struct ClaimP2CSubscriptionArgs {
-    pub epoch: u64,
-}
-
-pub struct ClaimP2CSubscriptionAccounts {
+pub struct ClaimEpochP2CSubscriptionAccounts {
     pub p2c_subscription_account: Pubkey,
     pub commission_account: Pubkey,
     pub validator_identity: Pubkey,
     pub manager_authority: Pubkey,
 }
 
-pub fn claim_p2c_subscription_ix(
+pub fn claim_epoch_p2c_subscription_ix(
     program_id: Pubkey,
-    args: ClaimP2CSubscriptionArgs,
-    accounts: ClaimP2CSubscriptionAccounts,
+    args: ClaimEpochP2CSubscriptionArgs,
+    accounts: ClaimEpochP2CSubscriptionAccounts,
 ) -> Instruction {
-    let ClaimP2CSubscriptionArgs { epoch } = args;
-    let ClaimP2CSubscriptionAccounts {
+    let ClaimEpochP2CSubscriptionArgs { epoch, force_claim } = args;
+    let ClaimEpochP2CSubscriptionAccounts {
         p2c_subscription_account,
         commission_account,
         validator_identity,
@@ -1456,8 +1427,12 @@ pub fn claim_p2c_subscription_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::ClaimP2cSubscription { epoch }.data(),
-        accounts: crate::accounts::ClaimP2CSubscription {
+        data: crate::instruction::ClaimEpochP2cSubscription {
+            epoch,
+            force_claim,
+        }
+        .data(),
+        accounts: crate::accounts::ClaimEpochP2CSubscription {
             p2c_subscription_account,
             commission_account,
             validator_identity,
