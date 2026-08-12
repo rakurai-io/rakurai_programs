@@ -47,9 +47,9 @@ Source: `programs/reward_distribution/src/` (v0.3.0).
 
 ---
 
-## P2C subscription escrow
+## P2C subscription escrow (post-pack confirmation prepaid)
 
-PDA: `[P2C_SUBSCRIPTION, name[32], vote]`. Manager-only create/operations for ledger; anyone can fund.
+PDA: `[P2C_SUBSCRIPTION, name[32], vote]`. Manager-only create/operations for ledger; anyone can fund. Billing for Pack-to-Chain / [post-pack confirmation](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations) Users/Consumers (not MCA MevShare).
 
 | Instruction | Signer | Notes |
 |-------------|--------|-------|

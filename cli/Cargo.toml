@@ -28,3 +28,8 @@ path = "src/bin/rakurai_activation_cli.rs"
 [[bin]]
 name = "rakurai-revshare"
 path = "src/bin/rakurai_revshare_cli.rs"
+
+[[bin]]
+name = "rakurai-p2c"
+path = "src/bin/rakurai_p2c_cli.rs"
+

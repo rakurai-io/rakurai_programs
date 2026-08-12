@@ -8,12 +8,13 @@ Command-line tools for Rakurai validator operators and transaction-inclusion par
 
 ## 1. Overview
 
-The `rakurai_cli` crate ships two binaries:
+The `rakurai_cli` crate ships three binaries:
 
 | Binary | Audience | Purpose |
 | ------ | -------- | ------- |
 | `rakurai-activation` | Validator operators | Manage Rakurai Activation Accounts (RAA): init, scheduler control, commission, show |
-| `rakurai-revshare` | Transaction-landing / post-pack partners | Tip / MevShare / P2C: list vaults, settle, record MCA, manage P2C escrow |
+| `rakurai-revshare` | Transaction-landing / post-pack partners | Partner Tip and MevShare Revenue Settlement — list vaults, record MCA MevShare, settle one or all pending |
+| `rakurai-p2c` | P2C User/Consumer | Post-pack prepaid subscription (stake-based fee): fund, record, claim, clear-deficit |
 
 ---
 
@@ -33,7 +34,7 @@ echo "export PATH=\"$(pwd)/release/downloads:\$PATH\"" >> ~/.bashrc && source ~/
 ### 2.2. Option 2: Build from source
 
 ```sh
-# Build both CLI binaries
+# Build CLI binaries
 cargo b --release -p rakurai_cli
 
 # Export the CLI path
@@ -45,6 +46,7 @@ echo "export PATH=\"$(pwd)/target/release/:\$PATH\""
 ```sh
 which rakurai-activation
 which rakurai-revshare
+which rakurai-p2c
 ```
 
 ---
@@ -55,3 +57,4 @@ which rakurai-revshare
 | ----- | ----------- |
 | [Rakurai Activation CLI](./activation.md) | Initialize and manage Rakurai Activation Accounts (RAA): scheduler enable/disable, commission updates, and account display. |
 | [Partner Tip and MevShare Revenue Settlement CLI](./partner_reward_settlement.md) | List TCA/MCA by service, record MCA MevShare (post-pack), settle one vault/epoch or all pending (`rakurai-revshare`). |
+| [P2C Subscription CLI](./p2c_subscription.md) | Post-pack (P2C) prepaid subscription for Users/Consumers: stake-based fee, fund → record → claim, unpaid stops P2C, close returns residual (`rakurai-p2c`). |

@@ -262,24 +262,27 @@ Legacy and V1 vaults coexist. Each is created once per `(seed space, share_kind,
 
 ## 7. P2C subscription escrow
 
-Prepaid fee escrow for Pack-to-Chain (P2C) billing, keyed as `[P2C_SUBSCRIPTION, name, vote]`.
+Prepaid fee escrow for Pack-to-Chain (**P2C**) / **post-pack confirmation** billing, keyed as `[P2C_SUBSCRIPTION, name, vote]`.
+
+**Model:** every User/Consumer who wants P2C pays a **subscription fee based on SOL stake**. They **fund** prepaid SOL into the escrow. After each epoch the manager **uploads stake** (verifiable from any public source) and the calculated **`amount_due`**, then **claims** (deducts) from prepaid. If fees stay unpaid past grace, status becomes **`Suspended`** and **P2C is stopped**. The subscription can be **closed** once all epochs are claimed; remaining funds + rent return to the **initializer**. (Partner **MCA MevShare** settlement after post-pack is separate — see §5 and the [Partner Tip and MevShare Revenue Settlement CLI](../../cli/partner_reward_settlement.md). User-facing walkthrough: [P2C Subscription CLI](../../cli/p2c_subscription.md).)
 
 | Step | Instruction | Auth |
 |------|-------------|------|
 | Init | `initialize_p2c_subscription_account` | **manager** (signs + pays rent); sets `record_authority` arg (storage for BR convert) |
 | Fund | `fund_p2c_subscription` (or system transfer into PDA) | any funder |
-| Record | `record_p2c_subscription` | **manager** |
+| Record | `record_p2c_subscription` | **manager** (once per epoch: stake snapshot + `amount_due`) |
 | Claim | `claim_epoch_p2c_subscription` | **manager** |
 | Clear deficit | `clear_p2c_deficit` | any funder (transfer in, program deducts + pays commission/identity) |
 | BR flag | `update_p2c_epoch_converted_to_block_reward` | manager **or** `record_authority` **or** validator identity |
 | Config / deficit write-off / close | `update_p2c_subscription_config`, `update_p2c_deficit`, `close_p2c_subscription_account` | **manager** |
 
+- **Stake pricing**: `stake` on each ledger row is an off-chain snapshot used to compute `amount_due`. Anyone can verify stake independently (RPC / explorers / stake accounts); the on-chain value is the priced snapshot for that epoch.
 - **Claim**: pays `min(remaining due, free prepaid)` to commission + identity; notes paid in `amount_deducted`.
-  - Full pay → marks `claimed`.
+  - Full pay → marks `claimed`, streak reset → `Active`.
   - Underfunded without `force_claim` → leaves epoch open (top up and claim again).
-  - `force_claim=true` when underfunded → marks `claimed`, books shortfall as **`deficit`** + grace (`Active` / `InGrace` / `Suspended`, default grace = 2).
+  - `force_claim=true` when underfunded → marks `claimed`, books shortfall as **`deficit`** + grace (`Active` / `InGrace` / `Suspended`, default grace = 2). **`Suspended` ⇒ P2C access stopped** until deficit is cleared.
 - **Clear deficit**: `clear_p2c_deficit(amount)` — funder transfers; program deducts up to open deficit, splits to commission + validator identity, reduces `deficit`. Clearing to 0 resets grace to `Active`.
-- **Close** requires all ledger epochs claimed; residual SOL + rent → initializer.
+- **Close**: all ledger epochs must be claimed; residual prepaid SOL + rent → **initializer**. Manager closes; user coordinates close when they want remaining funds returned.
 - **Convert-to-block** same post-claim flag as TCA/MCA.
 
 `record_authority` is still stored on the account (set at init / config) for convert-to-block only — it does **not** sign epoch records.
