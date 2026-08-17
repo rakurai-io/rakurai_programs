@@ -1,0 +1,23 @@
+[package]
+name = "rakurai_validator_config"
+description = "On-chain validator config: block-engine endpoints, post-pack (P2C) URLs, and virtual-priority maps"
+edition = "2021"
+version = "0.1.0"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "rakurai_validator_config"
+
+[features]
+anchor-debug = []
+cpi = ["no-entrypoint"]
+default = []
+idl-build = ["anchor-lang/idl-build"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+
+[dependencies]
+anchor-lang = { git = "https://github.com/coral-xyz/anchor.git", rev = "8b391aa278387b6f6ce3133453619a175544631e" }
+solana-program = "2.1.21"
+solana-security-txt = "1.1.1"

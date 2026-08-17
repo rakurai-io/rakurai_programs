@@ -4,6 +4,7 @@ members = [
     "programs/rakurai_activation",
     "programs/rakurai_tip_manager",
     "programs/reward_distribution",
+    "programs/rakurai_validator_config",
     "programs/vote_state",
 ]
 resolver = "2"

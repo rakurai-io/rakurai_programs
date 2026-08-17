@@ -8,13 +8,14 @@ Command-line tools for Rakurai validator operators and transaction-inclusion par
 
 ## 1. Overview
 
-The `rakurai_cli` crate ships three binaries:
+The `rakurai_cli` crate ships four binaries:
 
 | Binary | Audience | Purpose |
 | ------ | -------- | ------- |
 | `rakurai-activation` | Validator operators | Manage Rakurai Activation Accounts (RAA): init, scheduler control, commission, show |
 | `rakurai-revshare` | Transaction-landing / post-pack partners | Partner Tip and MevShare Revenue Settlement — list vaults, record MCA MevShare, settle one or all pending |
 | `rakurai-p2c` | P2C User/Consumer | Post-pack prepaid subscription (stake-based fee): fund, record, claim, clear-deficit |
+| `rakurai-validator-config` | Rakurai ops / validator operators | Block-engine, P2C (post-pack), and virtual-priority config — global, per-vote, proposals |
 
 ---
 
@@ -47,6 +48,7 @@ echo "export PATH=\"$(pwd)/target/release/:\$PATH\""
 which rakurai-activation
 which rakurai-revshare
 which rakurai-p2c
+which rakurai-validator-config
 ```
 
 ---
@@ -58,3 +60,4 @@ which rakurai-p2c
 | [Rakurai Activation CLI](./activation.md) | Initialize and manage Rakurai Activation Accounts (RAA): scheduler enable/disable, commission updates, and account display. |
 | [Partner Tip and MevShare Revenue Settlement CLI](./partner_reward_settlement.md) | List TCA/MCA by service, record MCA MevShare (post-pack), settle one vault/epoch or all pending (`rakurai-revshare`). |
 | [P2C Subscription CLI](./p2c_subscription.md) | Post-pack (P2C) prepaid subscription for Users/Consumers: stake-based fee, fund → record → claim, unpaid stops P2C, close returns residual (`rakurai-p2c`). |
+| [Validator Config CLI](./validator_config.md) | Block-engine, post-pack (P2C), and virtual-priority settings for validators — global, per-vote overlay, operator proposals (`rakurai-validator-config`). |
