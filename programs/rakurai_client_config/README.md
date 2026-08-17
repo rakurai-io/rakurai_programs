@@ -1,8 +1,8 @@
-# Rakurai Validator Config Program
+# Rakurai Client Config Program
 
 On-chain configuration for **Rakurai validators**: where the scheduler sends **block-engine** bundles, which **post-pack confirmation (P2C)** endpoints are registered, and how **virtual priority** is applied per account. Config is stored in PDAs (global defaults + per-vote overrides) that the validator node reads at runtime.
 
-➤ For more details, refer to the [IDL file](./idl/rakurai_validator_config.json).
+➤ For more details, refer to the [IDL file](./idl/rakurai_client_config.json).
 
 ---
 
@@ -38,7 +38,7 @@ Rakurai ops set network-wide defaults; each validator can override per vote acco
 | **Validator** | `validator-config` + vote | **Manager** | Live per-vote config (copied from global on init; manager can replace) |
 | **Proposal** | `validator-proposal` + vote | **Operator** → **Manager** | Draft overlay; `approve_proposal` copies into live validator PDA |
 
-**Effective config** for a vote = **global ∪ validator**, merged **by set name** (validator entry replaces global entry with the same name; new names are appended). Nested URL lists inside a set are replaced as a whole, not merged URL-by-URL. The CLI shows this with `rakurai-validator-config union`.
+**Effective config** for a vote = **global ∪ validator** (validator PDA optional), merged **by set name**. If no validator PDA exists, effective config is global only. The CLI shows this with `rakurai-client-config union`.
 
 ---
 
@@ -94,7 +94,7 @@ Off-chain helpers live in `src/sdk/`:
 
 ## 8. CLI
 
-See [Validator Config CLI](../../cli/validator_config.md) (`rakurai-validator-config`).
+See [Client Config CLI](../../cli/client_config.md) (`rakurai-client-config`).
 
 Example JSON: [`cli/examples/validator_config.json`](../../cli/examples/validator_config.json), [`cli/examples/validator_config_overlay.json`](../../cli/examples/validator_config_overlay.json).
 

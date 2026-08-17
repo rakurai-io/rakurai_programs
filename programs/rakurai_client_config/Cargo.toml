@@ -1,12 +1,12 @@
 [package]
-name = "rakurai_validator_config"
+name = "rakurai_client_config"
 description = "On-chain validator config: block-engine endpoints, post-pack (P2C) URLs, and virtual-priority maps"
 edition = "2021"
 version = "0.1.0"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "rakurai_validator_config"
+name = "rakurai_client_config"
 
 [features]
 anchor-debug = []

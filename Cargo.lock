@@ -2303,7 +2303,7 @@ dependencies = [
  "clap",
  "colored",
  "rakurai_activation",
- "rakurai_validator_config",
+ "rakurai_client_config",
  "reward_distribution",
  "serde",
  "serde_derive",
@@ -2316,21 +2316,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rakurai_client_config"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "solana-program",
+ "solana-security-txt",
+]
+
+[[package]]
 name = "rakurai_tip_manager"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "rakurai_activation",
  "reward_distribution",
- "solana-program",
- "solana-security-txt",
-]
-
-[[package]]
-name = "rakurai_validator_config"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
  "solana-program",
  "solana-security-txt",
 ]

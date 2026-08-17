@@ -1,9 +1,9 @@
-//! Helpers for the `rakurai-validator-config` CLI.
+//! Helpers for the `rakurai-client-config` CLI.
 
 use {
     anchor_lang::{AccountDeserialize, AnchorSerialize},
     colored::*,
-    rakurai_validator_config::{
+    rakurai_client_config::{
         sdk::{
             name_from_str, union_configs, BlockEngineConfig, BlockEngineEntryV1, BlockEngineV1,
             Config, ConfigV1, P2cConfig, P2cEntryV1, P2cV1, Uuid, ValidatorProposal,
@@ -244,15 +244,24 @@ pub fn display_proposal(cfg: &ValidatorProposal, pda: Pubkey) {
     display_config_payload(&cfg.config);
 }
 
-pub fn display_union(global: &Config, validator: &Config) -> Result<(), Box<dyn std::error::Error>> {
+pub fn try_get_validator_config(
+    rpc: Arc<RpcClient>,
+    pda: Pubkey,
+) -> Option<ValidatorConfig> {
+    get_validator_config(rpc, pda).ok()
+}
+
+pub fn display_union(
+    global: &Config,
+    validator: Option<&Config>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let merged = union_configs(global, validator)?;
-    println!(
-        "{}",
+    let title = if validator.is_some() {
         "Union (by entry name; validator wins on conflict)"
-            .bold()
-            .underline()
-            .blue()
-    );
+    } else {
+        "Global config (no validator overlay)"
+    };
+    println!("{}", title.bold().underline().blue());
     display_config_payload(&merged);
     Ok(())
 }

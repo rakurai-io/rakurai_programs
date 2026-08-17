@@ -9,7 +9,7 @@ use crate::state::{
 
 #[cfg(not(feature = "no-entrypoint"))]
 security_txt! {
-    name: "Rakurai Validator Config Program",
+    name: "Rakurai Client Config Program",
     project_url: "https://rakurai.io/",
     contacts: "link:https://rakurai.io/company,link:https://discord.gg/QzqQVBAMpp,link:https://t.me/rakurai_official,link:https://github.com/rakurai-io/rakurai-validator,link:https://docs.rakurai.io",
     policy: "https://rakurai.io/faqs",
@@ -23,7 +23,7 @@ pub mod state;
 declare_id!("FcTL7Mnq1RcstcYUk39ph2DzdVPNFyWh1EnrqCocXhhh");
 
 #[program]
-pub mod rakurai_validator_config {
+pub mod rakurai_client_config {
     use super::*;
 
     /// Create the singleton global config. Signer becomes `manager`.

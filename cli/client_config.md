@@ -1,9 +1,9 @@
-# Validator Config CLI (`rakurai-validator-config`)
+# Client Config CLI (`rakurai-client-config`)
 
 Manage on-chain **block-engine**, **post-pack confirmation (P2C)**, and **virtual-priority** settings for Rakurai validators — global defaults, per-vote live config, and operator proposals.
 
 **Audience:** Rakurai ops (manager) and validator operators (operator for proposals).  
-**Program:** `rakurai_validator_config` — see [program README](../programs/rakurai_validator_config/README.md).  
+**Program:** `rakurai_client_config` — see [program README](../programs/rakurai_client_config/README.md).  
 **Install:** see [CLI overview](./README.md#2-installation).
 
 ---
@@ -21,7 +21,7 @@ Each JSON config file has three top-level sections. Together they define what th
 - **Global** PDA: network-wide defaults (manager).
 - **Validator** PDA (per `--vote`): live overrides for one vote account (manager).
 - **Proposal** PDA: operator submits a draft; manager `approve` or `reject`.
-- **`union`**: shows merged effective config (global + validator, by set name).
+- **`union`**: shows merged effective config (global required; validator overlay when PDA exists). Omit `--vote` for global-only.
 
 This CLI does **not** manage P2C subscription billing or tip/revshare accounts — only validator **endpoint and priority configuration**.
 
@@ -36,7 +36,7 @@ This CLI does **not** manage P2C subscription billing or tip/revshare accounts �
 | `-p`, `--program-id` | `4uGNMjJFxgE3TfEiPmSpvfwYah12QZbaWWZDJqZvA9F4` | Program ID |
 
 ```sh
-rakurai-validator-config \
+rakurai-client-config \
   --url <RPC_URL> \
   --program-id <PROGRAM_ID> \
   --keypair <KEYPAIR> \
@@ -96,7 +96,11 @@ Omit `--config-file` on `global init` to create empty sets.
 
 ## 4. Union (client-side)
 
-`union` merges **by entry `name`** (same for BE / P2C / VP):
+`union` requires **global** config. **Validator** overlay is optional:
+
+- No `--vote` → prints global config only
+- `--vote` with no validator PDA → global only (same as above)
+- `--vote` with validator PDA → global ∪ validator, merged **by set name**
 
 1. Start from global `sets`
 2. For each validator entry: same `name` → **replace whole entry**; new `name` → **append**
@@ -115,40 +119,44 @@ Omit `--config-file` on `global init` to create empty sets.
 ### Global
 
 ```sh
-rakurai-validator-config global init --config-file cli/examples/validator_config.json
-rakurai-validator-config global update --config-file cli/examples/validator_config.json
-rakurai-validator-config global show
-rakurai-validator-config global close
+rakurai-client-config global init --config-file cli/examples/validator_config.json
+rakurai-client-config global update --config-file cli/examples/validator_config.json
+rakurai-client-config global show
+rakurai-client-config global close
 ```
 
 ### Validator (live PDA)
 
 ```sh
-rakurai-validator-config validator init --vote <VOTE_PUBKEY> --operator <OPERATOR_PUBKEY>
-rakurai-validator-config validator set-operator --vote <VOTE_PUBKEY> --operator <OPERATOR_PUBKEY>
-rakurai-validator-config validator update --vote <VOTE_PUBKEY> \
+rakurai-client-config validator init --vote <VOTE_PUBKEY> --operator <OPERATOR_PUBKEY>
+rakurai-client-config validator set-operator --vote <VOTE_PUBKEY> --operator <OPERATOR_PUBKEY>
+rakurai-client-config validator update --vote <VOTE_PUBKEY> \
   --config-file cli/examples/validator_config_overlay.json
-rakurai-validator-config validator show --vote <VOTE_PUBKEY>
-rakurai-validator-config validator close --vote <VOTE_PUBKEY>
+rakurai-client-config validator show --vote <VOTE_PUBKEY>
+rakurai-client-config validator close --vote <VOTE_PUBKEY>
 ```
 
 ### Proposal (operator draft → manager approve)
 
 ```sh
 # Operator keypair
-rakurai-validator-config -k operator.json proposal submit --vote <VOTE> \
+rakurai-client-config -k operator.json proposal submit --vote <VOTE> \
   --config-file cli/examples/validator_config_overlay.json
-rakurai-validator-config proposal show --vote <VOTE>
+rakurai-client-config proposal show --vote <VOTE>
 
 # Manager keypair
-rakurai-validator-config -k manager.json proposal approve --vote <VOTE>
-rakurai-validator-config -k manager.json proposal reject --vote <VOTE>
+rakurai-client-config -k manager.json proposal approve --vote <VOTE>
+rakurai-client-config -k manager.json proposal reject --vote <VOTE>
 ```
 
 ### Union
 
 ```sh
-rakurai-validator-config union --vote <VOTE_PUBKEY>
+# Global only (no validator PDA)
+rakurai-client-config union
+
+# Global + validator overlay when PDA exists
+rakurai-client-config union --vote <VOTE_PUBKEY>
 ```
 
 ---
@@ -164,8 +172,8 @@ rakurai-validator-config union --vote <VOTE_PUBKEY>
 ## 7. Help
 
 ```sh
-rakurai-validator-config --help
-rakurai-validator-config global --help
-rakurai-validator-config validator --help
-rakurai-validator-config proposal --help
+rakurai-client-config --help
+rakurai-client-config global --help
+rakurai-client-config validator --help
+rakurai-client-config proposal --help
 ```

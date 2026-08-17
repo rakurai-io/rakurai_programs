@@ -11,7 +11,7 @@ bs58 = "0.5.1"
 clap = { version = "4.4", features = ["derive"] }
 colored = "2.0"
 rakurai_activation = { path = "../programs/rakurai_activation" }
-rakurai_validator_config = { path = "../programs/rakurai_validator_config", features = ["no-entrypoint"] }
+rakurai_client_config = { path = "../programs/rakurai_client_config", features = ["no-entrypoint"] }
 reward_distribution = { path = "../programs/reward_distribution", features = ["no-entrypoint"] }
 serde = "1.0.213"
 serde_derive = "1.0.213"
@@ -35,6 +35,6 @@ name = "rakurai-p2c"
 path = "src/bin/rakurai_p2c_cli.rs"
 
 [[bin]]
-name = "rakurai-validator-config"
-path = "src/bin/rakurai_validator_config_cli.rs"
+name = "rakurai-client-config"
+path = "src/bin/rakurai_client_config_cli.rs"
 

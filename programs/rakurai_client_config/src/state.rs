@@ -139,8 +139,12 @@ pub struct VirtualPriorityConfig {
 
 /// Client-side merge: validator overrides / extends global.
 /// Entries are unioned by `name` (validator wins on conflict).
-pub fn union_configs(global: &Config, validator: &Config) -> Result<Config> {
+/// `validator` is optional — when absent, returns a clone of `global`.
+pub fn union_configs(global: &Config, validator: Option<&Config>) -> Result<Config> {
     let global = global.as_v1()?;
+    let Some(validator) = validator else {
+        return Ok(Config::V1(global.clone()));
+    };
     let validator = validator.as_v1()?;
     Ok(Config::V1(ConfigV1 {
         block_engine: BlockEngineV1 {
@@ -353,4 +357,50 @@ pub fn realloc_account_to_fit<'info>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn be_entry(name: &str, url: &str) -> BlockEngineEntryV1 {
+        BlockEngineEntryV1 {
+            name: Uuid::from_str_truncated(name),
+            url: vec![BlockEngineConfig {
+                url: url.to_string(),
+                max_bundles: 0,
+                period_ms: 0,
+                max_bundle_burst: 0,
+            }],
+        }
+    }
+
+    fn config_with_be(entries: Vec<BlockEngineEntryV1>) -> Config {
+        Config::V1(ConfigV1 {
+            block_engine: BlockEngineV1 { sets: entries },
+            p2c: P2cV1 { sets: vec![] },
+            virtual_priority: VirtualPriorityV1 { sets: vec![] },
+        })
+    }
+
+    #[test]
+    fn union_without_validator_returns_global() {
+        let global = config_with_be(vec![be_entry("a", "https://global.example")]);
+        let merged = union_configs(&global, None).unwrap();
+        assert_eq!(merged, global);
+    }
+
+    #[test]
+    fn union_validator_overrides_same_name_and_keeps_global_only_sets() {
+        let global = config_with_be(vec![
+            be_entry("a", "https://global.example"),
+            be_entry("b", "https://global-b.example"),
+        ]);
+        let validator = config_with_be(vec![be_entry("a", "https://validator.example")]);
+        let merged = union_configs(&global, Some(&validator)).unwrap();
+        let Config::V1(v1) = merged;
+        assert_eq!(v1.block_engine.sets.len(), 2);
+        assert_eq!(v1.block_engine.sets[0].url[0].url, "https://validator.example");
+        assert_eq!(v1.block_engine.sets[1].url[0].url, "https://global-b.example");
+    }
 }

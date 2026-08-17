@@ -6,10 +6,10 @@ use {
         validator::{
             display_global_config, display_proposal, display_union, display_validator_config,
             get_global_config, get_proposal, get_validator_config, load_config_from_file,
-            parse_vote, proposal_exists,
+            parse_vote, proposal_exists, try_get_validator_config,
         },
     },
-    rakurai_validator_config::sdk::{
+    rakurai_client_config::sdk::{
         derive_global_config_address, derive_validator_config_address,
         derive_validator_proposal_address,
         instruction::{
@@ -37,10 +37,10 @@ const DEFAULT_PROGRAM_ID: &str = "4uGNMjJFxgE3TfEiPmSpvfwYah12QZbaWWZDJqZvA9F4";
 
 #[derive(Parser)]
 #[command(
-    name = "rakurai-validator-config",
+    name = "rakurai-client-config",
     version,
     about = "Configure validator block-engine, P2C, and virtual-priority on-chain",
-    long_about = "CLI for the rakurai_validator_config program.\n\n\
+    long_about = "CLI for the rakurai_client_config program.\n\n\
         Configures per-validator:\n  \
         • block_engine — bundle submission endpoints and rate limits\n  \
         • p2c — post-pack confirmation (gRPC) endpoints\n  \
@@ -49,7 +49,7 @@ const DEFAULT_PROGRAM_ID: &str = "4uGNMjJFxgE3TfEiPmSpvfwYah12QZbaWWZDJqZvA9F4";
         • global — network-wide defaults (manager)\n  \
         • validator — live per-vote PDA (manager)\n  \
         • proposal — operator draft → manager approve/reject\n\n\
-        Config payloads are JSON files (see cli/validator_config.md)."
+        Config payloads are JSON files (see cli/client_config.md)."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -94,7 +94,7 @@ enum Commands {
         #[command(subcommand)]
         command: ProposalCmd,
     },
-    /// Show client-side union of global + validator (by entry name; validator wins)
+    /// Show client-side union of global + optional validator (by entry name; validator wins)
     Union(UnionArgs),
 }
 
@@ -184,8 +184,9 @@ struct ProposalSubmitArgs {
 
 #[derive(Args)]
 struct UnionArgs {
+    /// Vote pubkey for per-validator overlay. Omit if no validator PDA exists yet.
     #[arg(long, value_parser = parse_vote)]
-    vote: Pubkey,
+    vote: Option<Pubkey>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -436,8 +437,10 @@ fn run_union(
     a: UnionArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (global, _) = derive_global_config_address(&program_id);
-    let (validator, _) = derive_validator_config_address(&program_id, &a.vote);
     let g = get_global_config(rpc.clone(), global)?;
-    let v = get_validator_config(rpc, validator)?;
-    display_union(&g.config, &v.config)
+    let validator_cfg = a.vote.and_then(|vote| {
+        let (validator, _) = derive_validator_config_address(&program_id, &vote);
+        try_get_validator_config(rpc.clone(), validator).map(|c| c.config)
+    });
+    display_union(&g.config, validator_cfg.as_ref())
 }

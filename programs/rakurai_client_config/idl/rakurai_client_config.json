@@ -1,7 +1,7 @@
 {
-  "address": "4uGNMjJFxgE3TfEiPmSpvfwYah12QZbaWWZDJqZvA9F4",
+  "address": "FcTL7Mnq1RcstcYUk39ph2DzdVPNFyWh1EnrqCocXhhh",
   "metadata": {
-    "name": "rakurai_validator_config",
+    "name": "rakurai_client_config",
     "version": "0.1.0",
     "spec": "0.1.0",
     "description": "On-chain validator config: block-engine endpoints, post-pack (P2C) URLs, and virtual-priority maps"
