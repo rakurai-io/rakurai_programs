@@ -1,105 +1,113 @@
 # Rakurai Client Config Program
 
-On-chain configuration for **Rakurai validators**: where the scheduler sends **block-engine** bundles, which **post-pack confirmation (P2C)** endpoints are registered, and how **virtual priority** is applied per account. Config is stored in PDAs (global defaults + per-vote overrides) that the validator node reads at runtime.
+On-chain **scheduler configuration** for Rakurai validators. This program stores **configuration only**. It does not hold tips, MevShare vaults, or P2C subscription SOL. Those live in [Reward Distribution](../reward_distribution/README.md) (TCA / PSA / MCA).
 
-➤ For more details, refer to the [IDL file](./idl/rakurai_client_config.json).
+➤ IDL: [rakurai_client_config.json](./idl/rakurai_client_config.json).
 
 ---
 
 ## 1. Deployed program ID
 
-- **Mainnet / Testnet / Localnet (current):** [4uGNMjJFxgE3TfEiPmSpvfwYah12QZbaWWZDJqZvA9F4](https://solscan.io/account/4uGNMjJFxgE3TfEiPmSpvfwYah12QZbaWWZDJqZvA9F4)
+- **Current clusters:** [4uGNMjJFxgE3TfEiPmSpvfwYah12QZbaWWZDJqZvA9F4](https://solscan.io/account/4uGNMjJFxgE3TfEiPmSpvfwYah12QZbaWWZDJqZvA9F4)
 
 ---
 
-## 2. What this program configures
+## 2. What you configure
 
-Each validator vote account can have live on-chain settings for three Rakurai scheduler surfaces. All three live inside one versioned payload (`ConfigV1`) on the global and per-vote PDAs:
+One versioned payload (`Config::V1` / `ConfigV1`) on every PDA. Three independent sections:
 
-| Config section | What it controls | Typical use |
-|----------------|------------------|-------------|
-| **`block_engine`** | Named endpoint groups for the **block engine** — URLs plus bundle rate limits (`max_bundles`, `period_ms`, `max_bundle_burst`) | Where searchers / partners submit bundles and how fast they may send |
-| **`p2c`** | Named endpoint groups for **post-pack confirmation (P2C)** — gRPC URLs only | Where post-pack consumers receive transaction updates from the validator ([post-pack docs](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations)) |
-| **`virtual_priority`** | Named groups mapping **account pubkey → priority multiplier** (`f64`) | Scheduler-side virtual priority for specific accounts (higher value = more priority) |
+| Section | What it is | Entry shape |
+|---------|------------|-------------|
+| **`block_engine`** | Endpoints the scheduler **receives bundles from** | Named set → list of `{ url, max_bundles, period_ms, max_bundle_burst }` |
+| **`p2c`** | Endpoints the scheduler **sends transactions to** for arbitrage / backrun | Named set → list of `{ url }` |
+| **`virtual_priority`** | Tip accounts used to **virtually prioritize** transactions | Named set → list of `{ key: tip-account pubkey, value: percent of that tip }` |
 
-Each section is a list of **named sets** (`Uuid`, up to 32 bytes). A set contains one or more entries (URLs for BE/P2C, pubkey+value pairs for VP). Entry names are how global and per-validator layers are merged (see §3).
+A **set** has a 32-byte `name` (`Uuid`) plus its `url` list. The validator node reads **effective** config for a vote as **global ∪ validator**, merged **by set name** (validator wins on the same name).
 
-This program stores **configuration only** — not tip accounts, P2C subscription escrows, or other revenue PDAs. It tells the validator *which endpoints and priority rules apply* for that vote.
+### 2.1. Block engine
 
----
+Block-engine URLs are where **transaction-landing services submit bundles**. The scheduler **connects out and receives bundles** from those endpoints (with per-URL quotas).
 
-## 3. Account layers (global / validator / proposal)
+### 2.2. Post-pack (P2C)
 
-Rakurai ops set network-wide defaults; each validator can override per vote account. Operators can propose changes; the manager approves or rejects.
+Post-pack URLs are where the scheduler **sends transactions** so consumers can run **arbitrage / backrun** bundles. Updates are generated from the **point of no return** — consumers only see transactions just before they become part of the block, which **prevents front-running**. Product guide: [Post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations).
 
-| Layer | PDA seed | Who writes | Purpose |
-|-------|----------|------------|---------|
-| **Global** | `global-validator-config` | **Manager** | Default block-engine, P2C, and virtual-priority sets for all validators |
-| **Validator** | `validator-config` + vote | **Manager** | Live per-vote config (copied from global on init; manager can replace) |
-| **Proposal** | `validator-proposal` + vote | **Operator** → **Manager** | Draft overlay; `approve_proposal` copies into live validator PDA |
+This is endpoint config only. Prepaid P2C **subscription SOL** is a [PSA](../reward_distribution/README.md#4-psa--prepaid-fee-to-use-post-pack); backrun **revenue share** is an [MCA](../reward_distribution/README.md#5-mca--sharing-post-pack-backrun-profit).
 
-**Effective config** for a vote = **global ∪ validator** (validator PDA optional), merged **by set name**. If no validator PDA exists, effective config is global only. The CLI shows this with `rakurai-client-config union`.
+### 2.3. Virtual priority
 
----
+Virtual-priority entries name **tip accounts**. When a transaction (or bundle) tips that account, the scheduler uses a **configured percent of that tip amount** as extra virtual priority — so the txn can be ordered higher without changing the SOL that actually moved.
 
-## 4. Config payload (`ConfigV1`)
-
-Versioned enum `Config::V1(ConfigV1)`. Accounts **realloc** on every init/update as sets grow or shrink.
-
-| Section | JSON / on-chain shape | Validation |
-|---------|----------------------|------------|
-| `block_engine.sets[]` | `name` + `url[]` with quota fields | Every URL must be non-empty |
-| `p2c.sets[]` | `name` + `url[]` | Every URL must be non-empty |
-| `virtual_priority.sets[]` | `name` + `key` (pubkey) + `value` (f64) | Pubkeys must be valid |
-
-Example JSON: [`cli/examples/validator_config.json`](../../cli/examples/validator_config.json) (global baseline), [`cli/examples/validator_config_overlay.json`](../../cli/examples/validator_config_overlay.json) (per-vote overlay).
+- `key` — tip-account pubkey (Rakurai tip PDA or a registered custom tip account)
+- `value` — percent of that tip used for virtual priority (for example `0.1` = 10% of the tip)
 
 ---
 
-## 5. Accounts and auth
+## 3. Full replace — current + new
 
-| Instruction | Signer | Effect |
-|-------------|--------|--------|
-| `init_global` | manager (becomes stored manager) | Create singleton global PDA |
-| `update_global` | manager | Replace global payload; realloc |
-| `close_global` | manager | Close global PDA; rent → manager |
-| `init_validator` | manager | Create per-vote PDA; copies global config; sets `operator` |
-| `update_validator` | manager | Replace live validator payload; realloc |
-| `set_operator` | manager | Change who may propose |
-| `close_validator` | manager | Close validator PDA |
-| `init_proposal` | operator | Create draft PDA for vote |
-| `update_proposal` | operator | Replace draft; realloc |
-| `approve_proposal` | manager | Copy draft → live validator; close proposal (rent → operator) |
-| `reject_proposal` | manager | Close proposal without changing live config |
+Every write instruction takes a **complete `Config`**. The program does **not** patch, append, or merge with what is already on-chain.
 
----
+To add a new block-engine, P2C, or virtual-priority set:
 
-## 6. Proposal flow
+1. Read the **current** payload (`global show`, `validator show`, or `union --vote`)
+2. Keep **every existing set** you still want
+3. Add the **new** set (or add a URL / VP key inside an existing set)
+4. Submit that **full JSON** (`update_global`, `update_validator`, or `proposal submit`)
 
-1. Manager `init_validator --operator <OP>` (live config = global snapshot).
-2. Operator `proposal submit` with JSON overlay (live unchanged).
-3. Manager `proposal approve` (promote draft) or `proposal reject` (discard draft).
+Submitting a file that contains **only the new set** replaces the PDA contents with that file. Other sets on **that PDA** are dropped.
 
----
+```text
+# Wrong — wipes every other BE / P2C / VP set on this PDA
+{ "block_engine": { "sets": [ { "name": "new-be", "url": [...] } ] }, "p2c": { "sets": [] }, "virtual_priority": { "sets": [] } }
 
-## 7. SDK
+# Right — current sets + the new one
+{ "block_engine": { "sets": [ /* all current BE sets */, { "name": "new-be", "url": [...] } ] },
+  "p2c": { "sets": [ /* all current P2C sets */ ] },
+  "virtual_priority": { "sets": [ /* all current VP sets */ ] } }
+```
 
-Off-chain helpers live in `src/sdk/`:
+Same rule for **removing** or **editing** a set: start from current, change that one set, submit the whole payload.
 
-- PDA derivation: `derive_global_config_address`, `derive_validator_config_address`, `derive_validator_proposal_address`
-- Instruction builders: `init_global_ix`, `update_validator_ix`, `approve_proposal_ix`, …
-- Client merge: `union_configs(global, validator)`
+`union` is **read-only**. It is how the node and CLI compute effective config. It is **not** applied on write.
 
 ---
 
-## 8. CLI
+## 4. Account layers
 
-See [Client Config CLI](../../cli/client_config.md) (`rakurai-client-config`).
+| Layer | PDA seeds | Who writes | Purpose |
+|-------|-----------|------------|---------|
+| **Global** | `global-validator-config` | **Manager** | Network-wide defaults |
+| **Validator** | `validator-config` + vote | **Manager** | Live per-vote overlay (copied from global at `init_validator`) |
+| **Proposal** | `validator-proposal` + vote | **Operator** draft → **Manager** approve/reject | Does not change live config until approve |
 
-Example JSON: [`cli/examples/validator_config.json`](../../cli/examples/validator_config.json), [`cli/examples/validator_config_overlay.json`](../../cli/examples/validator_config_overlay.json).
+**Effective config** for a vote:
+
+- No validator PDA → global only
+- Validator PDA exists → `union_configs(global, validator)` by set name:
+  - same `name` → validator **replaces the whole named set** (nested URL lists are not merged entry-by-entry)
+  - new `name` → appended
+  - a name that exists only on global → kept
+
+Because union only runs on **read**, a validator PDA that omitted a global name still *inherits* that name at runtime. A **proposal** that is meant to keep validator-specific sets must still list **those validator sets plus the new one**, or approve will replace the live validator payload and drop the omitted validator-only names.
 
 ---
 
-## 9. Security
+## 5. Proposal flow
 
-Embedded [`security_txt`](https://github.com/neodyme8/solana-security-txt) in the program binary (see `src/lib.rs`). Report issues via contacts listed there and at [rakurai.io](https://rakurai.io/).
+1. Manager `init_validator --operator <OP>` (live = snapshot of **then-current** global)
+2. Operator reads **current live** config (`union --vote` and `validator show`)
+3. Operator builds **current + new** JSON and `proposal submit` / `update_proposal`
+4. Manager `proposal approve` (promote) or `proposal reject` (discard)
+
+Live config is unchanged until approve. After approve, the validator PDA is exactly the proposed payload (full replace).
+
+---
+
+## 6. CLI
+
+[Client Config CLI](../../cli/client_config.md) (`rakurai-client-config`).
+
+Example JSON (full payloads, not deltas):
+
+- [`cli/examples/validator_config.json`](../../cli/examples/validator_config.json) — global-style multi-set
+- [`cli/examples/validator_config_overlay.json`](../../cli/examples/validator_config_overlay.json) — extra validator sets **to merge by hand into current**, not to submit alone

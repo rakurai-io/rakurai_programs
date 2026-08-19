@@ -13,9 +13,9 @@ The `rakurai_cli` crate ships four binaries:
 | Binary | Audience | Purpose |
 | ------ | -------- | ------- |
 | `rakurai-activation` | Validator operators | Manage Rakurai Activation Accounts (RAA): init, scheduler control, commission, show |
-| `rakurai-revshare` | Transaction-landing / post-pack partners | Partner Tip and MevShare Revenue Settlement — list vaults, record MCA MevShare, settle one or all pending |
-| `rakurai-p2c` | P2C User/Consumer | Post-pack prepaid subscription (stake-based fee): fund, record, claim, clear-deficit |
-| `rakurai-client-config` | Rakurai ops / validator operators | Block-engine, P2C (post-pack), and virtual-priority config — global, per-vote, proposals |
+| `rakurai-p2c` | P2C User/Consumer | PSA prepaid subscription (stake-based fee): fund, record, claim, clear-deficit |
+| `rakurai-revshare` | Transaction-landing / post-pack partners | Partner TCA (custom tip) and MCA (MevShare) settlement |
+| `rakurai-client-config` | Rakurai ops / validator operators | Block-engine (recv bundles), P2C (send for backrun), virtual-priority (% of tip) — **full payload (current + new)** |
 
 ---
 
@@ -58,6 +58,6 @@ which rakurai-client-config
 | Guide | Description |
 | ----- | ----------- |
 | [Rakurai Activation CLI](./activation.md) | Initialize and manage Rakurai Activation Accounts (RAA): scheduler enable/disable, commission updates, and account display. |
-| [Partner Tip and MevShare Revenue Settlement CLI](./partner_reward_settlement.md) | List TCA/MCA by service, record MCA MevShare (post-pack), settle one vault/epoch or all pending (`rakurai-revshare`). |
-| [P2C Subscription CLI](./p2c_subscription.md) | Post-pack (P2C) prepaid subscription for Users/Consumers: stake-based fee, fund → record → claim, unpaid stops P2C, close returns residual (`rakurai-p2c`). |
-| [Client Config CLI](./client_config.md) | Block-engine, post-pack (P2C), and virtual-priority settings for validators — global, per-vote overlay, operator proposals (`rakurai-client-config`). |
+| [P2C Subscription CLI](./p2c_subscription.md) | PSA prepaid escrow: fund → record → claim (`rakurai-p2c`). |
+| [Partner Tip and MevShare Revenue Settlement CLI](./partner_reward_settlement.md) | List TCA/MCA, record MCA MevShare, settle (`rakurai-revshare`). |
+| [Client Config CLI](./client_config.md) | Block-engine (recv bundles), P2C (send for backrun), virtual-priority (% of tip). Writes replace the whole config — submit **current + new**. |

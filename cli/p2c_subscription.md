@@ -3,8 +3,8 @@
 Inspect, fund, record, and claim Pack-to-Chain (**P2C**) prepaid subscription escrows used with **post-pack confirmations**.
 
 **Audience:** P2C User/Consumer (searchers / traders / services that consume Rakurai post-pack confirmations).  
-**Program:** Reward Distribution (`P2CSubscriptionAccount`).  
-**Install:** see [CLI overview](./README.md#2-installation). On-chain detail: [P2C section](../programs/reward_distribution/README.md#7-p2c-subscription-escrow).
+**Program:** Reward Distribution **PSA** (`P2CSubscriptionAccount`).  
+**Install:** see [CLI overview](./README.md#2-installation). How it works: [PSA](../programs/reward_distribution/README.md#4-psa--prepaid-fee-to-use-post-pack).
 
 ---
 
@@ -19,13 +19,15 @@ From the official guide ([Post-pack confirmations](https://docs.rakurai.io/docs/
 - Consumers send back a **bundle** that includes the original post-pack packet(s) unchanged, plus any additional txs.
 - Endpoint registration is coordinated with the Rakurai team (on-chain config + Admin RPC for operators).
 
-**This CLI (`rakurai-p2c`)** manages the on-chain **prepaid subscription escrow** for that Pack-to-Chain / post-pack confirmation **user** (per service name + validator vote).
+**This CLI (`rakurai-p2c`)** manages the on-chain **PSA** (P2C Subscription Account) — prepaid subscription escrow for that post-pack confirmation **user** (per service name + validator vote).
+
+This is **not** MevShare revenue sharing. Sharing post-pack **backrun / MevShare revenue** uses an **MCA** and [`rakurai-revshare`](./partner_reward_settlement.md). Four revenue models: [Reward Distribution](../programs/reward_distribution/README.md).
 
 ---
 
 ## 2. How the subscription works
 
-Every user who wants to use **P2C / post-pack confirmations** pays a **subscription fee** priced from **SOL stake**. Billing is prepaid: you fund an on-chain escrow; after each epoch the fee is calculated from the uploaded stake and deducted from that balance. If fees are not paid, P2C access is stopped (after a short grace period).
+Every user who wants **P2C / post-pack confirmations** must **top up** a prepaid escrow and pay a **subscription fee priced from SOL stake**. Each epoch Rakurai deducts that fee: **commission to Rakurai**, remainder to the **validator identity**. If the escrow is not kept funded, P2C access is stopped (after a short grace period).
 
 ### 2.1 Prepaid fund (User/Consumer)
 

@@ -1,6 +1,6 @@
 # Program Procedure Flow Diagrams
 
-High-level procedure flows for the three Rakurai on-chain programs.
+High-level procedure flows for Rakurai on-chain programs. Production is **V1 only**. Reward Distribution has **four revenue models**: RCA, TCA, MCA, PSA.
 
 ---
 
@@ -53,9 +53,9 @@ flowchart TD
 
 ---
 
-## 2. Reward Distribution — RCA & Revenue-Share Accounts
+## 2. Reward Distribution — RCA, TCA, MCA, PSA
 
-Per-epoch **RCA** for block rewards (Merkle staker claims) and per-validator **revenue-share vaults** for tip/mev-share attribution.
+Per-epoch **RCA** for block rewards (Merkle staker claims). Independent money paths: **TCA** (tips), **PSA** (prepaid P2C subscription), **MCA** (post-pack backrun share).
 
 ```mermaid
 flowchart TD
@@ -75,17 +75,23 @@ flowchart TD
         R4[After expiry: close_reward_collection_account]
     end
 
-    subgraph revenue [Revenue-share legacy + V1]
-        P0L[initialize_revenue_share_account REVENUE_SHARE]
-        P0[initialize_revenue_share_account_v1 REVENUE_SHARE_V1]
-        P0 -->|tips/mev config| PTS[RevenueShareAccountV1]
+    subgraph tcaMca [TCA / MCA — RevenueShareAccountV1]
+        P0[initialize_revenue_share_account_v1]
+        P0 -->|Tip = TCA / MevShare = MCA| PTS[REVENUE_SHARE_V1 PDA]
         P1[record_revenue_v1]
-        P1 -->|amount; Rakurai tip also transferred_amount| LEDGER[Epoch ledger V1]
-        P1b[settle_revenue or update_transferred_amount]
+        P1 -->|TCA each leader turn; MCA once post-epoch| LEDGER[Epoch ledger]
+        P1b[settle_revenue — partner custom TCA / MCA]
         P1b --> LEDGER
         P2[claim_revenue_v1]
-        P2 -->|pays transferred_amount; 0 bps for rakurai| PAY[commission_account + validator identity]
-        P3[Manager: close_revenue_share_account or close_v1]
+        P2 -->|pays transferred_amount; 0 bps for rakurai TCA| PAY[commission_account + validator identity]
+    end
+
+    subgraph psa [PSA — P2CSubscriptionAccount]
+        S0[initialize_p2c_subscription_account]
+        S1[fund_p2c_subscription]
+        S2[record_p2c_subscription]
+        S3[claim_epoch_p2c_subscription]
+        S0 --> S1 --> S2 --> S3
     end
 
     config --> rca
@@ -98,21 +104,20 @@ flowchart TD
 | RCA | Leader turns | `transfer_staker_rewards`, optional MEV commission ix |
 | RCA | Post-epoch | `upload_merkle_root`, `claim`, `close_claim_status` |
 | RCA | Cleanup | `close_reward_collection_account` |
-| Tips/Mev config | Setup | `initialize_tips_and_mev_share_config` / `update_tips_and_mev_share_config` |
-| Revenue legacy | Setup / record / claim / close | `initialize_revenue_share_account`, `record_revenue`, `claim_revenue`, `close_revenue_share_account` |
-| Revenue V1 | Setup | `initialize_revenue_share_account_v1` |
-| Revenue V1 | Leader / settle / claim | `record_revenue_v1`, `settle_revenue`, `claim_revenue_v1` |
-| Revenue V1 | Admin | `update_deficit`, `close_revenue_share_account_v1` |
+| Tips/Mev config | Setup | `initialize_tips_and_mev_share_config` / `update_*` |
+| TCA / MCA | Setup | `initialize_revenue_share_account_v1` |
+| TCA / MCA | Record / settle / claim | `record_revenue_v1`, `settle_revenue`, `claim_revenue_v1` |
+| PSA | Fund / record / claim | `fund_p2c_subscription`, `record_p2c_subscription`, `claim_epoch_p2c_subscription` |
 
-**Legacy PDA:** `[REVENUE_SHARE, TIP|MEV_SHARE, name, vote]` — old validators + TM `change_tip_receiver_v1`.
+**TCA / MCA PDA:** `[REVENUE_SHARE_V1, TIP|MEV_SHARE, name, vote]`
 
-**V1 PDA:** `[REVENUE_SHARE_V1, TIP|MEV_SHARE, name, vote]` — TCAV1 layout (`transferred_amount`, `deficit`); TM `change_tip_receiver_v2`.
+**PSA PDA:** `[P2C_SUBSCRIPTION, name, vote]`
 
 ---
 
 ## 3. Rakurai Tip Manager
 
-Global **8 tip PDAs** + singleton config. Validators drain on leader turns; config receiver rotates to tip revenue-share PDA.
+Global **8 tip PDAs** + singleton config. Validators drain on leader turns into the Rakurai **TCA**.
 
 ```mermaid
 flowchart TD
@@ -128,12 +133,9 @@ flowchart TD
     end
 
     subgraph drain [Validator leader turn]
-        PREL[Legacy: change_tip_receiver_v1 plus REVENUE_SHARE TCA]
-        PREV[V1: change_tip_receiver_v2 plus REVENUE_SHARE_V1 TCAV1]
-        PREL --> DRAIN[Drain 8 tip PDAs]
-        PREV --> DRAIN
-        DRAIN --> CFG2[config.validator_tip_receiver = new receiver]
-        PREL -->|CPI| RECL[record_revenue]
+        PREV[change_tip_receiver_v2 — new receiver must be TCA]
+        PREV --> DRAIN[Drain 8 tip PDAs]
+        DRAIN --> CFG2[config.validator_tip_receiver = new TCA]
         PREV -->|CPI| RECV[record_revenue_v1]
     end
 
@@ -149,12 +151,27 @@ flowchart TD
 | Step | Instruction | Who |
 |------|-------------|-----|
 | Deploy | `initialize_rakurai_tip_manager` | payer (once) |
-| Drain legacy | `change_tip_receiver_v1` | old validators |
-| Drain V1 | `change_tip_receiver_v2` | new validators |
+| Drain | `change_tip_receiver_v2` | Rakurai-enabled validator |
 | Rotate client | `change_client` | config authority |
 | Shutdown | `close_rakurai_tip_manager` | config authority |
 
 **Corner cases:** Drain credits `old_tip_receiver`, not `new_tip_receiver`. First drain after tip-manager init credits init payer until config already points at a TCA.
+
+---
+
+## 4. Client Config
+
+Scheduler **endpoints and virtual-priority tip maps** only (not money). Every write **replaces the entire `Config`** — submit **current + new**.
+
+```mermaid
+flowchart TD
+    G[init_global / update_global — full Config]
+    V[init_validator copies global]
+    V --> VU[update_validator — full Config]
+    P[operator: init_proposal / update_proposal — full Config]
+    P --> A[manager: approve_proposal copies draft to live validator]
+    U[union — read-only global ∪ validator by set name]
+```
 
 ---
 
@@ -169,14 +186,13 @@ sequenceDiagram
     Note over Act: RAA enabled (2 of 2)
     RD->>RD: initialize_tips_and_mev_share_config (once)
     RD->>RD: initialize_reward_collection_account_v1
-    RD->>RD: initialize_revenue_share_account_v1 Tip rakurai at REVENUE_SHARE_V1
+    RD->>RD: initialize_revenue_share_account_v1 Tip rakurai
     loop Leader turns
         RD->>RD: transfer_staker_rewards
         TM->>RD: change_tip_receiver_v2 then CPI record_revenue_v1
-        Note over TM: drain to TCAV1
+        Note over TM: drain to TCA
     end
     Note over RD: Post-epoch
     RD->>RD: upload_merkle_root and claim
-    RD->>RD: claim_revenue_v1 rakurai 0 bps fee already on tip drain
-    Note over RD: Old validators still use change_tip_receiver_v1 plus legacy TCA
+    RD->>RD: claim_revenue_v1 rakurai 0 bps already taken on tip drain
 ```
