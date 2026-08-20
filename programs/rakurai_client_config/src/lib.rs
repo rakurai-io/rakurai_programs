@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 use solana_security_txt::security_txt;
 
 use crate::state::{
-    Config, GlobalConfig, ValidatorConfig, ValidatorProposal, GLOBAL_CONFIG_SEED,
+    Config, ConfigLimits, GlobalConfig, ValidatorConfig, ValidatorProposal, GLOBAL_CONFIG_SEED,
     VALIDATOR_CONFIG_SEED, VALIDATOR_PROPOSAL_SEED,
 };
 
@@ -27,11 +27,18 @@ pub mod rakurai_client_config {
     use super::*;
 
     /// Create the singleton global config. Signer becomes `manager`.
-    pub fn init_global(ctx: Context<InitGlobal>, config: Config) -> Result<()> {
-        config.validate()?;
+    /// `limits` must be non-zero and ≤ absolute safety caps.
+    pub fn init_global(
+        ctx: Context<InitGlobal>,
+        config: Config,
+        limits: ConfigLimits,
+    ) -> Result<()> {
+        limits.validate()?;
+        config.validate(&limits)?;
         let global = &mut ctx.accounts.global;
         global.manager = ctx.accounts.manager.key();
         global.bump = ctx.bumps.global;
+        global.limits = limits;
         global.config = config;
         GlobalConfig::realloc_to_fit(
             &ctx.accounts.global,
@@ -44,7 +51,8 @@ pub mod rakurai_client_config {
     /// Manager-only: replace global config payload.
     /// Reallocs the account to the serialized size of the new config (dynamic Vec/String).
     pub fn update_global(ctx: Context<UpdateGlobal>, config: Config) -> Result<()> {
-        config.validate()?;
+        let limits = ctx.accounts.global.limits;
+        config.validate(&limits)?;
         ctx.accounts.global.config = config;
         GlobalConfig::realloc_to_fit(
             &ctx.accounts.global,
@@ -54,7 +62,18 @@ pub mod rakurai_client_config {
         Ok(())
     }
 
-    /// Manager-only: create per-vote validator PDA, copying current global config.
+    /// Manager-only: update global size caps (≤ absolute safety caps; must fit current payload).
+    pub fn update_global_limits(
+        ctx: Context<UpdateGlobalLimits>,
+        limits: ConfigLimits,
+    ) -> Result<()> {
+        limits.validate()?;
+        ctx.accounts.global.config.validate(&limits)?;
+        ctx.accounts.global.limits = limits;
+        Ok(())
+    }
+
+    /// Manager-only: create per-vote validator PDA, copying current global config + limits.
     /// `operator` may later propose changes via the proposal PDA.
     pub fn init_validator(ctx: Context<InitValidator>, operator: Pubkey) -> Result<()> {
         let global = &ctx.accounts.global;
@@ -63,6 +82,7 @@ pub mod rakurai_client_config {
         validator.operator = operator;
         validator.vote = ctx.accounts.vote.key();
         validator.bump = ctx.bumps.validator;
+        validator.limits = global.limits;
         validator.config = global.config.clone();
         ValidatorConfig::realloc_to_fit(
             &ctx.accounts.validator,
@@ -75,13 +95,25 @@ pub mod rakurai_client_config {
     /// Manager-only: replace validator-specific config (independent of global after copy).
     /// Reallocs the account to the serialized size of the new config (dynamic Vec/String).
     pub fn update_validator(ctx: Context<UpdateValidator>, config: Config) -> Result<()> {
-        config.validate()?;
+        let limits = ctx.accounts.validator.limits;
+        config.validate(&limits)?;
         ctx.accounts.validator.config = config;
         ValidatorConfig::realloc_to_fit(
             &ctx.accounts.validator,
             &ctx.accounts.manager,
             &ctx.accounts.system_program,
         )?;
+        Ok(())
+    }
+
+    /// Manager-only: update this vote's size caps (≤ absolute safety caps; must fit current payload).
+    pub fn update_validator_limits(
+        ctx: Context<UpdateValidatorLimits>,
+        limits: ConfigLimits,
+    ) -> Result<()> {
+        limits.validate()?;
+        ctx.accounts.validator.config.validate(&limits)?;
+        ctx.accounts.validator.limits = limits;
         Ok(())
     }
 
@@ -102,12 +134,15 @@ pub mod rakurai_client_config {
     }
 
     /// Operator-only: create proposal PDA with suggested config.
+    /// Copies validator `limits` onto the proposal; validates against those caps.
     pub fn init_proposal(ctx: Context<InitProposal>, config: Config) -> Result<()> {
-        config.validate()?;
+        let limits = ctx.accounts.validator.limits;
+        config.validate(&limits)?;
         let proposal = &mut ctx.accounts.proposal;
         proposal.vote = ctx.accounts.vote.key();
         proposal.operator = ctx.accounts.operator.key();
         proposal.bump = ctx.bumps.proposal;
+        proposal.limits = limits;
         proposal.config = config;
         ValidatorProposal::realloc_to_fit(
             &ctx.accounts.proposal,
@@ -118,8 +153,11 @@ pub mod rakurai_client_config {
     }
 
     /// Operator-only: replace proposal payload (reallocs).
+    /// Refreshes proposal `limits` from the validator PDA; validates against those caps.
     pub fn update_proposal(ctx: Context<UpdateProposal>, config: Config) -> Result<()> {
-        config.validate()?;
+        let limits = ctx.accounts.validator.limits;
+        config.validate(&limits)?;
+        ctx.accounts.proposal.limits = limits;
         ctx.accounts.proposal.config = config;
         ValidatorProposal::realloc_to_fit(
             &ctx.accounts.proposal,
@@ -131,8 +169,9 @@ pub mod rakurai_client_config {
 
     /// Manager-only: copy proposal → live validator config, then close proposal (rent → operator).
     pub fn approve_proposal(ctx: Context<ApproveProposal>) -> Result<()> {
+        let limits = ctx.accounts.validator.limits;
         let proposed = ctx.accounts.proposal.config.clone();
-        proposed.validate()?;
+        proposed.validate(&limits)?;
         ctx.accounts.validator.config = proposed;
         ValidatorConfig::realloc_to_fit(
             &ctx.accounts.validator,
@@ -149,14 +188,14 @@ pub mod rakurai_client_config {
 }
 
 #[derive(Accounts)]
-#[instruction(config: Config)]
+#[instruction(config: Config, limits: ConfigLimits)]
 pub struct InitGlobal<'info> {
     #[account(mut)]
     pub manager: Signer<'info>,
     #[account(
         init,
         payer = manager,
-        space = GlobalConfig::init_space(manager.key(), &config)?,
+        space = GlobalConfig::init_space(manager.key(), limits, &config)?,
         seeds = [GLOBAL_CONFIG_SEED],
         bump
     )]
@@ -179,6 +218,18 @@ pub struct UpdateGlobal<'info> {
 }
 
 #[derive(Accounts)]
+pub struct UpdateGlobalLimits<'info> {
+    pub manager: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global.bump,
+        has_one = manager @ ConfigError::Unauthorized,
+    )]
+    pub global: Account<'info, GlobalConfig>,
+}
+
+#[derive(Accounts)]
 #[instruction(operator: Pubkey)]
 pub struct InitValidator<'info> {
     #[account(mut)]
@@ -198,6 +249,7 @@ pub struct InitValidator<'info> {
             global.manager,
             operator,
             vote.key(),
+            global.limits,
             &global.config,
         )?,
         seeds = [VALIDATOR_CONFIG_SEED, vote.key().as_ref()],
@@ -228,6 +280,27 @@ pub struct UpdateValidator<'info> {
     )]
     pub validator: Account<'info, ValidatorConfig>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateValidatorLimits<'info> {
+    pub manager: Signer<'info>,
+    /// CHECK: vote account used as PDA seed
+    pub vote: UncheckedAccount<'info>,
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global.bump,
+        has_one = manager @ ConfigError::Unauthorized,
+    )]
+    pub global: Account<'info, GlobalConfig>,
+    #[account(
+        mut,
+        seeds = [VALIDATOR_CONFIG_SEED, vote.key().as_ref()],
+        bump = validator.bump,
+        constraint = validator.vote == vote.key() @ ConfigError::VoteMismatch,
+        constraint = validator.manager == global.manager @ ConfigError::Unauthorized,
+    )]
+    pub validator: Account<'info, ValidatorConfig>,
 }
 
 #[derive(Accounts)]
@@ -305,7 +378,7 @@ pub struct InitProposal<'info> {
     #[account(
         init,
         payer = operator,
-        space = ValidatorProposal::init_space(vote.key(), operator.key(), &config)?,
+        space = ValidatorProposal::init_space(vote.key(), operator.key(), validator.limits, &config)?,
         seeds = [VALIDATOR_PROPOSAL_SEED, vote.key().as_ref()],
         bump
     )]
@@ -416,4 +489,14 @@ pub enum ConfigError {
     OperatorMismatch,
     #[msg("URL must not be empty")]
     UrlEmpty,
+    #[msg("URL exceeds max_url_len")]
+    UrlTooLong,
+    #[msg("Too many named sets for this section")]
+    TooManySets,
+    #[msg("Too many URLs in a set")]
+    TooManyUrls,
+    #[msg("Too many virtual-priority entries in a set")]
+    TooManyVpEntries,
+    #[msg("ConfigLimits are zero or exceed absolute safety caps")]
+    InvalidLimits,
 }

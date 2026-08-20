@@ -6,7 +6,7 @@ use {
     rakurai_client_config::{
         sdk::{
             name_from_str, union_configs, BlockEngineConfig, BlockEngineEntryV1, BlockEngineV1,
-            Config, ConfigV1, P2cConfig, P2cEntryV1, P2cV1, Uuid, ValidatorProposal,
+            Config, ConfigLimits, ConfigV1, P2cConfig, P2cEntryV1, P2cV1, Uuid, ValidatorProposal,
             VirtualPriorityConfig, VirtualPriorityEntryV1, VirtualPriorityV1,
         },
         state::{GlobalConfig, ValidatorConfig},
@@ -214,11 +214,21 @@ fn display_config_payload(cfg: &Config) {
     }
 }
 
+fn display_limits(limits: &ConfigLimits) {
+    match limits {
+        ConfigLimits::V1(v) => println!(
+            "   Limits (v1): url≤{} sets≤{} urls/set≤{} vp/set≤{}",
+            v.max_url_len, v.max_sets_per_section, v.max_urls_per_set, v.max_vp_entries_per_set
+        ),
+    }
+}
+
 pub fn display_global_config(cfg: &GlobalConfig, pda: Pubkey) {
     let used = cfg.try_to_vec().map(|v| v.len()).unwrap_or(0);
     println!("{}", "Global Validator Config".bold().underline().blue());
     println!("   PDA: {pda}");
     println!("   Manager: {}", cfg.manager);
+    display_limits(&cfg.limits);
     println!("   Size: {used} bytes (+ 8 discriminator)");
     display_config_payload(&cfg.config);
 }
@@ -230,6 +240,7 @@ pub fn display_validator_config(cfg: &ValidatorConfig, pda: Pubkey) {
     println!("   Manager: {}", cfg.manager);
     println!("   Operator: {}", cfg.operator);
     println!("   Vote: {}", cfg.vote);
+    display_limits(&cfg.limits);
     println!("   Size: {used} bytes (+ 8 discriminator)");
     display_config_payload(&cfg.config);
 }
@@ -240,6 +251,7 @@ pub fn display_proposal(cfg: &ValidatorProposal, pda: Pubkey) {
     println!("   PDA: {pda}");
     println!("   Vote: {}", cfg.vote);
     println!("   Operator: {}", cfg.operator);
+    display_limits(&cfg.limits);
     println!("   Size: {used} bytes (+ 8 discriminator)");
     display_config_payload(&cfg.config);
 }

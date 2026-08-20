@@ -15,14 +15,16 @@ use {
         instruction::{
             approve_proposal_ix, close_global_ix, close_validator_ix, init_global_ix,
             init_proposal_ix, init_validator_ix, reject_proposal_ix, set_operator_ix,
-            update_global_ix, update_proposal_ix, update_validator_ix, ApproveProposalAccounts,
-            CloseGlobalAccounts, CloseValidatorAccounts, InitGlobalAccounts, InitGlobalArgs,
-            InitProposalAccounts, InitProposalArgs, InitValidatorAccounts, InitValidatorArgs,
-            RejectProposalAccounts, SetOperatorAccounts, SetOperatorArgs, UpdateGlobalAccounts,
-            UpdateGlobalArgs, UpdateProposalAccounts, UpdateProposalArgs, UpdateValidatorAccounts,
-            UpdateValidatorArgs,
+            update_global_ix, update_global_limits_ix, update_proposal_ix, update_validator_ix,
+            update_validator_limits_ix, ApproveProposalAccounts, CloseGlobalAccounts,
+            CloseValidatorAccounts, InitGlobalAccounts, InitGlobalArgs, InitProposalAccounts,
+            InitProposalArgs, InitValidatorAccounts, InitValidatorArgs, RejectProposalAccounts,
+            SetOperatorAccounts, SetOperatorArgs, UpdateGlobalAccounts, UpdateGlobalArgs,
+            UpdateGlobalLimitsAccounts, UpdateGlobalLimitsArgs, UpdateProposalAccounts,
+            UpdateProposalArgs, UpdateValidatorAccounts, UpdateValidatorArgs,
+            UpdateValidatorLimitsAccounts, UpdateValidatorLimitsArgs,
         },
-        Config, ConfigV1,
+        Config, ConfigLimits, ConfigLimitsV1, ConfigV1,
     },
     solana_rpc_client::rpc_client::RpcClient,
     solana_sdk::{
@@ -101,9 +103,11 @@ enum Commands {
 #[derive(Subcommand)]
 enum GlobalCmd {
     /// Create global config (signer becomes manager)
-    Init(ConfigFileArgs),
+    Init(InitGlobalCliArgs),
     /// Replace global config payload (manager-only; reallocs)
     Update(ConfigFileArgs),
+    /// Update global size caps (manager-only)
+    SetLimits(LimitsArgs),
     /// Fetch and print global config
     Show,
     /// Close global config PDA and reclaim rent (manager-only)
@@ -112,10 +116,12 @@ enum GlobalCmd {
 
 #[derive(Subcommand)]
 enum ValidatorCmd {
-    /// Create validator PDA, copying current global config
+    /// Create validator PDA, copying current global config + limits
     Init(ValidatorInitArgs),
     /// Replace validator config payload (manager-only; reallocs)
     Update(ValidatorUpdateArgs),
+    /// Update this vote's size caps (manager-only; used by proposals)
+    SetLimits(ValidatorLimitsArgs),
     /// Set operator who may propose (manager-only)
     SetOperator(SetOperatorCliArgs),
     /// Fetch and print validator config
@@ -141,6 +147,47 @@ struct ConfigFileArgs {
     /// Path to JSON config (ConfigV1). Omit for empty sets.
     #[arg(long)]
     config_file: Option<String>,
+}
+
+#[derive(Args)]
+struct InitGlobalCliArgs {
+    /// Path to JSON config (ConfigV1). Omit for empty sets.
+    #[arg(long)]
+    config_file: Option<String>,
+    #[arg(long, default_value_t = 256)]
+    max_url_len: u16,
+    #[arg(long, default_value_t = 16)]
+    max_sets_per_section: u8,
+    #[arg(long, default_value_t = 8)]
+    max_urls_per_set: u8,
+    #[arg(long, default_value_t = 64)]
+    max_vp_entries_per_set: u8,
+}
+
+#[derive(Args)]
+struct LimitsArgs {
+    #[arg(long, default_value_t = 256)]
+    max_url_len: u16,
+    #[arg(long, default_value_t = 16)]
+    max_sets_per_section: u8,
+    #[arg(long, default_value_t = 8)]
+    max_urls_per_set: u8,
+    #[arg(long, default_value_t = 64)]
+    max_vp_entries_per_set: u8,
+}
+
+#[derive(Args)]
+struct ValidatorLimitsArgs {
+    #[arg(long, value_parser = parse_vote)]
+    vote: Pubkey,
+    #[arg(long, default_value_t = 256)]
+    max_url_len: u16,
+    #[arg(long, default_value_t = 16)]
+    max_sets_per_section: u8,
+    #[arg(long, default_value_t = 8)]
+    max_urls_per_set: u8,
+    #[arg(long, default_value_t = 64)]
+    max_vp_entries_per_set: u8,
 }
 
 #[derive(Args)]
@@ -204,6 +251,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+fn limits_from_cli(
+    max_url_len: u16,
+    max_sets_per_section: u8,
+    max_urls_per_set: u8,
+    max_vp_entries_per_set: u8,
+) -> ConfigLimits {
+    ConfigLimits::V1(ConfigLimitsV1 {
+        max_url_len,
+        max_sets_per_section,
+        max_urls_per_set,
+        max_vp_entries_per_set,
+    })
+}
+
 fn load_or_empty(path: Option<String>) -> Result<Config, Box<dyn std::error::Error>> {
     match path {
         Some(p) => load_config_from_file(&p),
@@ -222,9 +283,15 @@ fn run_global(
     match cmd {
         GlobalCmd::Init(a) => {
             let config = load_or_empty(a.config_file)?;
+            let limits = limits_from_cli(
+                a.max_url_len,
+                a.max_sets_per_section,
+                a.max_urls_per_set,
+                a.max_vp_entries_per_set,
+            );
             let ix = init_global_ix(
                 program_id,
-                InitGlobalArgs { config },
+                InitGlobalArgs { config, limits },
                 InitGlobalAccounts {
                     manager,
                     global,
@@ -243,6 +310,24 @@ fn run_global(
                     manager,
                     global,
                     system_program: system_program::ID,
+                },
+            );
+            sign_and_send_transaction(rpc.clone(), ix, &kp)?;
+            display_global_config(&get_global_config(rpc, global)?, global);
+        }
+        GlobalCmd::SetLimits(a) => {
+            let limits = limits_from_cli(
+                a.max_url_len,
+                a.max_sets_per_section,
+                a.max_urls_per_set,
+                a.max_vp_entries_per_set,
+            );
+            let ix = update_global_limits_ix(
+                program_id,
+                UpdateGlobalLimitsArgs { limits },
+                UpdateGlobalLimitsAccounts {
+                    manager,
+                    global,
                 },
             );
             sign_and_send_transaction(rpc.clone(), ix, &kp)?;
@@ -298,6 +383,27 @@ fn run_validator(
                     global,
                     validator,
                     system_program: system_program::ID,
+                },
+            );
+            sign_and_send_transaction(rpc.clone(), ix, &kp)?;
+            display_validator_config(&get_validator_config(rpc, validator)?, validator);
+        }
+        ValidatorCmd::SetLimits(a) => {
+            let (validator, _) = derive_validator_config_address(&program_id, &a.vote);
+            let limits = limits_from_cli(
+                a.max_url_len,
+                a.max_sets_per_section,
+                a.max_urls_per_set,
+                a.max_vp_entries_per_set,
+            );
+            let ix = update_validator_limits_ix(
+                program_id,
+                UpdateValidatorLimitsArgs { limits },
+                UpdateValidatorLimitsAccounts {
+                    manager,
+                    vote: a.vote,
+                    global,
+                    validator,
                 },
             );
             sign_and_send_transaction(rpc.clone(), ix, &kp)?;

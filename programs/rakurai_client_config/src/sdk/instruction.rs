@@ -4,10 +4,11 @@ use anchor_lang::{
     prelude::Pubkey, solana_program::instruction::Instruction, InstructionData, ToAccountMetas,
 };
 
-use crate::state::Config;
+use crate::state::{Config, ConfigLimits};
 
 pub struct InitGlobalArgs {
     pub config: Config,
+    pub limits: ConfigLimits,
 }
 
 pub struct InitGlobalAccounts {
@@ -21,7 +22,7 @@ pub fn init_global_ix(
     args: InitGlobalArgs,
     accounts: InitGlobalAccounts,
 ) -> Instruction {
-    let InitGlobalArgs { config } = args;
+    let InitGlobalArgs { config, limits } = args;
     let InitGlobalAccounts {
         manager,
         global,
@@ -30,7 +31,7 @@ pub fn init_global_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::InitGlobal { config }.data(),
+        data: crate::instruction::InitGlobal { config, limits }.data(),
         accounts: crate::accounts::InitGlobal {
             manager,
             global,
@@ -69,6 +70,34 @@ pub fn update_global_ix(
             manager,
             global,
             system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateGlobalLimitsArgs {
+    pub limits: ConfigLimits,
+}
+
+pub struct UpdateGlobalLimitsAccounts {
+    pub manager: Pubkey,
+    pub global: Pubkey,
+}
+
+pub fn update_global_limits_ix(
+    program_id: Pubkey,
+    args: UpdateGlobalLimitsArgs,
+    accounts: UpdateGlobalLimitsAccounts,
+) -> Instruction {
+    let UpdateGlobalLimitsArgs { limits } = args;
+    let UpdateGlobalLimitsAccounts { manager, global } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateGlobalLimits { limits }.data(),
+        accounts: crate::accounts::UpdateGlobalLimits {
+            manager,
+            global,
         }
         .to_account_metas(None),
     }
@@ -149,6 +178,43 @@ pub fn update_validator_ix(
             global,
             validator,
             system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateValidatorLimitsArgs {
+    pub limits: ConfigLimits,
+}
+
+pub struct UpdateValidatorLimitsAccounts {
+    pub manager: Pubkey,
+    pub vote: Pubkey,
+    pub global: Pubkey,
+    pub validator: Pubkey,
+}
+
+pub fn update_validator_limits_ix(
+    program_id: Pubkey,
+    args: UpdateValidatorLimitsArgs,
+    accounts: UpdateValidatorLimitsAccounts,
+) -> Instruction {
+    let UpdateValidatorLimitsArgs { limits } = args;
+    let UpdateValidatorLimitsAccounts {
+        manager,
+        vote,
+        global,
+        validator,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateValidatorLimits { limits }.data(),
+        accounts: crate::accounts::UpdateValidatorLimits {
+            manager,
+            vote,
+            global,
+            validator,
         }
         .to_account_metas(None),
     }
