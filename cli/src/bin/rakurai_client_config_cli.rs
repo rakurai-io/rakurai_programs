@@ -27,15 +27,11 @@ use {
         Config, ConfigLimits, ConfigLimitsV1, ConfigV1,
     },
     solana_rpc_client::rpc_client::RpcClient,
-    solana_sdk::{
-        commitment_config::CommitmentConfig,
-        pubkey::Pubkey,
-        signature::Signer,
-    },
+    solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Signer},
     std::sync::Arc,
 };
 
-const DEFAULT_PROGRAM_ID: &str = "4uGNMjJFxgE3TfEiPmSpvfwYah12QZbaWWZDJqZvA9F4";
+const DEFAULT_PROGRAM_ID: &str = "FcTL7Mnq1RcstcYUk39ph2DzdVPNFyWh1EnrqCocXhhh";
 
 #[derive(Parser)]
 #[command(
@@ -325,10 +321,7 @@ fn run_global(
             let ix = update_global_limits_ix(
                 program_id,
                 UpdateGlobalLimitsArgs { limits },
-                UpdateGlobalLimitsAccounts {
-                    manager,
-                    global,
-                },
+                UpdateGlobalLimitsAccounts { manager, global },
             );
             sign_and_send_transaction(rpc.clone(), ix, &kp)?;
             display_global_config(&get_global_config(rpc, global)?, global);

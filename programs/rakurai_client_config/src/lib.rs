@@ -497,6 +497,8 @@ pub enum ConfigError {
     TooManyUrls,
     #[msg("Too many virtual-priority entries in a set")]
     TooManyVpEntries,
+    #[msg("virtual_priority value must be in [0.0, 1.0]")]
+    InvalidVpValue,
     #[msg("ConfigLimits are zero or exceed absolute safety caps")]
     InvalidLimits,
 }

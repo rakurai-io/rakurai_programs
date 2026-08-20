@@ -179,6 +179,12 @@ impl ConfigV1 {
                 entry.url.len() <= limits.max_vp_entries_per_set as usize,
                 crate::ConfigError::TooManyVpEntries
             );
+            for vp in &entry.url {
+                require!(
+                    vp.value.is_finite() && (0.0..=1.0).contains(&vp.value),
+                    crate::ConfigError::InvalidVpValue
+                );
+            }
         }
         Ok(())
     }
@@ -239,6 +245,7 @@ pub struct VirtualPriorityEntryV1 {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub struct VirtualPriorityConfig {
     pub key: Pubkey,
+    /// Fraction of tip used for virtual priority; must be in `[0.0, 1.0]`.
     pub value: f64,
 }
 
@@ -562,5 +569,24 @@ mod tests {
             ..ConfigLimitsV1::default()
         });
         assert!(bad.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_vp_value_outside_unit_interval() {
+        let limits = ConfigLimits::default();
+        let cfg = Config::V1(ConfigV1 {
+            block_engine: BlockEngineV1 { sets: vec![] },
+            p2c: P2cV1 { sets: vec![] },
+            virtual_priority: VirtualPriorityV1 {
+                sets: vec![VirtualPriorityEntryV1 {
+                    name: Uuid::from_str_truncated("vp"),
+                    url: vec![VirtualPriorityConfig {
+                        key: Pubkey::default(),
+                        value: 1.1,
+                    }],
+                }],
+            },
+        });
+        assert!(cfg.validate(&limits).is_err());
     }
 }
