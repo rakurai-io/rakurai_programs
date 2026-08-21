@@ -632,7 +632,7 @@ impl RevenueShareAccount {
         self.max_epoch_entries = max_epoch_entries;
         self.commission_bps = commission_bps;
         self.commission_account = commission_account;
-        self.block_reward_conversion_enabled = false;
+        self.block_reward_conversion_enabled = true;
         self.ledger = RevenueLedger::default();
         self.bump = bump;
         self.validate()
@@ -878,7 +878,7 @@ impl RevenueShareAccountV1 {
         self.max_epoch_entries = max_epoch_entries;
         self.commission_bps = commission_bps;
         self.commission_account = commission_account;
-        self.block_reward_conversion_enabled = false;
+        self.block_reward_conversion_enabled = true;
         self.ledger = RevenueLedgerV1::default();
         self.deficit = 0;
         self.bump = bump;
@@ -1494,7 +1494,7 @@ impl P2CSubscriptionAccount {
         } else {
             grace_epochs
         };
-        self.block_reward_conversion_enabled = false;
+        self.block_reward_conversion_enabled = true;
         self.unpaid_streak = 0;
         self.status = P2CSubscriptionStatus::Active;
         self.deficit = 0;

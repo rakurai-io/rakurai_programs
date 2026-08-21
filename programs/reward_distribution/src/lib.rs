@@ -61,8 +61,8 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Initialize a new [RewardCollectionAccount] (legacy account list).
-    /// Prefer `initialize_reward_collection_account_v1` for enabled RAA validation.
+    /// Deprecated: use [`initialize_reward_collection_account_v1`].
+    #[allow(unused_variables)]
     pub fn initialize_reward_collection_account(
         ctx: Context<InitializeRewardCollectionAccount>,
         merkle_root_upload_authority: Pubkey,
@@ -71,18 +71,8 @@ pub mod reward_distribution {
         client_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
-        initialize_reward_collection_account_inner(
-            &ctx.accounts.config,
-            ctx.accounts.reward_collection_account.key(),
-            &mut ctx.accounts.reward_collection_account,
-            &ctx.accounts.validator_vote_account,
-            ctx.accounts.signer.key,
-            merkle_root_upload_authority,
-            block_reward_commission_bps,
-            client_commission_account,
-            client_commission_bps,
-            bump,
-        )
+        msg!("initialize_reward_collection_account is deprecated; use initialize_reward_collection_account_v1");
+        err!(ErrorCode::Deprecated)
     }
 
     /// Initialize a new [RewardCollectionAccount] with Rakurai activation checks.
@@ -535,7 +525,8 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Initializes a revenue share vault (tip or mev-share) for a validator.
+    /// Deprecated: use [`initialize_revenue_share_account_v1`].
+    #[allow(unused_variables)]
     pub fn initialize_revenue_share_account(
         ctx: Context<InitializeRevenueShareAccount>,
         share_kind: RevenueKind,
@@ -546,44 +537,8 @@ pub mod reward_distribution {
         commission_account: Pubkey,
         bump: u8,
     ) -> Result<()> {
-        InitializeRevenueShareAccount::auth(
-            &ctx,
-            name,
-            record_authority,
-            max_epoch_entries,
-            commission_bps,
-            commission_account,
-        )?;
-
-        let manager_authority = ctx.accounts.config.require_revenue_manager_authority()?;
-        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
-        revenue_share_account.populate_on_init(
-            share_kind,
-            name,
-            ctx.accounts.validator_vote_account.key(),
-            ctx.accounts.payer.key(),
-            manager_authority,
-            record_authority,
-            max_epoch_entries,
-            commission_bps,
-            commission_account,
-            bump,
-        )?;
-
-        emit!(RevenueShareAccountInitializedEvent {
-            revenue_share_account: revenue_share_account.key(),
-            share_kind,
-            name,
-            validator_vote: revenue_share_account.validator_vote,
-            initializer: ctx.accounts.payer.key(),
-            manager_authority,
-            record_authority,
-            max_epoch_entries,
-            commission_bps,
-            commission_account,
-        });
-
-        Ok(())
+        msg!("initialize_revenue_share_account is deprecated; use initialize_revenue_share_account_v1");
+        err!(ErrorCode::Deprecated)
     }
 
     /// Initializes a revenue share vault using [`TipsAndMevShareConfigAccount`] defaults (no RD config).
@@ -1542,6 +1497,9 @@ pub enum ErrorCode {
 
     #[msg("No outstanding deficit to clear.")]
     NoDeficit,
+
+    #[msg("This instruction is deprecated; use the corresponding v1 instruction.")]
+    Deprecated,
 }
 
 /// Closes a `ClaimStatus` account and refunds lamports to the payer.
@@ -1998,6 +1956,7 @@ pub struct InitializeRevenueShareAccount<'info> {
 }
 
 impl InitializeRevenueShareAccount<'_> {
+    #[allow(dead_code)]
     fn auth(
         ctx: &Context<InitializeRevenueShareAccount>,
         name: [u8; 32],

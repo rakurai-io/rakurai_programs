@@ -82,6 +82,7 @@ pub struct InitializeRewardCollectionAccountAccounts {
 }
 
 /// Builds the instruction to initialize the reward collection account (legacy).
+#[deprecated(note = "use initialize_reward_collection_account_v1_ix")]
 pub fn initialize_reward_collection_account_ix(
     program_id: Pubkey,
     args: InitializeRewardCollectionAccountArgs,
@@ -661,6 +662,7 @@ pub struct InitializeRevenueShareAccountAccounts {
     pub system_program: Pubkey,
 }
 
+#[deprecated(note = "use initialize_revenue_share_account_v1_ix")]
 pub fn initialize_revenue_share_account_ix(
     program_id: Pubkey,
     args: InitializeRevenueShareAccountArgs,
