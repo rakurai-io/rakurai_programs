@@ -3,8 +3,10 @@ use anchor_lang::prelude::*;
 use solana_security_txt::security_txt;
 
 use crate::state::{
-    Config, ConfigLimits, GlobalConfig, ValidatorConfig, ValidatorProposal, GLOBAL_CONFIG_SEED,
-    VALIDATOR_CONFIG_SEED, VALIDATOR_PROPOSAL_SEED,
+    Config, ConfigLimits, ConfigStaging, GlobalConfig, ValidatorConfig, ValidatorProposal,
+    CONFIG_STAGING_SEED, GLOBAL_CONFIG_SEED, MAX_STAGING_BYTES, STAGING_KIND_GLOBAL,
+    STAGING_KIND_PROPOSAL, STAGING_KIND_VALIDATOR, STAGING_TAG_GLOBAL, STAGING_TAG_PROPOSAL,
+    STAGING_TAG_VALIDATOR, VALIDATOR_CONFIG_SEED, VALIDATOR_PROPOSAL_SEED,
 };
 
 #[cfg(not(feature = "no-entrypoint"))]
@@ -183,6 +185,175 @@ pub mod rakurai_client_config {
 
     /// Manager-only: close proposal without changing live validator config (rent → operator).
     pub fn reject_proposal(_ctx: Context<RejectProposal>) -> Result<()> {
+        Ok(())
+    }
+
+    /// Manager-only: create ephemeral global staging PDA for a chunked config upload.
+    pub fn init_global_staging(ctx: Context<InitGlobalStaging>, expected_len: u32) -> Result<()> {
+        require!(
+            expected_len > 0 && expected_len <= MAX_STAGING_BYTES,
+            ConfigError::StagingTooLarge
+        );
+        let staging = &mut ctx.accounts.staging;
+        staging.authority = ctx.accounts.manager.key();
+        staging.bump = ctx.bumps.staging;
+        staging.kind = STAGING_KIND_GLOBAL;
+        staging.vote = Pubkey::default();
+        staging.expected_len = expected_len;
+        staging.data = Vec::new();
+        Ok(())
+    }
+
+    /// Manager-only: append a chunk to global staging.
+    pub fn write_global_staging(ctx: Context<WriteGlobalStaging>, data: Vec<u8>) -> Result<()> {
+        ctx.accounts.staging.append(&data)?;
+        ConfigStaging::realloc_to_fit(
+            &ctx.accounts.staging,
+            &ctx.accounts.manager,
+            &ctx.accounts.system_program,
+        )?;
+        Ok(())
+    }
+
+    /// Manager-only: deserialize staging payload into live global config, then close staging.
+    pub fn commit_global_staging(ctx: Context<CommitGlobalStaging>) -> Result<()> {
+        require!(
+            ctx.accounts.staging.kind == STAGING_KIND_GLOBAL,
+            ConfigError::StagingKindInvalid
+        );
+        let config = ctx.accounts.staging.parse_config()?;
+        let limits = ctx.accounts.global.limits;
+        config.validate(&limits)?;
+        ctx.accounts.global.config = config;
+        GlobalConfig::realloc_to_fit(
+            &ctx.accounts.global,
+            &ctx.accounts.manager,
+            &ctx.accounts.system_program,
+        )?;
+        Ok(())
+    }
+
+    /// Manager-only: close global staging without applying.
+    pub fn abort_global_staging(_ctx: Context<AbortGlobalStaging>) -> Result<()> {
+        Ok(())
+    }
+
+    /// Manager-only: create ephemeral validator staging PDA.
+    pub fn init_validator_staging(
+        ctx: Context<InitValidatorStaging>,
+        expected_len: u32,
+    ) -> Result<()> {
+        require!(
+            expected_len > 0 && expected_len <= MAX_STAGING_BYTES,
+            ConfigError::StagingTooLarge
+        );
+        let staging = &mut ctx.accounts.staging;
+        staging.authority = ctx.accounts.manager.key();
+        staging.bump = ctx.bumps.staging;
+        staging.kind = STAGING_KIND_VALIDATOR;
+        staging.vote = ctx.accounts.vote.key();
+        staging.expected_len = expected_len;
+        staging.data = Vec::new();
+        Ok(())
+    }
+
+    /// Manager-only: append a chunk to validator staging.
+    pub fn write_validator_staging(
+        ctx: Context<WriteValidatorStaging>,
+        data: Vec<u8>,
+    ) -> Result<()> {
+        ctx.accounts.staging.append(&data)?;
+        ConfigStaging::realloc_to_fit(
+            &ctx.accounts.staging,
+            &ctx.accounts.manager,
+            &ctx.accounts.system_program,
+        )?;
+        Ok(())
+    }
+
+    /// Manager-only: apply staging payload to live validator overlay, then close staging.
+    pub fn commit_validator_staging(ctx: Context<CommitValidatorStaging>) -> Result<()> {
+        require!(
+            ctx.accounts.staging.kind == STAGING_KIND_VALIDATOR,
+            ConfigError::StagingKindInvalid
+        );
+        require!(
+            ctx.accounts.staging.vote == ctx.accounts.vote.key(),
+            ConfigError::VoteMismatch
+        );
+        let config = ctx.accounts.staging.parse_config()?;
+        let limits = ctx.accounts.validator.limits;
+        config.validate(&limits)?;
+        ctx.accounts.validator.config = config;
+        ValidatorConfig::realloc_to_fit(
+            &ctx.accounts.validator,
+            &ctx.accounts.manager,
+            &ctx.accounts.system_program,
+        )?;
+        Ok(())
+    }
+
+    /// Manager-only: close validator staging without applying.
+    pub fn abort_validator_staging(_ctx: Context<AbortValidatorStaging>) -> Result<()> {
+        Ok(())
+    }
+
+    /// Operator-only: create ephemeral proposal staging PDA.
+    pub fn init_proposal_staging(
+        ctx: Context<InitProposalStaging>,
+        expected_len: u32,
+    ) -> Result<()> {
+        require!(
+            expected_len > 0 && expected_len <= MAX_STAGING_BYTES,
+            ConfigError::StagingTooLarge
+        );
+        let staging = &mut ctx.accounts.staging;
+        staging.authority = ctx.accounts.operator.key();
+        staging.bump = ctx.bumps.staging;
+        staging.kind = STAGING_KIND_PROPOSAL;
+        staging.vote = ctx.accounts.vote.key();
+        staging.expected_len = expected_len;
+        staging.data = Vec::new();
+        Ok(())
+    }
+
+    /// Operator-only: append a chunk to proposal staging.
+    pub fn write_proposal_staging(ctx: Context<WriteProposalStaging>, data: Vec<u8>) -> Result<()> {
+        ctx.accounts.staging.append(&data)?;
+        ConfigStaging::realloc_to_fit(
+            &ctx.accounts.staging,
+            &ctx.accounts.operator,
+            &ctx.accounts.system_program,
+        )?;
+        Ok(())
+    }
+
+    /// Operator-only: apply staging payload onto the proposal PDA, then close staging.
+    /// Proposal must already exist (small `init_proposal` with empty config is enough).
+    pub fn commit_proposal_staging(ctx: Context<CommitProposalStaging>) -> Result<()> {
+        require!(
+            ctx.accounts.staging.kind == STAGING_KIND_PROPOSAL,
+            ConfigError::StagingKindInvalid
+        );
+        require!(
+            ctx.accounts.staging.vote == ctx.accounts.vote.key(),
+            ConfigError::VoteMismatch
+        );
+        let limits = ctx.accounts.validator.limits;
+        let config = ctx.accounts.staging.parse_config()?;
+        config.validate(&limits)?;
+        ctx.accounts.proposal.limits = limits;
+        ctx.accounts.proposal.config = config;
+        ValidatorProposal::realloc_to_fit(
+            &ctx.accounts.proposal,
+            &ctx.accounts.operator,
+            &ctx.accounts.system_program,
+        )?;
+        Ok(())
+    }
+
+    /// Operator-only: close proposal staging without applying.
+    pub fn abort_proposal_staging(_ctx: Context<AbortProposalStaging>) -> Result<()> {
         Ok(())
     }
 }
@@ -477,6 +648,291 @@ pub struct RejectProposal<'info> {
     pub proposal: Account<'info, ValidatorProposal>,
 }
 
+#[derive(Accounts)]
+#[instruction(expected_len: u32)]
+pub struct InitGlobalStaging<'info> {
+    #[account(mut)]
+    pub manager: Signer<'info>,
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global.bump,
+        has_one = manager @ ConfigError::Unauthorized,
+    )]
+    pub global: Account<'info, GlobalConfig>,
+    #[account(
+        init,
+        payer = manager,
+        space = ConfigStaging::init_space(
+            manager.key(),
+            STAGING_KIND_GLOBAL,
+            Pubkey::default(),
+            expected_len,
+        )?,
+        seeds = [CONFIG_STAGING_SEED, STAGING_TAG_GLOBAL],
+        bump
+    )]
+    pub staging: Account<'info, ConfigStaging>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct WriteGlobalStaging<'info> {
+    #[account(mut)]
+    pub manager: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [CONFIG_STAGING_SEED, STAGING_TAG_GLOBAL],
+        bump = staging.bump,
+        constraint = staging.authority == manager.key() @ ConfigError::Unauthorized,
+        constraint = staging.kind == STAGING_KIND_GLOBAL @ ConfigError::StagingKindInvalid,
+    )]
+    pub staging: Account<'info, ConfigStaging>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct CommitGlobalStaging<'info> {
+    #[account(mut)]
+    pub manager: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global.bump,
+        has_one = manager @ ConfigError::Unauthorized,
+    )]
+    pub global: Account<'info, GlobalConfig>,
+    #[account(
+        mut,
+        close = manager,
+        seeds = [CONFIG_STAGING_SEED, STAGING_TAG_GLOBAL],
+        bump = staging.bump,
+        constraint = staging.authority == manager.key() @ ConfigError::Unauthorized,
+        constraint = staging.kind == STAGING_KIND_GLOBAL @ ConfigError::StagingKindInvalid,
+    )]
+    pub staging: Account<'info, ConfigStaging>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct AbortGlobalStaging<'info> {
+    #[account(mut)]
+    pub manager: Signer<'info>,
+    #[account(
+        mut,
+        close = manager,
+        seeds = [CONFIG_STAGING_SEED, STAGING_TAG_GLOBAL],
+        bump = staging.bump,
+        constraint = staging.authority == manager.key() @ ConfigError::Unauthorized,
+        constraint = staging.kind == STAGING_KIND_GLOBAL @ ConfigError::StagingKindInvalid,
+    )]
+    pub staging: Account<'info, ConfigStaging>,
+}
+
+#[derive(Accounts)]
+#[instruction(expected_len: u32)]
+pub struct InitValidatorStaging<'info> {
+    #[account(mut)]
+    pub manager: Signer<'info>,
+    /// CHECK: vote account used as PDA seed
+    pub vote: UncheckedAccount<'info>,
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global.bump,
+        has_one = manager @ ConfigError::Unauthorized,
+    )]
+    pub global: Account<'info, GlobalConfig>,
+    #[account(
+        seeds = [VALIDATOR_CONFIG_SEED, vote.key().as_ref()],
+        bump = validator.bump,
+        constraint = validator.vote == vote.key() @ ConfigError::VoteMismatch,
+        constraint = validator.manager == global.manager @ ConfigError::Unauthorized,
+    )]
+    pub validator: Account<'info, ValidatorConfig>,
+    #[account(
+        init,
+        payer = manager,
+        space = ConfigStaging::init_space(
+            manager.key(),
+            STAGING_KIND_VALIDATOR,
+            vote.key(),
+            expected_len,
+        )?,
+        seeds = [CONFIG_STAGING_SEED, STAGING_TAG_VALIDATOR, vote.key().as_ref()],
+        bump
+    )]
+    pub staging: Account<'info, ConfigStaging>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct WriteValidatorStaging<'info> {
+    #[account(mut)]
+    pub manager: Signer<'info>,
+    /// CHECK: vote account used as PDA seed
+    pub vote: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        seeds = [CONFIG_STAGING_SEED, STAGING_TAG_VALIDATOR, vote.key().as_ref()],
+        bump = staging.bump,
+        constraint = staging.authority == manager.key() @ ConfigError::Unauthorized,
+        constraint = staging.kind == STAGING_KIND_VALIDATOR @ ConfigError::StagingKindInvalid,
+        constraint = staging.vote == vote.key() @ ConfigError::VoteMismatch,
+    )]
+    pub staging: Account<'info, ConfigStaging>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct CommitValidatorStaging<'info> {
+    #[account(mut)]
+    pub manager: Signer<'info>,
+    /// CHECK: vote account used as PDA seed
+    pub vote: UncheckedAccount<'info>,
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global.bump,
+        has_one = manager @ ConfigError::Unauthorized,
+    )]
+    pub global: Account<'info, GlobalConfig>,
+    #[account(
+        mut,
+        seeds = [VALIDATOR_CONFIG_SEED, vote.key().as_ref()],
+        bump = validator.bump,
+        constraint = validator.vote == vote.key() @ ConfigError::VoteMismatch,
+        constraint = validator.manager == global.manager @ ConfigError::Unauthorized,
+    )]
+    pub validator: Account<'info, ValidatorConfig>,
+    #[account(
+        mut,
+        close = manager,
+        seeds = [CONFIG_STAGING_SEED, STAGING_TAG_VALIDATOR, vote.key().as_ref()],
+        bump = staging.bump,
+        constraint = staging.authority == manager.key() @ ConfigError::Unauthorized,
+        constraint = staging.kind == STAGING_KIND_VALIDATOR @ ConfigError::StagingKindInvalid,
+        constraint = staging.vote == vote.key() @ ConfigError::VoteMismatch,
+    )]
+    pub staging: Account<'info, ConfigStaging>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct AbortValidatorStaging<'info> {
+    #[account(mut)]
+    pub manager: Signer<'info>,
+    /// CHECK: vote account used as PDA seed
+    pub vote: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        close = manager,
+        seeds = [CONFIG_STAGING_SEED, STAGING_TAG_VALIDATOR, vote.key().as_ref()],
+        bump = staging.bump,
+        constraint = staging.authority == manager.key() @ ConfigError::Unauthorized,
+        constraint = staging.kind == STAGING_KIND_VALIDATOR @ ConfigError::StagingKindInvalid,
+        constraint = staging.vote == vote.key() @ ConfigError::VoteMismatch,
+    )]
+    pub staging: Account<'info, ConfigStaging>,
+}
+
+#[derive(Accounts)]
+#[instruction(expected_len: u32)]
+pub struct InitProposalStaging<'info> {
+    #[account(mut)]
+    pub operator: Signer<'info>,
+    /// CHECK: vote account used as PDA seed
+    pub vote: UncheckedAccount<'info>,
+    #[account(
+        seeds = [VALIDATOR_CONFIG_SEED, vote.key().as_ref()],
+        bump = validator.bump,
+        constraint = validator.vote == vote.key() @ ConfigError::VoteMismatch,
+        has_one = operator @ ConfigError::UnauthorizedOperator,
+    )]
+    pub validator: Account<'info, ValidatorConfig>,
+    #[account(
+        init,
+        payer = operator,
+        space = ConfigStaging::init_space(
+            operator.key(),
+            STAGING_KIND_PROPOSAL,
+            vote.key(),
+            expected_len,
+        )?,
+        seeds = [CONFIG_STAGING_SEED, STAGING_TAG_PROPOSAL, vote.key().as_ref()],
+        bump
+    )]
+    pub staging: Account<'info, ConfigStaging>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct WriteProposalStaging<'info> {
+    #[account(mut)]
+    pub operator: Signer<'info>,
+    /// CHECK: vote account used as PDA seed
+    pub vote: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        seeds = [CONFIG_STAGING_SEED, STAGING_TAG_PROPOSAL, vote.key().as_ref()],
+        bump = staging.bump,
+        constraint = staging.authority == operator.key() @ ConfigError::UnauthorizedOperator,
+        constraint = staging.kind == STAGING_KIND_PROPOSAL @ ConfigError::StagingKindInvalid,
+        constraint = staging.vote == vote.key() @ ConfigError::VoteMismatch,
+    )]
+    pub staging: Account<'info, ConfigStaging>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct CommitProposalStaging<'info> {
+    #[account(mut)]
+    pub operator: Signer<'info>,
+    /// CHECK: vote account used as PDA seed
+    pub vote: UncheckedAccount<'info>,
+    #[account(
+        seeds = [VALIDATOR_CONFIG_SEED, vote.key().as_ref()],
+        bump = validator.bump,
+        constraint = validator.vote == vote.key() @ ConfigError::VoteMismatch,
+        has_one = operator @ ConfigError::UnauthorizedOperator,
+    )]
+    pub validator: Account<'info, ValidatorConfig>,
+    #[account(
+        mut,
+        seeds = [VALIDATOR_PROPOSAL_SEED, vote.key().as_ref()],
+        bump = proposal.bump,
+        constraint = proposal.vote == vote.key() @ ConfigError::VoteMismatch,
+        has_one = operator @ ConfigError::UnauthorizedOperator,
+    )]
+    pub proposal: Account<'info, ValidatorProposal>,
+    #[account(
+        mut,
+        close = operator,
+        seeds = [CONFIG_STAGING_SEED, STAGING_TAG_PROPOSAL, vote.key().as_ref()],
+        bump = staging.bump,
+        constraint = staging.authority == operator.key() @ ConfigError::UnauthorizedOperator,
+        constraint = staging.kind == STAGING_KIND_PROPOSAL @ ConfigError::StagingKindInvalid,
+        constraint = staging.vote == vote.key() @ ConfigError::VoteMismatch,
+    )]
+    pub staging: Account<'info, ConfigStaging>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct AbortProposalStaging<'info> {
+    #[account(mut)]
+    pub operator: Signer<'info>,
+    /// CHECK: vote account used as PDA seed
+    pub vote: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        close = operator,
+        seeds = [CONFIG_STAGING_SEED, STAGING_TAG_PROPOSAL, vote.key().as_ref()],
+        bump = staging.bump,
+        constraint = staging.authority == operator.key() @ ConfigError::UnauthorizedOperator,
+        constraint = staging.kind == STAGING_KIND_PROPOSAL @ ConfigError::StagingKindInvalid,
+        constraint = staging.vote == vote.key() @ ConfigError::VoteMismatch,
+    )]
+    pub staging: Account<'info, ConfigStaging>,
+}
+
 #[error_code]
 pub enum ConfigError {
     #[msg("Only the config manager may perform this action")]
@@ -501,4 +957,14 @@ pub enum ConfigError {
     InvalidVpValue,
     #[msg("ConfigLimits are zero or exceed absolute safety caps")]
     InvalidLimits,
+    #[msg("Staging kind does not match this instruction")]
+    StagingKindInvalid,
+    #[msg("Staging payload length exceeds expected_len")]
+    StagingLengthMismatch,
+    #[msg("Staging payload is incomplete")]
+    StagingIncomplete,
+    #[msg("Staging payload is empty or exceeds MAX_STAGING_BYTES")]
+    StagingTooLarge,
+    #[msg("Failed to deserialize Config from staging bytes")]
+    StagingDeserializeFailed,
 }

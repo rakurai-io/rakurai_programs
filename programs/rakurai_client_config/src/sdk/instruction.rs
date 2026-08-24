@@ -450,3 +450,271 @@ pub fn reject_proposal_ix(program_id: Pubkey, accounts: RejectProposalAccounts) 
         .to_account_metas(None),
     }
 }
+
+pub struct StagingLenArgs {
+    pub expected_len: u32,
+}
+
+pub struct StagingChunkArgs {
+    pub data: Vec<u8>,
+}
+
+#[derive(Clone, Copy)]
+pub struct GlobalStagingAccounts {
+    pub manager: Pubkey,
+    pub global: Pubkey,
+    pub staging: Pubkey,
+    pub system_program: Pubkey,
+}
+
+pub fn init_global_staging_ix(
+    program_id: Pubkey,
+    args: StagingLenArgs,
+    accounts: GlobalStagingAccounts,
+) -> Instruction {
+    let StagingLenArgs { expected_len } = args;
+    let GlobalStagingAccounts {
+        manager,
+        global,
+        staging,
+        system_program,
+    } = accounts;
+    Instruction {
+        program_id,
+        data: crate::instruction::InitGlobalStaging { expected_len }.data(),
+        accounts: crate::accounts::InitGlobalStaging {
+            manager,
+            global,
+            staging,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub fn write_global_staging_ix(
+    program_id: Pubkey,
+    args: StagingChunkArgs,
+    accounts: GlobalStagingAccounts,
+) -> Instruction {
+    let StagingChunkArgs { data } = args;
+    let GlobalStagingAccounts {
+        manager,
+        staging,
+        system_program,
+        ..
+    } = accounts;
+    Instruction {
+        program_id,
+        data: crate::instruction::WriteGlobalStaging { data }.data(),
+        accounts: crate::accounts::WriteGlobalStaging {
+            manager,
+            staging,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub fn commit_global_staging_ix(program_id: Pubkey, accounts: GlobalStagingAccounts) -> Instruction {
+    let GlobalStagingAccounts {
+        manager,
+        global,
+        staging,
+        system_program,
+    } = accounts;
+    Instruction {
+        program_id,
+        data: crate::instruction::CommitGlobalStaging {}.data(),
+        accounts: crate::accounts::CommitGlobalStaging {
+            manager,
+            global,
+            staging,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct ValidatorStagingAccounts {
+    pub manager: Pubkey,
+    pub vote: Pubkey,
+    pub global: Pubkey,
+    pub validator: Pubkey,
+    pub staging: Pubkey,
+    pub system_program: Pubkey,
+}
+
+pub fn init_validator_staging_ix(
+    program_id: Pubkey,
+    args: StagingLenArgs,
+    accounts: ValidatorStagingAccounts,
+) -> Instruction {
+    let StagingLenArgs { expected_len } = args;
+    let ValidatorStagingAccounts {
+        manager,
+        vote,
+        global,
+        validator,
+        staging,
+        system_program,
+    } = accounts;
+    Instruction {
+        program_id,
+        data: crate::instruction::InitValidatorStaging { expected_len }.data(),
+        accounts: crate::accounts::InitValidatorStaging {
+            manager,
+            vote,
+            global,
+            validator,
+            staging,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub fn write_validator_staging_ix(
+    program_id: Pubkey,
+    args: StagingChunkArgs,
+    accounts: ValidatorStagingAccounts,
+) -> Instruction {
+    let StagingChunkArgs { data } = args;
+    let ValidatorStagingAccounts {
+        manager,
+        vote,
+        staging,
+        system_program,
+        ..
+    } = accounts;
+    Instruction {
+        program_id,
+        data: crate::instruction::WriteValidatorStaging { data }.data(),
+        accounts: crate::accounts::WriteValidatorStaging {
+            manager,
+            vote,
+            staging,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub fn commit_validator_staging_ix(
+    program_id: Pubkey,
+    accounts: ValidatorStagingAccounts,
+) -> Instruction {
+    let ValidatorStagingAccounts {
+        manager,
+        vote,
+        global,
+        validator,
+        staging,
+        system_program,
+    } = accounts;
+    Instruction {
+        program_id,
+        data: crate::instruction::CommitValidatorStaging {}.data(),
+        accounts: crate::accounts::CommitValidatorStaging {
+            manager,
+            vote,
+            global,
+            validator,
+            staging,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct ProposalStagingAccounts {
+    pub operator: Pubkey,
+    pub vote: Pubkey,
+    pub validator: Pubkey,
+    pub proposal: Pubkey,
+    pub staging: Pubkey,
+    pub system_program: Pubkey,
+}
+
+pub fn init_proposal_staging_ix(
+    program_id: Pubkey,
+    args: StagingLenArgs,
+    accounts: ProposalStagingAccounts,
+) -> Instruction {
+    let StagingLenArgs { expected_len } = args;
+    let ProposalStagingAccounts {
+        operator,
+        vote,
+        validator,
+        staging,
+        system_program,
+        ..
+    } = accounts;
+    Instruction {
+        program_id,
+        data: crate::instruction::InitProposalStaging { expected_len }.data(),
+        accounts: crate::accounts::InitProposalStaging {
+            operator,
+            vote,
+            validator,
+            staging,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub fn write_proposal_staging_ix(
+    program_id: Pubkey,
+    args: StagingChunkArgs,
+    accounts: ProposalStagingAccounts,
+) -> Instruction {
+    let StagingChunkArgs { data } = args;
+    let ProposalStagingAccounts {
+        operator,
+        vote,
+        staging,
+        system_program,
+        ..
+    } = accounts;
+    Instruction {
+        program_id,
+        data: crate::instruction::WriteProposalStaging { data }.data(),
+        accounts: crate::accounts::WriteProposalStaging {
+            operator,
+            vote,
+            staging,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub fn commit_proposal_staging_ix(
+    program_id: Pubkey,
+    accounts: ProposalStagingAccounts,
+) -> Instruction {
+    let ProposalStagingAccounts {
+        operator,
+        vote,
+        validator,
+        proposal,
+        staging,
+        system_program,
+    } = accounts;
+    Instruction {
+        program_id,
+        data: crate::instruction::CommitProposalStaging {}.data(),
+        accounts: crate::accounts::CommitProposalStaging {
+            operator,
+            vote,
+            validator,
+            proposal,
+            staging,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}

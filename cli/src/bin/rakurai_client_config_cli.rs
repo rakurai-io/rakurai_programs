@@ -1,8 +1,9 @@
 use {
-    anchor_lang::solana_program::system_program,
+    anchor_lang::{solana_program::system_program, AnchorSerialize},
     clap::{Args, Parser, Subcommand},
     rakurai_cli::{
-        normalize_to_url_if_moniker, parse_keypair, parse_pubkey, sign_and_send_transaction,
+        normalize_to_url_if_moniker, parse_keypair, parse_pubkey, sign_and_send_instructions,
+        sign_and_send_transaction,
         validator::{
             display_global_config, display_proposal, display_union, display_validator_config,
             get_global_config, get_proposal, get_validator_config, load_config_from_file,
@@ -10,28 +11,39 @@ use {
         },
     },
     rakurai_client_config::sdk::{
-        derive_global_config_address, derive_validator_config_address,
-        derive_validator_proposal_address,
+        derive_global_config_address, derive_global_staging_address,
+        derive_proposal_staging_address, derive_validator_config_address,
+        derive_validator_proposal_address, derive_validator_staging_address,
         instruction::{
-            approve_proposal_ix, close_global_ix, close_validator_ix, init_global_ix,
-            init_proposal_ix, init_validator_ix, reject_proposal_ix, set_operator_ix,
-            update_global_ix, update_global_limits_ix, update_proposal_ix, update_validator_ix,
-            update_validator_limits_ix, ApproveProposalAccounts, CloseGlobalAccounts,
-            CloseValidatorAccounts, InitGlobalAccounts, InitGlobalArgs, InitProposalAccounts,
-            InitProposalArgs, InitValidatorAccounts, InitValidatorArgs, RejectProposalAccounts,
-            SetOperatorAccounts, SetOperatorArgs, UpdateGlobalAccounts, UpdateGlobalArgs,
+            approve_proposal_ix, close_global_ix, close_validator_ix, commit_global_staging_ix,
+            commit_proposal_staging_ix, commit_validator_staging_ix, init_global_ix,
+            init_global_staging_ix, init_proposal_ix, init_proposal_staging_ix, init_validator_ix,
+            init_validator_staging_ix, reject_proposal_ix, set_operator_ix, update_global_ix,
+            update_global_limits_ix, update_proposal_ix, update_validator_ix,
+            update_validator_limits_ix, write_global_staging_ix, write_proposal_staging_ix,
+            write_validator_staging_ix, ApproveProposalAccounts, CloseGlobalAccounts,
+            CloseValidatorAccounts, GlobalStagingAccounts, InitGlobalAccounts, InitGlobalArgs,
+            InitProposalAccounts, InitProposalArgs, InitValidatorAccounts, InitValidatorArgs,
+            ProposalStagingAccounts, RejectProposalAccounts, SetOperatorAccounts, SetOperatorArgs,
+            StagingChunkArgs, StagingLenArgs, UpdateGlobalAccounts, UpdateGlobalArgs,
             UpdateGlobalLimitsAccounts, UpdateGlobalLimitsArgs, UpdateProposalAccounts,
             UpdateProposalArgs, UpdateValidatorAccounts, UpdateValidatorArgs,
-            UpdateValidatorLimitsAccounts, UpdateValidatorLimitsArgs,
+            UpdateValidatorLimitsAccounts, UpdateValidatorLimitsArgs, ValidatorStagingAccounts,
         },
         Config, ConfigLimits, ConfigLimitsV1, ConfigV1,
     },
     solana_rpc_client::rpc_client::RpcClient,
-    solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Signer},
+    solana_sdk::{
+        commitment_config::CommitmentConfig, instruction::Instruction, pubkey::Pubkey,
+        signature::Signer,
+    },
     std::sync::Arc,
 };
 
 const DEFAULT_PROGRAM_ID: &str = "FcTL7Mnq1RcstcYUk39ph2DzdVPNFyWh1EnrqCocXhhh";
+/// Borsh payload larger than this uses staging (legacy tx packet ~1232 raw bytes).
+const DIRECT_UPDATE_MAX_BYTES: usize = 800;
+const STAGING_CHUNK_BYTES: usize = 640;
 
 #[derive(Parser)]
 #[command(
@@ -100,7 +112,7 @@ enum Commands {
 enum GlobalCmd {
     /// Create global config (signer becomes manager)
     Init(InitGlobalCliArgs),
-    /// Replace global config payload (manager-only; reallocs)
+    /// Replace global config payload (manager-only; reallocs). Large payloads use staging.
     Update(ConfigFileArgs),
     /// Update global size caps (manager-only)
     SetLimits(LimitsArgs),
@@ -114,7 +126,7 @@ enum GlobalCmd {
 enum ValidatorCmd {
     /// Create validator PDA, copying current global config + limits
     Init(ValidatorInitArgs),
-    /// Replace validator config payload (manager-only; reallocs)
+    /// Replace validator overlay. Large payloads use ephemeral staging automatically.
     Update(ValidatorUpdateArgs),
     /// Update this vote's size caps (manager-only; used by proposals)
     SetLimits(ValidatorLimitsArgs),
@@ -268,6 +280,194 @@ fn load_or_empty(path: Option<String>) -> Result<Config, Box<dyn std::error::Err
     }
 }
 
+fn serialize_config(config: &Config) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut buf = Vec::new();
+    config.serialize(&mut buf)?;
+    Ok(buf)
+}
+
+fn should_use_staging(payload: &[u8]) -> bool {
+    payload.len() > DIRECT_UPDATE_MAX_BYTES
+}
+
+fn send_ixs(
+    rpc: Arc<RpcClient>,
+    ixs: &[Instruction],
+    kp: &solana_sdk::signature::Keypair,
+) -> Result<(), Box<dyn std::error::Error>> {
+    sign_and_send_instructions(rpc, ixs, kp)
+}
+
+fn publish_global_via_staging(
+    rpc: Arc<RpcClient>,
+    kp: &solana_sdk::signature::Keypair,
+    program_id: Pubkey,
+    manager: Pubkey,
+    global: Pubkey,
+    payload: Vec<u8>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (staging, _) = derive_global_staging_address(&program_id);
+    let accounts = GlobalStagingAccounts {
+        manager,
+        global,
+        staging,
+        system_program: system_program::ID,
+    };
+    println!(
+        "Config payload {} bytes exceeds {} — uploading via global staging {}",
+        payload.len(),
+        DIRECT_UPDATE_MAX_BYTES,
+        staging
+    );
+    send_ixs(
+        rpc.clone(),
+        &[init_global_staging_ix(
+            program_id,
+            StagingLenArgs {
+                expected_len: payload.len() as u32,
+            },
+            accounts,
+        )],
+        kp,
+    )?;
+    for chunk in payload.chunks(STAGING_CHUNK_BYTES) {
+        send_ixs(
+            rpc.clone(),
+            &[write_global_staging_ix(
+                program_id,
+                StagingChunkArgs {
+                    data: chunk.to_vec(),
+                },
+                accounts,
+            )],
+            kp,
+        )?;
+    }
+    send_ixs(
+        rpc,
+        &[commit_global_staging_ix(program_id, accounts)],
+        kp,
+    )?;
+    println!("Committed global staging and closed {staging}");
+    Ok(())
+}
+
+fn publish_validator_via_staging(
+    rpc: Arc<RpcClient>,
+    kp: &solana_sdk::signature::Keypair,
+    program_id: Pubkey,
+    manager: Pubkey,
+    vote: Pubkey,
+    global: Pubkey,
+    validator: Pubkey,
+    payload: Vec<u8>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (staging, _) = derive_validator_staging_address(&program_id, &vote);
+    let accounts = ValidatorStagingAccounts {
+        manager,
+        vote,
+        global,
+        validator,
+        staging,
+        system_program: system_program::ID,
+    };
+    println!(
+        "Config payload {} bytes exceeds {} — uploading via validator staging {}",
+        payload.len(),
+        DIRECT_UPDATE_MAX_BYTES,
+        staging
+    );
+    send_ixs(
+        rpc.clone(),
+        &[init_validator_staging_ix(
+            program_id,
+            StagingLenArgs {
+                expected_len: payload.len() as u32,
+            },
+            accounts,
+        )],
+        kp,
+    )?;
+    for chunk in payload.chunks(STAGING_CHUNK_BYTES) {
+        send_ixs(
+            rpc.clone(),
+            &[write_validator_staging_ix(
+                program_id,
+                StagingChunkArgs {
+                    data: chunk.to_vec(),
+                },
+                accounts,
+            )],
+            kp,
+        )?;
+    }
+    send_ixs(
+        rpc,
+        &[commit_validator_staging_ix(program_id, accounts)],
+        kp,
+    )?;
+    println!("Committed validator staging and closed {staging}");
+    Ok(())
+}
+
+fn publish_proposal_via_staging(
+    rpc: Arc<RpcClient>,
+    kp: &solana_sdk::signature::Keypair,
+    program_id: Pubkey,
+    operator: Pubkey,
+    vote: Pubkey,
+    validator: Pubkey,
+    proposal: Pubkey,
+    payload: Vec<u8>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (staging, _) = derive_proposal_staging_address(&program_id, &vote);
+    let accounts = ProposalStagingAccounts {
+        operator,
+        vote,
+        validator,
+        proposal,
+        staging,
+        system_program: system_program::ID,
+    };
+    println!(
+        "Config payload {} bytes exceeds {} — uploading via proposal staging {}",
+        payload.len(),
+        DIRECT_UPDATE_MAX_BYTES,
+        staging
+    );
+    send_ixs(
+        rpc.clone(),
+        &[init_proposal_staging_ix(
+            program_id,
+            StagingLenArgs {
+                expected_len: payload.len() as u32,
+            },
+            accounts,
+        )],
+        kp,
+    )?;
+    for chunk in payload.chunks(STAGING_CHUNK_BYTES) {
+        send_ixs(
+            rpc.clone(),
+            &[write_proposal_staging_ix(
+                program_id,
+                StagingChunkArgs {
+                    data: chunk.to_vec(),
+                },
+                accounts,
+            )],
+            kp,
+        )?;
+    }
+    send_ixs(
+        rpc,
+        &[commit_proposal_staging_ix(program_id, accounts)],
+        kp,
+    )?;
+    println!("Committed proposal staging and closed {staging}");
+    Ok(())
+}
+
 fn run_global(
     rpc: Arc<RpcClient>,
     kp: Arc<solana_sdk::signature::Keypair>,
@@ -299,16 +499,28 @@ fn run_global(
         }
         GlobalCmd::Update(a) => {
             let config = load_or_empty(a.config_file)?;
-            let ix = update_global_ix(
-                program_id,
-                UpdateGlobalArgs { config },
-                UpdateGlobalAccounts {
+            let payload = serialize_config(&config)?;
+            if should_use_staging(&payload) {
+                publish_global_via_staging(
+                    rpc.clone(),
+                    &kp,
+                    program_id,
                     manager,
                     global,
-                    system_program: system_program::ID,
-                },
-            );
-            sign_and_send_transaction(rpc.clone(), ix, &kp)?;
+                    payload,
+                )?;
+            } else {
+                let ix = update_global_ix(
+                    program_id,
+                    UpdateGlobalArgs { config },
+                    UpdateGlobalAccounts {
+                        manager,
+                        global,
+                        system_program: system_program::ID,
+                    },
+                );
+                sign_and_send_transaction(rpc.clone(), ix, &kp)?;
+            }
             display_global_config(&get_global_config(rpc, global)?, global);
         }
         GlobalCmd::SetLimits(a) => {
@@ -367,18 +579,32 @@ fn run_validator(
         ValidatorCmd::Update(a) => {
             let (validator, _) = derive_validator_config_address(&program_id, &a.vote);
             let config = load_config_from_file(&a.config_file)?;
-            let ix = update_validator_ix(
-                program_id,
-                UpdateValidatorArgs { config },
-                UpdateValidatorAccounts {
+            let payload = serialize_config(&config)?;
+            if should_use_staging(&payload) {
+                publish_validator_via_staging(
+                    rpc.clone(),
+                    &kp,
+                    program_id,
                     manager,
-                    vote: a.vote,
+                    a.vote,
                     global,
                     validator,
-                    system_program: system_program::ID,
-                },
-            );
-            sign_and_send_transaction(rpc.clone(), ix, &kp)?;
+                    payload,
+                )?;
+            } else {
+                let ix = update_validator_ix(
+                    program_id,
+                    UpdateValidatorArgs { config },
+                    UpdateValidatorAccounts {
+                        manager,
+                        vote: a.vote,
+                        global,
+                        validator,
+                        system_program: system_program::ID,
+                    },
+                );
+                sign_and_send_transaction(rpc.clone(), ix, &kp)?;
+            }
             display_validator_config(&get_validator_config(rpc, validator)?, validator);
         }
         ValidatorCmd::SetLimits(a) => {
@@ -454,8 +680,36 @@ fn run_proposal(
             let (validator, _) = derive_validator_config_address(&program_id, &a.vote);
             let (proposal, _) = derive_validator_proposal_address(&program_id, &a.vote);
             let config = load_config_from_file(&a.config_file)?;
-            let ix = if proposal_exists(rpc.as_ref(), &proposal) {
-                update_proposal_ix(
+            let payload = serialize_config(&config)?;
+            if should_use_staging(&payload) {
+                if !proposal_exists(rpc.as_ref(), &proposal) {
+                    let ix = init_proposal_ix(
+                        program_id,
+                        InitProposalArgs {
+                            config: Config::V1(ConfigV1::empty()),
+                        },
+                        InitProposalAccounts {
+                            operator,
+                            vote: a.vote,
+                            validator,
+                            proposal,
+                            system_program: system_program::ID,
+                        },
+                    );
+                    sign_and_send_transaction(rpc.clone(), ix, &kp)?;
+                }
+                publish_proposal_via_staging(
+                    rpc.clone(),
+                    &kp,
+                    program_id,
+                    operator,
+                    a.vote,
+                    validator,
+                    proposal,
+                    payload,
+                )?;
+            } else if proposal_exists(rpc.as_ref(), &proposal) {
+                let ix = update_proposal_ix(
                     program_id,
                     UpdateProposalArgs { config },
                     UpdateProposalAccounts {
@@ -465,9 +719,10 @@ fn run_proposal(
                         proposal,
                         system_program: system_program::ID,
                     },
-                )
+                );
+                sign_and_send_transaction(rpc.clone(), ix, &kp)?;
             } else {
-                init_proposal_ix(
+                let ix = init_proposal_ix(
                     program_id,
                     InitProposalArgs { config },
                     InitProposalAccounts {
@@ -477,9 +732,9 @@ fn run_proposal(
                         proposal,
                         system_program: system_program::ID,
                     },
-                )
-            };
-            sign_and_send_transaction(rpc.clone(), ix, &kp)?;
+                );
+                sign_and_send_transaction(rpc.clone(), ix, &kp)?;
+            }
             display_proposal(&get_proposal(rpc, proposal)?, proposal);
         }
         ProposalCmd::Show(a) => {

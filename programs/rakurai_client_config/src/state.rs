@@ -3,6 +3,15 @@ use anchor_lang::prelude::*;
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global-validator-config";
 pub const VALIDATOR_CONFIG_SEED: &[u8] = b"validator-config";
 pub const VALIDATOR_PROPOSAL_SEED: &[u8] = b"validator-proposal";
+pub const CONFIG_STAGING_SEED: &[u8] = b"config-staging";
+pub const STAGING_TAG_GLOBAL: &[u8] = b"g";
+pub const STAGING_TAG_VALIDATOR: &[u8] = b"v";
+pub const STAGING_TAG_PROPOSAL: &[u8] = b"p";
+pub const STAGING_KIND_GLOBAL: u8 = 0;
+pub const STAGING_KIND_VALIDATOR: u8 = 1;
+pub const STAGING_KIND_PROPOSAL: u8 = 2;
+/// Max Borsh payload accepted in a staging PDA (keeps realloc / CU bounded).
+pub const MAX_STAGING_BYTES: u32 = 100_000;
 pub const NAME_LEN: usize = 32;
 
 /// Absolute safety caps for account `ConfigLimits` (cannot be raised further).
@@ -346,6 +355,19 @@ pub struct ValidatorProposal {
     pub config: Config,
 }
 
+/// Ephemeral upload buffer. Create → append chunks → commit into live PDA → close.
+#[account]
+pub struct ConfigStaging {
+    pub authority: Pubkey,
+    pub bump: u8,
+    /// 0 = global, 1 = validator, 2 = proposal.
+    pub kind: u8,
+    /// Vote pubkey for validator/proposal staging; default for global.
+    pub vote: Pubkey,
+    pub expected_len: u32,
+    pub data: Vec<u8>,
+}
+
 impl GlobalConfig {
     pub fn serialized_len(account: &Self) -> Result<usize> {
         Ok(8 + account.try_to_vec()?.len())
@@ -399,6 +421,58 @@ impl ValidatorConfig {
     ) -> Result<()> {
         let new_len = Self::serialized_len(account)?;
         realloc_account_to_fit(&account.to_account_info(), payer, system_program, new_len)
+    }
+}
+
+impl ConfigStaging {
+    pub fn serialized_len(account: &Self) -> Result<usize> {
+        Ok(8 + account.try_to_vec()?.len())
+    }
+
+    pub fn init_space(
+        authority: Pubkey,
+        kind: u8,
+        vote: Pubkey,
+        expected_len: u32,
+    ) -> Result<usize> {
+        Self::serialized_len(&Self {
+            authority,
+            bump: 0,
+            kind,
+            vote,
+            expected_len,
+            data: Vec::new(),
+        })
+    }
+
+    pub fn realloc_to_fit<'info>(
+        account: &Account<'info, Self>,
+        payer: &Signer<'info>,
+        system_program: &Program<'info, System>,
+    ) -> Result<()> {
+        let new_len = Self::serialized_len(account)?;
+        realloc_account_to_fit(&account.to_account_info(), payer, system_program, new_len)
+    }
+
+    pub fn append(&mut self, chunk: &[u8]) -> Result<()> {
+        let new_len = (self.data.len() as u32)
+            .checked_add(chunk.len() as u32)
+            .ok_or(crate::ConfigError::StagingTooLarge)?;
+        require!(
+            new_len <= self.expected_len,
+            crate::ConfigError::StagingLengthMismatch
+        );
+        self.data.extend_from_slice(chunk);
+        Ok(())
+    }
+
+    pub fn parse_config(&self) -> Result<Config> {
+        require!(
+            self.data.len() as u32 == self.expected_len,
+            crate::ConfigError::StagingIncomplete
+        );
+        Config::try_from_slice(&self.data)
+            .map_err(|_| error!(crate::ConfigError::StagingDeserializeFailed))
     }
 }
 
@@ -588,5 +662,20 @@ mod tests {
             },
         });
         assert!(cfg.validate(&limits).is_err());
+    }
+
+    #[test]
+    fn staging_parse_round_trip() {
+        let cfg = config_with_be(vec![be_entry("a", "https://a.example")]);
+        let bytes = cfg.try_to_vec().unwrap();
+        let staging = ConfigStaging {
+            authority: Pubkey::default(),
+            bump: 255,
+            kind: STAGING_KIND_GLOBAL,
+            vote: Pubkey::default(),
+            expected_len: bytes.len() as u32,
+            data: bytes,
+        };
+        assert_eq!(staging.parse_config().unwrap(), cfg);
     }
 }
