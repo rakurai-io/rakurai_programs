@@ -614,16 +614,32 @@ pub mod reward_distribution {
 
     /// Records revenue on a **TCAV1** vault (`REVENUE_SHARE_V1`).
     /// Rakurai tip TCAV1 also credits `transferred_amount`.
+    /// If the ledger is full of unclaimed rows, the oldest epoch is moved into `deficit`.
     pub fn record_revenue_v1(ctx: Context<RecordRevenueV1>, amount: u64) -> Result<()> {
         RecordRevenueV1::auth(&ctx)?;
 
         let epoch = Clock::get()?.epoch;
+        let revenue_key = ctx.accounts.revenue_share_account.key();
         let revenue_share_account = &mut ctx.accounts.revenue_share_account;
-        revenue_share_account.record_revenue(epoch, amount)?;
+        let share_kind = revenue_share_account.share_kind;
+        let eviction = revenue_share_account.record_revenue(epoch, amount)?;
+
+        if let Some(evicted) = eviction {
+            emit!(RevenueLedgerEvictedToDeficitEvent {
+                revenue_share_account: revenue_key,
+                share_kind,
+                evicted_epoch: evicted.epoch,
+                unpaid: evicted.unpaid,
+                amount: evicted.amount,
+                settled: evicted.settled,
+                deficit: revenue_share_account.deficit,
+                new_epoch: epoch,
+            });
+        }
 
         emit!(RevenueRecordedEvent {
-            revenue_share_account: revenue_share_account.key(),
-            share_kind: revenue_share_account.share_kind,
+            revenue_share_account: revenue_key,
+            share_kind,
             epoch,
             amount,
         });
@@ -650,7 +666,19 @@ pub mod reward_distribution {
 
         {
             let revenue_share_account = &mut ctx.accounts.revenue_share_account;
-            revenue_share_account.record_revenue(epoch, amount)?;
+            let eviction = revenue_share_account.record_revenue(epoch, amount)?;
+            if let Some(evicted) = eviction {
+                emit!(RevenueLedgerEvictedToDeficitEvent {
+                    revenue_share_account: revenue_key,
+                    share_kind,
+                    evicted_epoch: evicted.epoch,
+                    unpaid: evicted.unpaid,
+                    amount: evicted.amount,
+                    settled: evicted.settled,
+                    deficit: revenue_share_account.deficit,
+                    new_epoch: epoch,
+                });
+            }
             // Ensure entry is unclaimed before CPI (new epoch is always unclaimed).
             let entry = revenue_share_account.ledger.get_mut(epoch)?;
             if entry.claimed {
@@ -1141,6 +1169,7 @@ pub mod reward_distribution {
     }
 
     /// Record stake snapshot and amount due for an epoch (once). Manager only.
+    /// If the ledger is full of unclaimed rows, the oldest epoch is moved into `deficit`.
     pub fn record_p2c_subscription(
         ctx: Context<RecordP2CSubscription>,
         epoch: u64,
@@ -1149,11 +1178,24 @@ pub mod reward_distribution {
     ) -> Result<()> {
         RecordP2CSubscription::auth(&ctx)?;
 
+        let p2c_key = ctx.accounts.p2c_subscription_account.key();
         let p2c = &mut ctx.accounts.p2c_subscription_account;
-        p2c.record(epoch, stake, amount_due)?;
+        let eviction = p2c.record(epoch, stake, amount_due)?;
+
+        if let Some(evicted) = eviction {
+            emit!(P2CLedgerEvictedToDeficitEvent {
+                p2c_subscription_account: p2c_key,
+                evicted_epoch: evicted.epoch,
+                unpaid: evicted.unpaid,
+                amount: evicted.amount,
+                settled: evicted.settled,
+                deficit: p2c.deficit,
+                new_epoch: epoch,
+            });
+        }
 
         emit!(P2CSubscriptionRecordedEvent {
-            p2c_subscription_account: p2c.key(),
+            p2c_subscription_account: p2c_key,
             epoch,
             stake,
             amount_due,
@@ -2856,6 +2898,19 @@ pub struct RevenueRecordedEvent {
     pub amount: u64,
 }
 
+/// Emitted when a full TCAV1/MCAV1 ledger evicts an unclaimed epoch into account `deficit`.
+#[event]
+pub struct RevenueLedgerEvictedToDeficitEvent {
+    pub revenue_share_account: Pubkey,
+    pub share_kind: RevenueKind,
+    pub evicted_epoch: u64,
+    pub unpaid: u64,
+    pub amount: u64,
+    pub settled: u64,
+    pub deficit: u64,
+    pub new_epoch: u64,
+}
+
 #[event]
 pub struct RevenueSettledEvent {
     pub revenue_share_account: Pubkey,
@@ -2955,6 +3010,18 @@ pub struct P2CSubscriptionRecordedEvent {
     pub epoch: u64,
     pub stake: u64,
     pub amount_due: u64,
+}
+
+/// Emitted when a full PSA ledger evicts an unclaimed epoch into account `deficit`.
+#[event]
+pub struct P2CLedgerEvictedToDeficitEvent {
+    pub p2c_subscription_account: Pubkey,
+    pub evicted_epoch: u64,
+    pub unpaid: u64,
+    pub amount: u64,
+    pub settled: u64,
+    pub deficit: u64,
+    pub new_epoch: u64,
 }
 
 #[event]
