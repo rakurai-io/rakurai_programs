@@ -58,6 +58,6 @@ which rakurai-client-config
 | Guide | Description |
 | ----- | ----------- |
 | [Rakurai Activation CLI](./activation.md) | Initialize and manage Rakurai Activation Accounts (RAA): scheduler enable/disable, commission updates, and account display. |
-| [P2C Subscription CLI](./p2c_subscription.md) | PSA prepaid escrow: fund → record → claim (`rakurai-p2c`). |
-| [Partner Tip and MevShare Revenue Settlement CLI](./partner_reward_settlement.md) | List TCA/MCA, record MCA MevShare, settle (`rakurai-revshare`). |
+| [P2C Subscription CLI](./p2c_subscription.md) | Prepaid PSA: fund and clear deficit (`rakurai-p2c`). |
+| [Partner Tip and MevShare Revenue Settlement CLI](./partner_reward_settlement.md) | `--revenue-kind Tip` (TCA settle) vs `Mev-share` (MCA record then settle) (`rakurai-revshare`). |
 | [Client Config CLI](./client_config.md) | Block-engine (recv bundles), P2C (send for backrun), virtual-priority (% of tip). Writes replace the whole config — submit **current + new**. |

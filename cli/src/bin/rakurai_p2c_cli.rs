@@ -25,7 +25,8 @@ use {
         filter::{Memcmp, RpcFilterType},
     },
     solana_sdk::{
-        commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Signer, system_program,
+        commitment_config::CommitmentConfig, pubkey::Pubkey, rent::Rent, signature::Signer,
+        system_program,
     },
     std::{error::Error, sync::Arc},
 };
@@ -77,7 +78,7 @@ enum Commands {
     /// Fetch and display one P2C subscription escrow.
     GetAccount(AccountArgs),
     /// List every P2C account for a service name.
-    GetAllAccounts(NameArgs),
+    GetAllAccounts(GetAllAccountsArgs),
     /// Fund prepaid balance (does not clear deficit).
     Fund(FundArgs),
     /// Record stake + amount due for an epoch (manager).
@@ -102,6 +103,20 @@ struct AccountArgs {
 
     #[arg(short = 'v', long = "vote-pubkey", required = true, value_parser = parse_pubkey)]
     vote_pubkey: Pubkey,
+
+    /// Show manager/auth info and per-epoch ledger breakdown.
+    #[arg(long, default_value_t = false)]
+    detail: bool,
+}
+
+#[derive(Args)]
+struct GetAllAccountsArgs {
+    #[command(flatten)]
+    name: NameArgs,
+
+    /// Show per-epoch ledger for each account.
+    #[arg(long, default_value_t = false)]
+    detail: bool,
 }
 
 #[derive(Args)]
@@ -220,7 +235,12 @@ fn status_name(s: P2CSubscriptionStatus) -> &'static str {
     }
 }
 
-fn display_p2c(address: Pubkey, account: &P2CSubscriptionAccount, balance: u64) {
+fn balance_after_rent(account: &P2CSubscriptionAccount, lamports: u64) -> u64 {
+    let space = P2CSubscriptionAccount::space_for(account.max_epoch_entries as usize);
+    lamports.saturating_sub(Rent::default().minimum_balance(space))
+}
+
+fn display_p2c(address: Pubkey, account: &P2CSubscriptionAccount, balance: u64, detail: bool) {
     print_heading("P2C Subscription Escrow");
     print_field("🔗".cyan(), "Pubkey:", address.to_string().bold().green());
     print_field(
@@ -229,6 +249,45 @@ fn display_p2c(address: Pubkey, account: &P2CSubscriptionAccount, balance: u64) 
         name_to_string(&account.name).magenta(),
     );
     print_field("🔑".red(), "Vote:", account.validator_vote.to_string());
+
+    println!();
+    print_field(
+        "📊".cyan(),
+        "Status:",
+        status_name(account.status).magenta(),
+    );
+    print_field(
+        "💰".green(),
+        "Balance:",
+        format_total_with_sol(balance_after_rent(account, balance)).yellow(),
+    );
+    if account.deficit > 0 {
+        print_field(
+            "⚠️".red(),
+            "Deficit:",
+            format_total_with_sol(account.deficit).yellow(),
+        );
+        println!(
+            "   {} {}",
+            "❌".red(),
+            "Clear this deficit at the earliest to continue using services.".red()
+        );
+    }
+    print_field(
+        "📝".cyan(),
+        "Commission:",
+        format!("{:.2}%", account.commission_bps as f64 / 100.0).blue(),
+    );
+
+    if !detail {
+        println!(
+            "\n   {}",
+            "Use --detail to see manager, auth, and per-epoch ledger.".dimmed()
+        );
+        return;
+    }
+
+    println!();
     print_field(
         "🔏".magenta(),
         "Manager:",
@@ -240,51 +299,43 @@ fn display_p2c(address: Pubkey, account: &P2CSubscriptionAccount, balance: u64) 
         account.record_authority.to_string(),
     );
     print_field(
-        "📊".cyan(),
-        "Status:",
-        status_name(account.status).magenta(),
-    );
-    print_field(
-        "💰".yellow(),
-        "Deficit:",
-        format_total_with_sol(account.deficit).yellow(),
+        "📝".cyan(),
+        "Grace epochs:",
+        account.grace_epochs.to_string().blue(),
     );
     print_field(
         "📝".cyan(),
-        "Commission bps:",
-        account.commission_bps.to_string().blue(),
+        "Unpaid streak:",
+        account.unpaid_streak.to_string().blue(),
     );
-    print_field(
-        "💰".green(),
-        "Balance:",
-        format_total_with_sol(balance).yellow(),
-    );
-    print_field(
-        "📦".cyan(),
-        "Ledger epochs:",
-        account.ledger.entries.len().to_string().blue(),
-    );
-    for e in &account.ledger.entries {
-        println!(
-            "      epoch {:>6}: due={} deducted={} claimed={} stake={}",
-            e.epoch, e.amount_due, e.amount_deducted, e.claimed, e.stake
-        );
+
+    if account.ledger.entries.is_empty() {
+        println!("\n   {}", "(no epoch entries)".dimmed());
+    } else {
+        println!();
+        println!("   {} {}", "📋".cyan(), "Epoch Details:".bold());
+        for e in &account.ledger.entries {
+            println!(
+                "      epoch {:>6}: due={:<12} deducted={:<12} claimed={:<6} stake={}",
+                e.epoch, e.amount_due, e.amount_deducted, e.claimed, e.stake
+            );
+        }
     }
 }
 
-fn process_get_account(rpc_client: &RpcClient, program_id: Pubkey, args: AccountArgs) -> CliResult {
+fn process_get_account(rpc_client: &RpcClient, program_id: Pubkey, args: &AccountArgs) -> CliResult {
     let (address, account) = load_p2c(rpc_client, program_id, &args.name.name, args.vote_pubkey)?;
     let balance = rpc_client.get_balance(&address)?;
-    display_p2c(address, &account, balance);
+    display_p2c(address, &account, balance, args.detail);
     Ok(())
 }
 
 fn process_get_all_accounts(
     rpc_client: &RpcClient,
     program_id: Pubkey,
-    args: NameArgs,
+    args: GetAllAccountsArgs,
 ) -> CliResult {
-    let name = name_to_bytes(&args.name)?;
+    let name = name_to_bytes(&args.name.name)?;
     let filters = vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
         P2C_NAME_OFFSET,
         name.to_vec(),
@@ -305,15 +356,14 @@ fn process_get_all_accounts(
     )?;
 
     print_heading("P2C Subscription Accounts");
-    print_field("📝".cyan(), "Name:", args.name.magenta());
+    print_field("📝".cyan(), "Name:", args.name.name.magenta());
     print_field("📦".cyan(), "Found:", accounts.len().to_string().magenta());
 
     for (address, raw) in accounts {
         let mut data = raw.data.as_slice();
         if let Ok(account) = P2CSubscriptionAccount::try_deserialize(&mut data) {
             if account.name == name {
-                println!();
-                display_p2c(address, &account, raw.lamports);
+                display_p2c(address, &account, raw.lamports, args.detail);
             }
         }
     }
@@ -506,7 +556,7 @@ fn main() -> CliResult {
     ));
 
     match cli.command {
-        Commands::GetAccount(args) => process_get_account(&rpc_client, cli.program_id, args),
+        Commands::GetAccount(ref args) => process_get_account(&rpc_client, cli.program_id, args),
         Commands::GetAllAccounts(args) => {
             process_get_all_accounts(&rpc_client, cli.program_id, args)
         }
