@@ -5,8 +5,8 @@ use {
     colored::*,
     rakurai_client_config::{
         sdk::{
-            name_from_str, union_configs, BlockEngineConfig, BlockEngineEntryV1, BlockEngineV1,
-            Config, ConfigLimits, ConfigV1, P2cConfig, P2cEntryV1, P2cV1, Uuid, ValidatorProposal,
+            effective_config, name_from_str, BlockEngineConfig, BlockEngineEntryV1, BlockEngineV1,
+            Config, ConfigLimits, ConfigV2, P2cConfig, P2cEntryV1, P2cV1, Uuid, ValidatorProposal,
             VirtualPriorityConfig, VirtualPriorityEntryV1, VirtualPriorityV1,
         },
         state::{GlobalConfig, ValidatorConfig},
@@ -26,6 +26,8 @@ struct ConfigFile {
     p2c: SetsFileP2c,
     #[serde(default)]
     virtual_priority: SetsFileVp,
+    #[serde(default)]
+    enable_tpu_p2c_update: bool,
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -98,7 +100,7 @@ pub fn uuid_to_string(uuid: &Uuid) -> String {
 pub fn load_config_from_file(path: &str) -> Result<Config, Box<dyn std::error::Error>> {
     let text = fs::read_to_string(Path::new(path))?;
     let file: ConfigFile = serde_json::from_str(&text)?;
-    Ok(Config::V1(ConfigV1 {
+    Ok(Config::V2(ConfigV2 {
         block_engine: BlockEngineV1 {
             sets: file
                 .block_engine
@@ -139,22 +141,25 @@ pub fn load_config_from_file(path: &str) -> Result<Config, Box<dyn std::error::E
                 .virtual_priority
                 .sets
                 .into_iter()
-                .map(|e| -> Result<VirtualPriorityEntryV1, Box<dyn std::error::Error>> {
-                    let mut urls = Vec::with_capacity(e.url.len());
-                    for u in e.url {
-                        urls.push(VirtualPriorityConfig {
-                            key: Pubkey::from_str(u.key.trim())
-                                .map_err(|_| format!("Invalid pubkey: {}", u.key))?,
-                            value: u.value,
-                        });
-                    }
-                    Ok(VirtualPriorityEntryV1 {
-                        name: name_from_str(&e.name),
-                        url: urls,
-                    })
-                })
+                .map(
+                    |e| -> Result<VirtualPriorityEntryV1, Box<dyn std::error::Error>> {
+                        let mut urls = Vec::with_capacity(e.url.len());
+                        for u in e.url {
+                            urls.push(VirtualPriorityConfig {
+                                key: Pubkey::from_str(u.key.trim())
+                                    .map_err(|_| format!("Invalid pubkey: {}", u.key))?,
+                                value: u.value,
+                            });
+                        }
+                        Ok(VirtualPriorityEntryV1 {
+                            name: name_from_str(&e.name),
+                            url: urls,
+                        })
+                    },
+                )
                 .collect::<Result<Vec<_>, _>>()?,
         },
+        enable_tpu_p2c_update: file.enable_tpu_p2c_update,
     }))
 }
 
@@ -187,9 +192,15 @@ pub fn proposal_exists(rpc: &RpcClient, pda: &Pubkey) -> bool {
 }
 
 fn display_config_payload(cfg: &Config) {
-    let Config::V1(v1) = cfg;
+    let version = match cfg {
+        Config::V1(_) => "v1",
+        Config::V2(_) => "v2",
+    };
+    let v2 = cfg.to_v2();
+    println!("   schema: {version}");
+    println!("   enable_tpu_p2c_update: {}", v2.enable_tpu_p2c_update);
     println!("   {}", "block_engine".yellow());
-    for entry in &v1.block_engine.sets {
+    for entry in &v2.block_engine.sets {
         println!("     [{}]", uuid_to_string(&entry.name));
         for u in &entry.url {
             println!(
@@ -199,14 +210,14 @@ fn display_config_payload(cfg: &Config) {
         }
     }
     println!("   {}", "p2c".yellow());
-    for entry in &v1.p2c.sets {
+    for entry in &v2.p2c.sets {
         println!("     [{}]", uuid_to_string(&entry.name));
         for u in &entry.url {
             println!("       {}", u.url);
         }
     }
     println!("   {}", "virtual_priority".yellow());
-    for entry in &v1.virtual_priority.sets {
+    for entry in &v2.virtual_priority.sets {
         println!("     [{}]", uuid_to_string(&entry.name));
         for u in &entry.url {
             println!("       {} -> {}", u.key, u.value);
@@ -247,7 +258,10 @@ pub fn display_validator_config(cfg: &ValidatorConfig, pda: Pubkey) {
 
 pub fn display_proposal(cfg: &ValidatorProposal, pda: Pubkey) {
     let used = cfg.try_to_vec().map(|v| v.len()).unwrap_or(0);
-    println!("{}", "Validator Proposal (pending)".bold().underline().yellow());
+    println!(
+        "{}",
+        "Validator Proposal (pending)".bold().underline().yellow()
+    );
     println!("   PDA: {pda}");
     println!("   Vote: {}", cfg.vote);
     println!("   Operator: {}", cfg.operator);
@@ -256,25 +270,22 @@ pub fn display_proposal(cfg: &ValidatorProposal, pda: Pubkey) {
     display_config_payload(&cfg.config);
 }
 
-pub fn try_get_validator_config(
-    rpc: Arc<RpcClient>,
-    pda: Pubkey,
-) -> Option<ValidatorConfig> {
+pub fn try_get_validator_config(rpc: Arc<RpcClient>, pda: Pubkey) -> Option<ValidatorConfig> {
     get_validator_config(rpc, pda).ok()
 }
 
-pub fn display_union(
+pub fn display_effective(
     global: &Config,
     validator: Option<&Config>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let merged = union_configs(global, validator)?;
+    let chosen = effective_config(global, validator);
     let title = if validator.is_some() {
-        "Union (by entry name; validator wins on conflict)"
+        "Effective config (validator PDA)"
     } else {
-        "Global config (no validator overlay)"
+        "Effective config (global; no validator PDA)"
     };
     println!("{}", title.bold().underline().blue());
-    display_config_payload(&merged);
+    display_config_payload(chosen);
     Ok(())
 }
 

@@ -8,11 +8,11 @@ use crate::state::{
 };
 
 pub use crate::state::{
-    union_configs, BlockEngineConfig, BlockEngineEntryV1, BlockEngineV1, Config, ConfigLimits,
-    ConfigLimitsV1, ConfigStaging, ConfigV1, GlobalConfig, P2cConfig, P2cEntryV1, P2cV1, Uuid,
-    ValidatorConfig, ValidatorProposal, VirtualPriorityConfig, VirtualPriorityEntryV1,
-    VirtualPriorityV1, ABSOLUTE_MAX_SETS_PER_SECTION, ABSOLUTE_MAX_URL_LEN,
-    ABSOLUTE_MAX_URLS_PER_SET, ABSOLUTE_MAX_VP_ENTRIES_PER_SET, CONFIG_STAGING_SEED as STAGING_SEED,
+    effective_config, BlockEngineConfig, BlockEngineEntryV1, BlockEngineV1, Config, ConfigLimits,
+    ConfigLimitsV1, ConfigStaging, ConfigV1, ConfigV2, GlobalConfig, P2cConfig, P2cEntryV1, P2cV1,
+    Uuid, ValidatorConfig, ValidatorProposal, VirtualPriorityConfig, VirtualPriorityEntryV1,
+    VirtualPriorityV1, ABSOLUTE_MAX_SETS_PER_SECTION, ABSOLUTE_MAX_URLS_PER_SET,
+    ABSOLUTE_MAX_URL_LEN, ABSOLUTE_MAX_VP_ENTRIES_PER_SET, CONFIG_STAGING_SEED as STAGING_SEED,
     GLOBAL_CONFIG_SEED as GLOBAL_SEED, MAX_STAGING_BYTES, NAME_LEN, STAGING_KIND_GLOBAL,
     STAGING_KIND_PROPOSAL, STAGING_KIND_VALIDATOR, VALIDATOR_CONFIG_SEED as VALIDATOR_SEED,
     VALIDATOR_PROPOSAL_SEED as PROPOSAL_SEED,

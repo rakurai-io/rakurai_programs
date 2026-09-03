@@ -195,7 +195,7 @@
     {
       "name": "approve_proposal",
       "docs": [
-        "Manager-only: copy proposal → live validator config, then close proposal (rent → operator)."
+        "Manager-only: copy proposal \u2192 live validator config, then close proposal (rent \u2192 operator)."
       ],
       "discriminator": [
         136,
@@ -877,7 +877,7 @@
       "name": "init_global",
       "docs": [
         "Create the singleton global config. Signer becomes `manager`.",
-        "`limits` must be non-zero and ≤ absolute safety caps."
+        "`limits` must be non-zero and \u2264 absolute safety caps."
       ],
       "discriminator": [
         44,
@@ -1530,9 +1530,283 @@
       ]
     },
     {
+      "name": "migrate_global_to_v2",
+      "docs": [
+        "Manager-only: rewrite a V1 global payload as V2 (`enable_tpu_p2c_update = false`).",
+        "No-op if already V2. Reallocs to fit the extra byte."
+      ],
+      "discriminator": [
+        164,
+        197,
+        79,
+        98,
+        129,
+        111,
+        182,
+        133
+      ],
+      "accounts": [
+        {
+          "name": "manager",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "global"
+          ]
+        },
+        {
+          "name": "global",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  45,
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "migrate_proposal_to_v2",
+      "docs": [
+        "Operator-only: rewrite a V1 proposal payload as V2 (`enable_tpu_p2c_update = false`).",
+        "No-op if already V2. Reallocs to fit the extra byte."
+      ],
+      "discriminator": [
+        35,
+        178,
+        102,
+        253,
+        87,
+        180,
+        101,
+        169
+      ],
+      "accounts": [
+        {
+          "name": "operator",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "validator",
+            "proposal"
+          ]
+        },
+        {
+          "name": "vote"
+        },
+        {
+          "name": "validator",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vote"
+              }
+            ]
+          }
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  45,
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vote"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "migrate_validator_to_v2",
+      "docs": [
+        "Manager-only: rewrite a V1 validator payload as V2 (`enable_tpu_p2c_update = false`).",
+        "No-op if already V2. Reallocs to fit the extra byte."
+      ],
+      "discriminator": [
+        173,
+        220,
+        187,
+        234,
+        121,
+        165,
+        249,
+        60
+      ],
+      "accounts": [
+        {
+          "name": "manager",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "global"
+          ]
+        },
+        {
+          "name": "vote"
+        },
+        {
+          "name": "global",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  45,
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "validator",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vote"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "reject_proposal",
       "docs": [
-        "Manager-only: close proposal without changing live validator config (rent → operator)."
+        "Manager-only: close proposal without changing live validator config (rent \u2192 operator)."
       ],
       "discriminator": [
         114,
@@ -1846,7 +2120,7 @@
     {
       "name": "update_global_limits",
       "docs": [
-        "Manager-only: update global size caps (≤ absolute safety caps; must fit current payload)."
+        "Manager-only: update global size caps (\u2264 absolute safety caps; must fit current payload)."
       ],
       "discriminator": [
         251,
@@ -2141,7 +2415,7 @@
     {
       "name": "update_validator_limits",
       "docs": [
-        "Manager-only: update this vote's size caps (≤ absolute safety caps; must fit current payload)."
+        "Manager-only: update this vote's size caps (\u2264 absolute safety caps; must fit current payload)."
       ],
       "discriminator": [
         197,
@@ -2591,6 +2865,11 @@
       "code": 6015,
       "name": "StagingDeserializeFailed",
       "msg": "Failed to deserialize Config from staging bytes"
+    },
+    {
+      "code": 6016,
+      "name": "UnexpectedConfigVersion",
+      "msg": "Config payload is not the expected schema version"
     }
   ],
   "types": [
@@ -2691,6 +2970,16 @@
                 }
               }
             ]
+          },
+          {
+            "name": "V2",
+            "fields": [
+              {
+                "defined": {
+                  "name": "ConfigV2"
+                }
+              }
+            ]
           }
         ]
       }
@@ -2746,7 +3035,7 @@
     {
       "name": "ConfigStaging",
       "docs": [
-        "Ephemeral upload buffer. Create → append chunks → commit into live PDA → close."
+        "Ephemeral upload buffer. Create \u2192 append chunks \u2192 commit into live PDA \u2192 close."
       ],
       "type": {
         "kind": "struct",
@@ -2818,6 +3107,46 @@
                 "name": "VirtualPriorityV1"
               }
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfigV2",
+      "docs": [
+        "V2 payload: V1 sections plus `enable_tpu_p2c_update`.",
+        "Existing V1 accounts migrate with the flag defaulting to `false`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "block_engine",
+            "type": {
+              "defined": {
+                "name": "BlockEngineV1"
+              }
+            }
+          },
+          {
+            "name": "p2c",
+            "type": {
+              "defined": {
+                "name": "P2cV1"
+              }
+            }
+          },
+          {
+            "name": "virtual_priority",
+            "type": {
+              "defined": {
+                "name": "VirtualPriorityV1"
+              }
+            }
+          },
+          {
+            "name": "enable_tpu_p2c_update",
+            "type": "bool"
           }
         ]
       }

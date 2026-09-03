@@ -106,25 +106,55 @@ impl Uuid {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub enum Config {
     V1(ConfigV1),
+    V2(ConfigV2),
 }
 
 impl Config {
     pub fn validate(&self, limits: &ConfigLimits) -> Result<()> {
         match self {
             Config::V1(v1) => v1.validate(limits),
+            Config::V2(v2) => v2.validate(limits),
         }
     }
 
     pub fn as_v1(&self) -> Result<&ConfigV1> {
         match self {
             Config::V1(v1) => Ok(v1),
+            Config::V2(_) => Err(error!(crate::ConfigError::UnexpectedConfigVersion)),
         }
     }
 
     pub fn into_v1(self) -> Result<ConfigV1> {
         match self {
             Config::V1(v1) => Ok(v1),
+            Config::V2(_) => Err(error!(crate::ConfigError::UnexpectedConfigVersion)),
         }
+    }
+
+    pub fn as_v2(&self) -> Result<&ConfigV2> {
+        match self {
+            Config::V2(v2) => Ok(v2),
+            Config::V1(_) => Err(error!(crate::ConfigError::UnexpectedConfigVersion)),
+        }
+    }
+
+    /// V1 payloads become V2 with `enable_tpu_p2c_update = false`.
+    pub fn to_v2(&self) -> ConfigV2 {
+        match self {
+            Config::V1(v1) => ConfigV2::from_v1(v1.clone()),
+            Config::V2(v2) => v2.clone(),
+        }
+    }
+
+    /// Rewrite a V1 payload as V2 in place (`enable_tpu_p2c_update = false`).
+    /// Returns `true` if the account data version changed.
+    pub fn migrate_to_v2(&mut self) -> bool {
+        let v1 = match self {
+            Config::V1(v1) => v1.clone(),
+            Config::V2(_) => return false,
+        };
+        *self = Config::V2(ConfigV2::from_v1(v1));
+        true
     }
 }
 
@@ -149,53 +179,52 @@ impl ConfigV1 {
     }
 
     pub fn validate(&self, limits: &ConfigLimits) -> Result<()> {
-        let limits = limits.as_v1()?;
-        require!(
-            self.block_engine.sets.len() <= limits.max_sets_per_section as usize,
-            crate::ConfigError::TooManySets
-        );
-        require!(
-            self.p2c.sets.len() <= limits.max_sets_per_section as usize,
-            crate::ConfigError::TooManySets
-        );
-        require!(
-            self.virtual_priority.sets.len() <= limits.max_sets_per_section as usize,
-            crate::ConfigError::TooManySets
-        );
+        validate_sections(
+            &self.block_engine,
+            &self.p2c,
+            &self.virtual_priority,
+            limits,
+        )
+    }
+}
 
-        for entry in &self.block_engine.sets {
-            require!(
-                entry.url.len() <= limits.max_urls_per_set as usize,
-                crate::ConfigError::TooManyUrls
-            );
-            validate_urls(
-                entry.url.iter().map(|c| c.url.as_str()),
-                limits.max_url_len as usize,
-            )?;
+/// V2 payload: V1 sections plus `enable_tpu_p2c_update`.
+/// Existing V1 accounts migrate with the flag defaulting to `false`.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
+pub struct ConfigV2 {
+    pub block_engine: BlockEngineV1,
+    pub p2c: P2cV1,
+    pub virtual_priority: VirtualPriorityV1,
+    pub enable_tpu_p2c_update: bool,
+}
+
+impl ConfigV2 {
+    pub fn empty() -> Self {
+        ConfigV1::empty().into()
+    }
+
+    pub fn from_v1(v1: ConfigV1) -> Self {
+        v1.into()
+    }
+
+    pub fn validate(&self, limits: &ConfigLimits) -> Result<()> {
+        validate_sections(
+            &self.block_engine,
+            &self.p2c,
+            &self.virtual_priority,
+            limits,
+        )
+    }
+}
+
+impl From<ConfigV1> for ConfigV2 {
+    fn from(v1: ConfigV1) -> Self {
+        Self {
+            block_engine: v1.block_engine,
+            p2c: v1.p2c,
+            virtual_priority: v1.virtual_priority,
+            enable_tpu_p2c_update: false,
         }
-        for entry in &self.p2c.sets {
-            require!(
-                entry.url.len() <= limits.max_urls_per_set as usize,
-                crate::ConfigError::TooManyUrls
-            );
-            validate_urls(
-                entry.url.iter().map(|c| c.url.as_str()),
-                limits.max_url_len as usize,
-            )?;
-        }
-        for entry in &self.virtual_priority.sets {
-            require!(
-                entry.url.len() <= limits.max_vp_entries_per_set as usize,
-                crate::ConfigError::TooManyVpEntries
-            );
-            for vp in &entry.url {
-                require!(
-                    vp.value.is_finite() && (0.0..=1.0).contains(&vp.value),
-                    crate::ConfigError::InvalidVpValue
-                );
-            }
-        }
-        Ok(())
     }
 }
 
@@ -258,71 +287,10 @@ pub struct VirtualPriorityConfig {
     pub value: f64,
 }
 
-/// Client-side merge: validator overrides / extends global.
-/// Entries are unioned by `name` (validator wins on conflict).
-/// `validator` is optional — when absent, returns a clone of `global`.
-pub fn union_configs(global: &Config, validator: Option<&Config>) -> Result<Config> {
-    let global = global.as_v1()?;
-    let Some(validator) = validator else {
-        return Ok(Config::V1(global.clone()));
-    };
-    let validator = validator.as_v1()?;
-    Ok(Config::V1(ConfigV1 {
-        block_engine: BlockEngineV1 {
-            sets: union_by_name_be(&global.block_engine.sets, &validator.block_engine.sets),
-        },
-        p2c: P2cV1 {
-            sets: union_by_name_p2c(&global.p2c.sets, &validator.p2c.sets),
-        },
-        virtual_priority: VirtualPriorityV1 {
-            sets: union_by_name_vp(
-                &global.virtual_priority.sets,
-                &validator.virtual_priority.sets,
-            ),
-        },
-    }))
-}
-
-fn union_by_name_be(
-    global: &[BlockEngineEntryV1],
-    validator: &[BlockEngineEntryV1],
-) -> Vec<BlockEngineEntryV1> {
-    let mut out = global.to_vec();
-    for v in validator {
-        if let Some(i) = out.iter().position(|g| g.name == v.name) {
-            out[i] = v.clone();
-        } else {
-            out.push(v.clone());
-        }
-    }
-    out
-}
-
-fn union_by_name_p2c(global: &[P2cEntryV1], validator: &[P2cEntryV1]) -> Vec<P2cEntryV1> {
-    let mut out = global.to_vec();
-    for v in validator {
-        if let Some(i) = out.iter().position(|g| g.name == v.name) {
-            out[i] = v.clone();
-        } else {
-            out.push(v.clone());
-        }
-    }
-    out
-}
-
-fn union_by_name_vp(
-    global: &[VirtualPriorityEntryV1],
-    validator: &[VirtualPriorityEntryV1],
-) -> Vec<VirtualPriorityEntryV1> {
-    let mut out = global.to_vec();
-    for v in validator {
-        if let Some(i) = out.iter().position(|g| g.name == v.name) {
-            out[i] = v.clone();
-        } else {
-            out.push(v.clone());
-        }
-    }
-    out
+/// Effective payload for a vote: validator PDA if present, otherwise global.
+/// No merge — the chosen account is used as-is.
+pub fn effective_config<'a>(global: &'a Config, validator: Option<&'a Config>) -> &'a Config {
+    validator.unwrap_or(global)
 }
 
 #[account]
@@ -506,6 +474,61 @@ impl ValidatorProposal {
     }
 }
 
+fn validate_sections(
+    block_engine: &BlockEngineV1,
+    p2c: &P2cV1,
+    virtual_priority: &VirtualPriorityV1,
+    limits: &ConfigLimits,
+) -> Result<()> {
+    let limits = limits.as_v1()?;
+    require!(
+        block_engine.sets.len() <= limits.max_sets_per_section as usize,
+        crate::ConfigError::TooManySets
+    );
+    require!(
+        p2c.sets.len() <= limits.max_sets_per_section as usize,
+        crate::ConfigError::TooManySets
+    );
+    require!(
+        virtual_priority.sets.len() <= limits.max_sets_per_section as usize,
+        crate::ConfigError::TooManySets
+    );
+
+    for entry in &block_engine.sets {
+        require!(
+            entry.url.len() <= limits.max_urls_per_set as usize,
+            crate::ConfigError::TooManyUrls
+        );
+        validate_urls(
+            entry.url.iter().map(|c| c.url.as_str()),
+            limits.max_url_len as usize,
+        )?;
+    }
+    for entry in &p2c.sets {
+        require!(
+            entry.url.len() <= limits.max_urls_per_set as usize,
+            crate::ConfigError::TooManyUrls
+        );
+        validate_urls(
+            entry.url.iter().map(|c| c.url.as_str()),
+            limits.max_url_len as usize,
+        )?;
+    }
+    for entry in &virtual_priority.sets {
+        require!(
+            entry.url.len() <= limits.max_vp_entries_per_set as usize,
+            crate::ConfigError::TooManyVpEntries
+        );
+        for vp in &entry.url {
+            require!(
+                vp.value.is_finite() && (0.0..=1.0).contains(&vp.value),
+                crate::ConfigError::InvalidVpValue
+            );
+        }
+    }
+    Ok(())
+}
+
 fn validate_urls<'a>(urls: impl Iterator<Item = &'a str>, max_url_len: usize) -> Result<()> {
     for url in urls {
         require!(!url.is_empty(), crate::ConfigError::UrlEmpty);
@@ -582,31 +605,51 @@ mod tests {
         })
     }
 
-    #[test]
-    fn union_without_validator_returns_global() {
-        let global = config_with_be(vec![be_entry("a", "https://global.example")]);
-        let merged = union_configs(&global, None).unwrap();
-        assert_eq!(merged, global);
+    fn config_v2_with_be(entries: Vec<BlockEngineEntryV1>, enable_tpu_p2c_update: bool) -> Config {
+        Config::V2(ConfigV2 {
+            block_engine: BlockEngineV1 { sets: entries },
+            p2c: P2cV1 { sets: vec![] },
+            virtual_priority: VirtualPriorityV1 { sets: vec![] },
+            enable_tpu_p2c_update,
+        })
     }
 
     #[test]
-    fn union_validator_overrides_same_name_and_keeps_global_only_sets() {
+    fn effective_without_validator_returns_global() {
+        let global = config_with_be(vec![be_entry("a", "https://global.example")]);
+        let chosen = effective_config(&global, None);
+        assert_eq!(chosen, &global);
+    }
+
+    #[test]
+    fn effective_with_validator_returns_validator_only() {
         let global = config_with_be(vec![
             be_entry("a", "https://global.example"),
             be_entry("b", "https://global-b.example"),
         ]);
         let validator = config_with_be(vec![be_entry("a", "https://validator.example")]);
-        let merged = union_configs(&global, Some(&validator)).unwrap();
-        let Config::V1(v1) = merged;
-        assert_eq!(v1.block_engine.sets.len(), 2);
-        assert_eq!(
-            v1.block_engine.sets[0].url[0].url,
-            "https://validator.example"
-        );
-        assert_eq!(
-            v1.block_engine.sets[1].url[0].url,
-            "https://global-b.example"
-        );
+        let chosen = effective_config(&global, Some(&validator));
+        assert_eq!(chosen, &validator);
+        assert_eq!(chosen.to_v2().block_engine.sets.len(), 1);
+    }
+
+    #[test]
+    fn v1_borsh_still_deserializes_after_v2_variant() {
+        let v1 = config_with_be(vec![be_entry("a", "https://a")]);
+        let bytes = v1.try_to_vec().unwrap();
+        let decoded = Config::try_from_slice(&bytes).unwrap();
+        assert!(matches!(decoded, Config::V1(_)));
+    }
+
+    #[test]
+    fn migrate_v1_to_v2_defaults_flag_false() {
+        let mut cfg = config_with_be(vec![be_entry("a", "https://a")]);
+        assert!(cfg.migrate_to_v2());
+        let v2 = cfg.to_v2();
+        assert!(!v2.enable_tpu_p2c_update);
+        assert_eq!(v2.block_engine.sets.len(), 1);
+        assert_eq!(v2.block_engine.sets[0].url[0].url, "https://a");
+        assert!(!cfg.migrate_to_v2());
     }
 
     #[test]
@@ -667,6 +710,21 @@ mod tests {
     #[test]
     fn staging_parse_round_trip() {
         let cfg = config_with_be(vec![be_entry("a", "https://a.example")]);
+        let bytes = cfg.try_to_vec().unwrap();
+        let staging = ConfigStaging {
+            authority: Pubkey::default(),
+            bump: 255,
+            kind: STAGING_KIND_GLOBAL,
+            vote: Pubkey::default(),
+            expected_len: bytes.len() as u32,
+            data: bytes,
+        };
+        assert_eq!(staging.parse_config().unwrap(), cfg);
+    }
+
+    #[test]
+    fn staging_parse_round_trip_v2() {
+        let cfg = config_v2_with_be(vec![be_entry("a", "https://a.example")], true);
         let bytes = cfg.try_to_vec().unwrap();
         let staging = ConfigStaging {
             authority: Pubkey::default(),

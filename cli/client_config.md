@@ -23,7 +23,7 @@ This CLI does **not** manage TCA / PSA / MCA money accounts — only scheduler *
 
 Do **not** submit a JSON that only contains the new set. That file becomes the whole PDA contents; other sets on that account are deleted.
 
-`union` is a **read** of global ∪ validator. It does not change how writes work.
+`union` is a **read**: validator PDA if it exists, otherwise global. It does not merge payloads.
 
 Worked example — add P2C `p2c-new-1` on global when global already has `p2c-main-1` and `p2c-main-2`:
 
@@ -55,7 +55,7 @@ Same pattern for a new **block engine** or **virtual-priority** set. To add a UR
 | **Validator** (per `--vote`) | Manager | Live overlay + size caps (proposals use these) |
 | **Proposal** | Operator → manager approve/reject | Draft; live unchanged until approve |
 
-Effective config the node uses = **global ∪ validator** (by set name). Validator optional. `union` prints that merge.
+Effective config the node uses = **validator PDA if present, otherwise global**. No merge. `union --vote` prints that.
 
 Size caps (`ConfigLimits::V1`) live on global/validator/proposal PDAs (≤ absolute safety max). Init: `global init` → `validator init`. Proposals snapshot validator limits on submit/update.
 
@@ -192,7 +192,7 @@ This copies **then-current global** onto the validator PDA. Only this operator c
 
 ### Step 2 — Operator: dump what is live today
 
-Use whichever snapshot you will edit. `union --vote` is the **effective** config (global ∪ validator). `validator show` is only the validator PDA.
+Use whichever snapshot you will edit. `union --vote` is the **effective** config (validator PDA if present, else global). After `validator init`, that is the validator PDA.
 
 ```sh
 rakurai-client-config union --vote <VOTE>
@@ -245,7 +245,7 @@ rakurai-client-config -k manager.json proposal approve --vote <VOTE>
 rakurai-client-config -k manager.json proposal reject --vote <VOTE>
 ```
 
-After **approve**, `validator show --vote <VOTE>` should match the JSON from step 3. `union --vote <VOTE>` is that overlay merged with global by set name.
+After **approve**, `validator show --vote <VOTE>` should match the JSON from step 3. `union --vote <VOTE>` prints that same validator payload.
 
 ---
 

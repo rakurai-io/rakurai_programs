@@ -22,7 +22,7 @@ One versioned payload (`Config::V1` / `ConfigV1`) on every PDA. Three independen
 | **`p2c`** | Endpoints the scheduler **sends transactions to** for arbitrage / backrun | Named set → list of `{ url }` |
 | **`virtual_priority`** | Tip accounts used to **virtually prioritize** transactions | Named set → list of `{ key: tip-account pubkey, value: percent of that tip }` |
 
-A **set** has a 32-byte `name` (`Uuid`) plus its `url` list. The validator node reads **effective** config for a vote as **global ∪ validator**, merged **by set name** (validator wins on the same name).
+A **set** has a 32-byte `name` (`Uuid`) plus its `url` list. Effective config for a vote is the **validator PDA if it exists**, otherwise **global**. There is no merge.
 
 ### 2.1. Block engine
 
@@ -68,7 +68,7 @@ Submitting a file that contains **only the new set** replaces the PDA contents w
 
 Same rule for **removing** or **editing** a set: start from current, change that one set, submit the whole payload.
 
-`union` is **read-only**. It is how the node and CLI compute effective config. It is **not** applied on write.
+`union` is **read-only**. It prints the validator PDA when that account exists, otherwise global. It does **not** merge payloads and is **not** applied on write.
 
 ---
 
@@ -97,13 +97,10 @@ Versioned enum (`ConfigLimits::V1(ConfigLimitsV1)`), stored on **Global**, **Val
 
 **Effective config** for a vote:
 
-- No validator PDA → global only
-- Validator PDA exists → `union_configs(global, validator)` by set name:
-  - same `name` → validator **replaces the whole named set** (nested URL lists are not merged entry-by-entry)
-  - new `name` → appended
-  - a name that exists only on global → kept
+- Validator PDA exists → use that payload as-is
+- No validator PDA → use global
 
-Because union only runs on **read**, a validator PDA that omitted a global name still *inherits* that name at runtime. A **proposal** that is meant to keep validator-specific sets must still list **those validator sets plus the new one**, or approve will replace the live validator payload and drop the omitted validator-only names.
+A validator PDA is a full snapshot (copied from global at `init_validator`). Later global edits do not apply to votes that already have a validator PDA.
 
 ---
 

@@ -170,7 +170,7 @@ flowchart TD
     V --> VU[update_validator — full Config]
     P[operator: init_proposal / update_proposal — full Config]
     P --> A[manager: approve_proposal copies draft to live validator]
-    U[union — read-only global ∪ validator by set name]
+    U[union — read-only: validator PDA if present, else global]
 ```
 
 ---
