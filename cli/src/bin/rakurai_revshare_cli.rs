@@ -2,6 +2,11 @@ use {
     anchor_lang::AccountDeserialize,
     clap::{Args, Parser, Subcommand, ValueEnum},
     colored::{ColoredString, Colorize},
+    rakurai_activation::sdk::derive_activation_account_address,
+    rakurai_cli::{
+        get_node_pubkey_from_vote_account, normalize_to_url_if_moniker, parse_keypair,
+        parse_pubkey, sign_and_send_instructions, sign_and_send_transaction,
+    },
     reward_distribution::{
         sdk::{
             derive_revenue_share_account_v1_address, derive_tips_and_mev_share_config_address,
@@ -13,11 +18,6 @@ use {
             },
         },
         state::{EpochAmountEntryV1, RevenueKind, RevenueShareAccountV1, RAKURAI_REVENUE_NAME},
-    },
-    rakurai_activation::sdk::derive_activation_account_address,
-    rakurai_cli::{
-        get_node_pubkey_from_vote_account, normalize_to_url_if_moniker, parse_keypair, parse_pubkey,
-        sign_and_send_instructions, sign_and_send_transaction,
     },
     solana_account_decoder_client_types::UiAccountEncoding,
     solana_rpc_client::rpc_client::RpcClient,
@@ -80,6 +80,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Create a partner MCA (Mev-share) vault. TCA init and reserved `rakurai` name are blocked.
+    #[command(hide = true)]
     CreateAccount(CreateAccountArgs),
     /// Fetch and display one TCA or MCA (requires vote pubkey).
     GetAccount(AccountArgs),
@@ -549,11 +550,12 @@ fn format_total_with_sol(lamports: u64) -> String {
 // Display: get-account (summary + optional detail)
 // ---------------------------------------------------------------------------
 
-fn display_account(vault: &VaultAccount, balance: u64, detail: bool) {
+fn display_account(vault: &VaultAccount, balance: u64, current_epoch: u64, detail: bool) {
     let kind = vault.share_kind();
     let name = &vault.account.name;
     let vote = vault.validator_vote();
     let record_authority = vault.record_authority();
+    let available = vault.balance_after_rent(balance);
 
     print_heading(kind_account_label(kind));
     print_field(
@@ -568,10 +570,15 @@ fn display_account(vault: &VaultAccount, balance: u64, detail: bool) {
     print_field(
         "💰".green(),
         "Balance:",
-        format_total_with_sol(vault.balance_after_rent(balance)).yellow(),
+        format_total_with_sol(available).yellow(),
     );
 
-    let pending_records = vault.all_pending();
+    // Exclude the in-progress cluster epoch — not settleable yet.
+    let pending_records: Vec<_> = vault
+        .all_pending()
+        .into_iter()
+        .filter(|(epoch, _)| *epoch != current_epoch)
+        .collect();
     let total_owed: u64 = pending_records.iter().map(|(_, p)| p.pending).sum();
     print_field(
         "💸".yellow(),
@@ -581,29 +588,24 @@ fn display_account(vault: &VaultAccount, balance: u64, detail: bool) {
 
     let deficit = vault.account.deficit;
     if deficit > 0 {
-        print_field(
-            "⚠️".red(),
-            "Deficit:",
-            format_total_with_sol(deficit).yellow(),
-        );
+        print_field("⚠️".red(), "Deficit:", format_total_with_sol(deficit));
         println!(
             "   {} {}",
             "❌".red(),
-            "Clear this deficit at the earliest to continue using services.".red()
+            "Clear this deficit at the earliest to continue using services."
         );
     }
 
-    if pending_records.is_empty() {
+    if total_owed == 0 {
         println!("   {} {}", "✅".green(), "Nothing pending".green());
-    } else {
+    } else if available < total_owed {
         println!(
             "   {} {}",
             "❌".red(),
             format!(
-                "{} epoch(s) pending, settle them at the earliest to continue using services.",
+                "{} epoch(s) pending — settle them at the earliest to continue using services.",
                 pending_records.len()
             )
-            .red()
         );
     }
 
@@ -689,6 +691,7 @@ type PendingByVote = std::collections::BTreeMap<String, std::collections::BTreeM
 fn aggregate_pending_by_vote(
     vaults: &[VaultAccount],
     skip_rakurai_tip: bool,
+    exclude_epoch: Option<u64>,
 ) -> (PendingByVote, Vec<u64>, u64) {
     let mut by_vote: PendingByVote = std::collections::BTreeMap::new();
     let mut epochs = std::collections::BTreeSet::new();
@@ -700,6 +703,9 @@ fn aggregate_pending_by_vote(
         let vote_map = by_vote.entry(vote).or_default();
         for (epoch, pending) in vault.all_pending() {
             if pending.pending == 0 {
+                continue;
+            }
+            if exclude_epoch == Some(epoch) {
                 continue;
             }
             epochs.insert(epoch);
@@ -811,10 +817,8 @@ fn process_create_account(
     reject_reserved_rakurai_name(&name)?;
 
     let payer = parse_keypair(keypair_path)?;
-    let node_pubkey =
-        get_node_pubkey_from_vote_account(rpc_client.clone(), args.vote_pubkey)?;
-    let (raa, _) =
-        derive_activation_account_address(&args.activation_program_id, &node_pubkey);
+    let node_pubkey = get_node_pubkey_from_vote_account(rpc_client.clone(), args.vote_pubkey)?;
+    let (raa, _) = derive_activation_account_address(&args.activation_program_id, &node_pubkey);
     let (tips_config, _) = derive_tips_and_mev_share_config_address(&program_id);
     let (mca_address, bump) = derive_revenue_share_account_v1_address(
         &program_id,
@@ -874,7 +878,8 @@ fn process_create_account(
 fn process_get_account(rpc_client: &RpcClient, program_id: Pubkey, args: AccountArgs) -> CliResult {
     let vault = load_target(rpc_client, program_id, &args.target)?;
     let balance = rpc_client.get_balance(&vault.address())?;
-    display_account(&vault, balance, args.detail);
+    let current_epoch = rpc_client.get_epoch_info()?.epoch;
+    display_account(&vault, balance, current_epoch, args.detail);
     Ok(())
 }
 
@@ -885,6 +890,7 @@ fn process_get_all_accounts(
 ) -> CliResult {
     let vaults = load_service_accounts(rpc_client, program_id, &args.service)?;
     let kind: RevenueKind = args.service.revenue_kind.into();
+    let current_epoch = rpc_client.get_epoch_info()?.epoch;
 
     print_heading(kind_accounts_label(kind));
     print_field("📝".cyan(), "Name:", args.service.revenue_name.magenta());
@@ -898,7 +904,8 @@ fn process_get_all_accounts(
         return Ok(());
     }
 
-    let (by_vote, epochs, grand_total) = aggregate_pending_by_vote(&vaults, false);
+    let (by_vote, epochs, grand_total) =
+        aggregate_pending_by_vote(&vaults, false, Some(current_epoch));
     print_pending_pivot_table(&by_vote, &epochs, grand_total);
 
     if !args.detail {
@@ -912,7 +919,12 @@ fn process_get_all_accounts(
     print_heading("Account details");
     for vault in &vaults {
         let balance = rpc_client.get_balance(&vault.address())?;
-        let pending = vault.all_pending();
+        let available = vault.balance_after_rent(balance);
+        let pending: Vec<_> = vault
+            .all_pending()
+            .into_iter()
+            .filter(|(epoch, _)| *epoch != current_epoch)
+            .collect();
         let pending_total: u64 = pending.iter().map(|(_, p)| p.pending).sum();
 
         println!();
@@ -930,7 +942,7 @@ fn process_get_all_accounts(
         print_field(
             "💰".green(),
             "Balance:",
-            format_total_with_sol(vault.balance_after_rent(balance)).yellow(),
+            format_total_with_sol(available).yellow(),
         );
         print_field(
             "🕒".cyan(),
@@ -941,6 +953,18 @@ fn process_get_all_accounts(
                 pending_total.to_string().yellow()
             ),
         );
+        if pending_total > 0 && available < pending_total {
+            println!(
+                "   {} {}",
+                "❌".red(),
+                format!(
+                    "Underfunded: owed {}, balance {}",
+                    format_total_with_sol(pending_total),
+                    format_total_with_sol(available),
+                )
+                .red()
+            );
+        }
         for (epoch, amount) in &pending {
             println!(
                 "      epoch {:>8}: {}",
@@ -1105,10 +1129,7 @@ fn process_transfer(
     let instruction = settle_instruction(program_id, &vault, args.epoch, amount, payer.pubkey())?;
 
     let kind = vault.share_kind();
-    print_heading(&format!(
-        "{} Settlement Transfer",
-        kind_account_label(kind)
-    ));
+    print_heading(&format!("{} Settlement Transfer", kind_account_label(kind)));
     print_field(
         "🔗".cyan(),
         "Vault:",
@@ -1193,7 +1214,7 @@ fn process_transfer_all(
     );
     print_field("🔑".red(), "Payer:", payer.pubkey().to_string());
 
-    let (by_vote, epochs, grand_total) = aggregate_pending_by_vote(&vaults, true);
+    let (by_vote, epochs, grand_total) = aggregate_pending_by_vote(&vaults, true, None);
     print_pending_pivot_table(&by_vote, &epochs, grand_total);
 
     if jobs.is_empty() {

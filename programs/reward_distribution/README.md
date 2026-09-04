@@ -162,18 +162,18 @@ Full product guide: [Post-pack confirmations](https://docs.rakurai.io/docs/servi
 
 ### Working model
 
-1. **Create PSA first** (`rakurai-p2c create-account`) — manager / record / commission / grace / ledger size come from on-chain **`P2CConfigAccount`**. Reserved name `rakurai` is blocked for partner creates.
-2. **You top up** SOL into that account (`fund`, or any wallet transfer)
-3. For MevShare settlement, **create MCA** next (`rakurai-revshare create-account`) — then start post-pack
+1. A **PSA** exists for your service + validator (created by Rakurai / ops; defaults from on-chain **`P2CConfigAccount`**)
+2. **You top up** SOL into that account (`fund` / `fund-all`, or any wallet transfer)
+3. For MevShare settlement, an **MCA** is also created by Rakurai / ops — then start post-pack
 4. Epoch ends. Rakurai writes the stake snapshot and the fee due
 5. The fee is taken from prepaid: Rakurai’s cut, rest to the validator identity (**block-reward conversion** on by default)
 6. If the balance is too low, top up and try again — or the shortfall is booked as **deficit**
-7. After a short grace, status becomes **Suspended** and **post-pack is stopped** until you clear the deficit
+7. After a short grace, status becomes **Suspended** and **post-pack is stopped** until the shortfall is cleared
 8. When you leave, after every epoch is paid, leftover prepaid is returned
 
 ```
-create PSA (defaults from P2CConfig) → fund
-    → create MCA (if sharing MevShare) → start post-pack
+PSA exists (ops) → fund
+    → MCA exists if sharing MevShare (ops) → start post-pack
     → epoch ends → fee calculated from stake
     → fee taken from prepaid (Rakurai + validator identity → high-priority block reward)
     → if empty: grace, then stream stopped until you top up
@@ -194,8 +194,8 @@ The deal is: you **share that profit** with the validator. The MCA is the accoun
 
 ### Working model
 
-1. After the **PSA** exists and is funded, create an **MCA** with `rakurai-revshare create-account` (TCA create is not offered in that CLI; reserved name `rakurai` is blocked)
-2. You keep the key that is allowed to **report** the amount (`--record-authority` at create; without it you cannot update the books)
+1. After the **PSA** exists and is funded, an **MCA** is created by Rakurai / ops (TCA create is not a partner CLI path)
+2. You keep the key that is allowed to **report** the amount (`record_authority` on the MCA; without it you cannot update the books)
 3. During the epoch, **nothing** is taken automatically — you trade as usual
 4. After the epoch **you report** the shared profit once, then **send that SOL** into the MCA
 5. Rakurai’s commission is taken; the **remainder** is paid to the **validator identity** (**block-reward conversion** on by default)

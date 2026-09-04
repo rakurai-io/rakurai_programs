@@ -1,6 +1,6 @@
 [package]
 name = "rakurai_cli"
-version = "2.1.1"
+version = "2.1.2"
 description = "Command-line tools for Rakurai validator operators and transaction-inclusion partners"
 edition = "2021"
 
