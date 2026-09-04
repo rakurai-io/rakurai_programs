@@ -15,6 +15,7 @@ use {
         derive_proposal_staging_address, derive_validator_config_address,
         derive_validator_proposal_address, derive_validator_staging_address,
         instruction::{
+            abort_global_staging_ix, abort_proposal_staging_ix, abort_validator_staging_ix,
             approve_proposal_ix, close_global_ix, close_validator_ix, commit_global_staging_ix,
             commit_proposal_staging_ix, commit_validator_staging_ix, init_global_ix,
             init_global_staging_ix, init_proposal_ix, init_proposal_staging_ix, init_validator_ix,
@@ -22,7 +23,8 @@ use {
             migrate_validator_to_v2_ix, reject_proposal_ix, set_operator_ix, update_global_ix,
             update_global_limits_ix, update_proposal_ix, update_validator_ix,
             update_validator_limits_ix, write_global_staging_ix, write_proposal_staging_ix,
-            write_validator_staging_ix, ApproveProposalAccounts, CloseGlobalAccounts,
+            write_validator_staging_ix, AbortGlobalStagingAccounts, AbortProposalStagingAccounts,
+            AbortValidatorStagingAccounts, ApproveProposalAccounts, CloseGlobalAccounts,
             CloseValidatorAccounts, GlobalStagingAccounts, InitGlobalAccounts, InitGlobalArgs,
             InitProposalAccounts, InitProposalArgs, InitValidatorAccounts, InitValidatorArgs,
             ProposalStagingAccounts, RejectProposalAccounts, SetOperatorAccounts, SetOperatorArgs,
@@ -305,6 +307,84 @@ fn send_ixs(
     sign_and_send_instructions(rpc, ixs, kp)
 }
 
+fn staging_exists(rpc: &RpcClient, staging: Pubkey) -> bool {
+    rpc.get_account(&staging).is_ok()
+}
+
+/// Close leftover staging before init so a prior failed upload cannot block the next one.
+fn clear_global_staging_if_exists(
+    rpc: Arc<RpcClient>,
+    kp: &solana_sdk::signature::Keypair,
+    program_id: Pubkey,
+    manager: Pubkey,
+    staging: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !staging_exists(&rpc, staging) {
+        return Ok(());
+    }
+    println!("Existing global staging found at {staging} — aborting it first");
+    send_ixs(
+        rpc,
+        &[abort_global_staging_ix(
+            program_id,
+            AbortGlobalStagingAccounts { manager, staging },
+        )],
+        kp,
+    )
+}
+
+fn clear_validator_staging_if_exists(
+    rpc: Arc<RpcClient>,
+    kp: &solana_sdk::signature::Keypair,
+    program_id: Pubkey,
+    manager: Pubkey,
+    vote: Pubkey,
+    staging: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !staging_exists(&rpc, staging) {
+        return Ok(());
+    }
+    println!("Existing validator staging found at {staging} — aborting it first");
+    send_ixs(
+        rpc,
+        &[abort_validator_staging_ix(
+            program_id,
+            AbortValidatorStagingAccounts {
+                manager,
+                vote,
+                staging,
+            },
+        )],
+        kp,
+    )
+}
+
+fn clear_proposal_staging_if_exists(
+    rpc: Arc<RpcClient>,
+    kp: &solana_sdk::signature::Keypair,
+    program_id: Pubkey,
+    operator: Pubkey,
+    vote: Pubkey,
+    staging: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !staging_exists(&rpc, staging) {
+        return Ok(());
+    }
+    println!("Existing proposal staging found at {staging} — aborting it first");
+    send_ixs(
+        rpc,
+        &[abort_proposal_staging_ix(
+            program_id,
+            AbortProposalStagingAccounts {
+                operator,
+                vote,
+                staging,
+            },
+        )],
+        kp,
+    )
+}
+
 fn publish_global_via_staging(
     rpc: Arc<RpcClient>,
     kp: &solana_sdk::signature::Keypair,
@@ -326,6 +406,7 @@ fn publish_global_via_staging(
         DIRECT_UPDATE_MAX_BYTES,
         staging
     );
+    clear_global_staging_if_exists(rpc.clone(), kp, program_id, manager, staging)?;
     send_ixs(
         rpc.clone(),
         &[init_global_staging_ix(
@@ -380,6 +461,7 @@ fn publish_validator_via_staging(
         DIRECT_UPDATE_MAX_BYTES,
         staging
     );
+    clear_validator_staging_if_exists(rpc.clone(), kp, program_id, manager, vote, staging)?;
     send_ixs(
         rpc.clone(),
         &[init_validator_staging_ix(
@@ -438,6 +520,7 @@ fn publish_proposal_via_staging(
         DIRECT_UPDATE_MAX_BYTES,
         staging
     );
+    clear_proposal_staging_if_exists(rpc.clone(), kp, program_id, operator, vote, staging)?;
     send_ixs(
         rpc.clone(),
         &[init_proposal_staging_ix(

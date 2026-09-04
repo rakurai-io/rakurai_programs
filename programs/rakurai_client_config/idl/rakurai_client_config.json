@@ -195,7 +195,7 @@
     {
       "name": "approve_proposal",
       "docs": [
-        "Manager-only: copy proposal \u2192 live validator config, then close proposal (rent \u2192 operator)."
+        "Manager-only: copy proposal → live validator config, then close proposal (rent → operator)."
       ],
       "discriminator": [
         136,
@@ -877,7 +877,7 @@
       "name": "init_global",
       "docs": [
         "Create the singleton global config. Signer becomes `manager`.",
-        "`limits` must be non-zero and \u2264 absolute safety caps."
+        "`limits` must be non-zero and ≤ absolute safety caps."
       ],
       "discriminator": [
         44,
@@ -1806,7 +1806,7 @@
     {
       "name": "reject_proposal",
       "docs": [
-        "Manager-only: close proposal without changing live validator config (rent \u2192 operator)."
+        "Manager-only: close proposal without changing live validator config (rent → operator)."
       ],
       "discriminator": [
         114,
@@ -2120,7 +2120,7 @@
     {
       "name": "update_global_limits",
       "docs": [
-        "Manager-only: update global size caps (\u2264 absolute safety caps; must fit current payload)."
+        "Manager-only: update global size caps (≤ absolute safety caps; must fit current payload)."
       ],
       "discriminator": [
         251,
@@ -2415,7 +2415,7 @@
     {
       "name": "update_validator_limits",
       "docs": [
-        "Manager-only: update this vote's size caps (\u2264 absolute safety caps; must fit current payload)."
+        "Manager-only: update this vote's size caps (≤ absolute safety caps; must fit current payload)."
       ],
       "discriminator": [
         197,
@@ -3035,7 +3035,7 @@
     {
       "name": "ConfigStaging",
       "docs": [
-        "Ephemeral upload buffer. Create \u2192 append chunks \u2192 commit into live PDA \u2192 close."
+        "Ephemeral upload buffer. Create → append chunks → commit into live PDA → close."
       ],
       "type": {
         "kind": "struct",

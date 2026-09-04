@@ -607,6 +607,24 @@ pub fn commit_global_staging_ix(
 }
 
 #[derive(Clone, Copy)]
+pub struct AbortGlobalStagingAccounts {
+    pub manager: Pubkey,
+    pub staging: Pubkey,
+}
+
+pub fn abort_global_staging_ix(
+    program_id: Pubkey,
+    accounts: AbortGlobalStagingAccounts,
+) -> Instruction {
+    let AbortGlobalStagingAccounts { manager, staging } = accounts;
+    Instruction {
+        program_id,
+        data: crate::instruction::AbortGlobalStaging {}.data(),
+        accounts: crate::accounts::AbortGlobalStaging { manager, staging }.to_account_metas(None),
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct ValidatorStagingAccounts {
     pub manager: Pubkey,
     pub vote: Pubkey,
@@ -699,6 +717,34 @@ pub fn commit_validator_staging_ix(
 }
 
 #[derive(Clone, Copy)]
+pub struct AbortValidatorStagingAccounts {
+    pub manager: Pubkey,
+    pub vote: Pubkey,
+    pub staging: Pubkey,
+}
+
+pub fn abort_validator_staging_ix(
+    program_id: Pubkey,
+    accounts: AbortValidatorStagingAccounts,
+) -> Instruction {
+    let AbortValidatorStagingAccounts {
+        manager,
+        vote,
+        staging,
+    } = accounts;
+    Instruction {
+        program_id,
+        data: crate::instruction::AbortValidatorStaging {}.data(),
+        accounts: crate::accounts::AbortValidatorStaging {
+            manager,
+            vote,
+            staging,
+        }
+        .to_account_metas(None),
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct ProposalStagingAccounts {
     pub operator: Pubkey,
     pub vote: Pubkey,
@@ -784,6 +830,34 @@ pub fn commit_proposal_staging_ix(
             proposal,
             staging,
             system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct AbortProposalStagingAccounts {
+    pub operator: Pubkey,
+    pub vote: Pubkey,
+    pub staging: Pubkey,
+}
+
+pub fn abort_proposal_staging_ix(
+    program_id: Pubkey,
+    accounts: AbortProposalStagingAccounts,
+) -> Instruction {
+    let AbortProposalStagingAccounts {
+        operator,
+        vote,
+        staging,
+    } = accounts;
+    Instruction {
+        program_id,
+        data: crate::instruction::AbortProposalStaging {}.data(),
+        accounts: crate::accounts::AbortProposalStaging {
+            operator,
+            vote,
+            staging,
         }
         .to_account_metas(None),
     }

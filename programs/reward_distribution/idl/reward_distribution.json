@@ -453,6 +453,53 @@
       "args": []
     },
     {
+      "name": "close_p2c_config",
+      "docs": [
+        "Closes the P2C config account and reclaims rent."
+      ],
+      "discriminator": [
+        226,
+        50,
+        63,
+        223,
+        241,
+        236,
+        44,
+        191
+      ],
+      "accounts": [
+        {
+          "name": "p2c_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  80,
+                  50,
+                  67,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "close_p2c_subscription_account",
       "docs": [
         "Closes P2C escrow; rent + residual to initializer. Manager only."
@@ -936,9 +983,95 @@
       ]
     },
     {
+      "name": "initialize_p2c_config",
+      "docs": [
+        "One-time init of the P2C config singleton (defaults for `initialize_p2c_subscription_account`)."
+      ],
+      "discriminator": [
+        55,
+        38,
+        179,
+        84,
+        28,
+        137,
+        153,
+        98
+      ],
+      "accounts": [
+        {
+          "name": "p2c_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  80,
+                  50,
+                  67,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "initializer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "manager_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "record_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "max_epoch_entries",
+          "type": "u8"
+        },
+        {
+          "name": "commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "commission_account",
+          "type": "pubkey"
+        },
+        {
+          "name": "grace_epochs",
+          "type": "u8"
+        },
+        {
+          "name": "bump",
+          "type": "u8"
+        }
+      ]
+    },
+    {
       "name": "initialize_p2c_subscription_account",
       "docs": [
-        "Manager-only create of a prepaid P2C subscription PDA (`P2C_SUBSCRIPTION` + name + vote)."
+        "Manager-only create of a prepaid P2C subscription PDA (`P2C_SUBSCRIPTION` + name + vote).",
+        "Initializes a P2C subscription escrow using [`P2CConfigAccount`] defaults.",
+        "Any payer may create; manager / record / commission / grace / capacity come from config."
       ],
       "discriminator": [
         205,
@@ -989,29 +1122,22 @@
           }
         },
         {
-          "name": "config",
+          "name": "p2c_config",
           "pda": {
             "seeds": [
               {
                 "kind": "const",
                 "value": [
-                  82,
-                  68,
+                  80,
+                  50,
+                  67,
                   95,
                   67,
                   79,
                   78,
                   70,
                   73,
-                  71,
-                  95,
-                  65,
-                  67,
-                  67,
-                  79,
-                  85,
-                  78,
-                  84
+                  71
                 ]
               }
             ]
@@ -1021,9 +1147,9 @@
           "name": "validator_vote_account"
         },
         {
-          "name": "manager_authority",
+          "name": "payer",
           "docs": [
-            "Manager creates and funds rent for the PDA (only manager may create)."
+            "Pays rent; stored as `initializer` (residual on close)."
           ],
           "writable": true,
           "signer": true
@@ -1044,26 +1170,6 @@
           }
         },
         {
-          "name": "record_authority",
-          "type": "pubkey"
-        },
-        {
-          "name": "max_epoch_entries",
-          "type": "u8"
-        },
-        {
-          "name": "commission_bps",
-          "type": "u16"
-        },
-        {
-          "name": "commission_account",
-          "type": "pubkey"
-        },
-        {
-          "name": "grace_epochs",
-          "type": "u8"
-        },
-        {
           "name": "bump",
           "type": "u8"
         }
@@ -1072,7 +1178,7 @@
     {
       "name": "initialize_revenue_share_account",
       "docs": [
-        "Initializes a revenue share vault (tip or mev-share) for a validator."
+        "Deprecated: use [`initialize_revenue_share_account_v1`]."
       ],
       "discriminator": [
         80,
@@ -1504,8 +1610,7 @@
     {
       "name": "initialize_reward_collection_account",
       "docs": [
-        "Initialize a new [RewardCollectionAccount] (legacy account list).",
-        "Prefer `initialize_reward_collection_account_v1` for enabled RAA validation."
+        "Deprecated: use [`initialize_reward_collection_account_v1`]."
       ],
       "discriminator": [
         202,
@@ -1962,7 +2067,8 @@
     {
       "name": "record_p2c_subscription",
       "docs": [
-        "Record stake snapshot and amount due for an epoch (once). Manager only."
+        "Record stake snapshot and amount due for an epoch (once). Manager only.",
+        "If the ledger is full of unclaimed rows, the oldest epoch is moved into `deficit`."
       ],
       "discriminator": [
         110,
@@ -2035,7 +2141,8 @@
       "name": "record_revenue_v1",
       "docs": [
         "Records revenue on a **TCAV1** vault (`REVENUE_SHARE_V1`).",
-        "Rakurai tip TCAV1 also credits `transferred_amount`."
+        "Rakurai tip TCAV1 also credits `transferred_amount`.",
+        "If the ledger is full of unclaimed rows, the oldest epoch is moved into `deficit`."
       ],
       "discriminator": [
         177,
@@ -2335,6 +2442,78 @@
         {
           "name": "epoch",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update_p2c_config",
+      "docs": [
+        "Updates P2C config defaults. Only the config authority can invoke this."
+      ],
+      "discriminator": [
+        156,
+        209,
+        112,
+        155,
+        242,
+        98,
+        217,
+        106
+      ],
+      "accounts": [
+        {
+          "name": "p2c_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  80,
+                  50,
+                  67,
+                  95,
+                  67,
+                  79,
+                  78,
+                  70,
+                  73,
+                  71
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "manager_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "record_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "max_epoch_entries",
+          "type": "u8"
+        },
+        {
+          "name": "commission_bps",
+          "type": "u16"
+        },
+        {
+          "name": "commission_account",
+          "type": "pubkey"
+        },
+        {
+          "name": "grace_epochs",
+          "type": "u8"
         }
       ]
     },
@@ -2839,6 +3018,19 @@
       ]
     },
     {
+      "name": "P2CConfigAccount",
+      "discriminator": [
+        114,
+        82,
+        216,
+        15,
+        127,
+        35,
+        82,
+        105
+      ]
+    },
+    {
       "name": "P2CSubscriptionAccount",
       "discriminator": [
         195,
@@ -3010,6 +3202,32 @@
       ]
     },
     {
+      "name": "P2CConfigClosedEvent",
+      "discriminator": [
+        31,
+        213,
+        210,
+        87,
+        250,
+        239,
+        190,
+        163
+      ]
+    },
+    {
+      "name": "P2CConfigUpdatedEvent",
+      "discriminator": [
+        158,
+        11,
+        140,
+        233,
+        224,
+        134,
+        215,
+        23
+      ]
+    },
+    {
       "name": "P2CDeficitClearedEvent",
       "discriminator": [
         167,
@@ -3046,6 +3264,19 @@
         120,
         100,
         118
+      ]
+    },
+    {
+      "name": "P2CLedgerEvictedToDeficitEvent",
+      "discriminator": [
+        212,
+        92,
+        217,
+        59,
+        243,
+        220,
+        24,
+        146
       ]
     },
     {
@@ -3163,6 +3394,19 @@
         61,
         231,
         195
+      ]
+    },
+    {
+      "name": "RevenueLedgerEvictedToDeficitEvent",
+      "discriminator": [
+        123,
+        94,
+        47,
+        4,
+        25,
+        112,
+        181,
+        76
       ]
     },
     {
@@ -3446,6 +3690,11 @@
       "code": 6029,
       "name": "NoDeficit",
       "msg": "No outstanding deficit to clear."
+    },
+    {
+      "code": 6030,
+      "name": "Deprecated",
+      "msg": "This instruction is deprecated; use the corresponding v1 instruction."
     }
   ],
   "types": [
@@ -3808,6 +4057,103 @@
       }
     },
     {
+      "name": "P2CConfigAccount",
+      "docs": [
+        "Singleton defaults for P2C subscription account initialization (`initialize_p2c_subscription_account`).",
+        "Same idea as [`TipsAndMevShareConfigAccount`]: anyone may create a PSA, but manager / record /",
+        "commission / grace / ledger capacity come from this config."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "docs": [
+              "Authorized updater of this config."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "manager_authority",
+            "docs": [
+              "Copied onto each PSA at init (claim / record / config / close)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "record_authority",
+            "docs": [
+              "Copied onto each PSA at init (block-reward convert signer)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "max_epoch_entries",
+            "docs": [
+              "Ledger capacity written to `max_epoch_entries` (1..=32)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "commission_bps",
+            "docs": [
+              "Commission on claim (basis points)."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "commission_account",
+            "docs": [
+              "Receives the commission portion on claim / deficit clear."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "grace_epochs",
+            "docs": [
+              "Consecutive unpaid finished epochs allowed before Suspended (0 → PSA default 2)."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "P2CConfigClosedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "lamports_reclaimed",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "P2CConfigUpdatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
       "name": "P2CDeficitClearedEvent",
       "type": {
         "kind": "struct",
@@ -3945,6 +4291,45 @@
               "Same lifecycle flag as revenue share after claim."
             ],
             "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "P2CLedgerEvictedToDeficitEvent",
+      "docs": [
+        "Emitted when a full PSA ledger evicts an unclaimed epoch into account `deficit`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "p2c_subscription_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "evicted_epoch",
+            "type": "u64"
+          },
+          {
+            "name": "unpaid",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "settled",
+            "type": "u64"
+          },
+          {
+            "name": "deficit",
+            "type": "u64"
+          },
+          {
+            "name": "new_epoch",
+            "type": "u64"
           }
         ]
       }
@@ -4555,6 +4940,53 @@
                 }
               }
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "RevenueLedgerEvictedToDeficitEvent",
+      "docs": [
+        "Emitted when a full TCAV1/MCAV1 ledger evicts an unclaimed epoch into account `deficit`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "revenue_share_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "share_kind",
+            "type": {
+              "defined": {
+                "name": "RevenueKind"
+              }
+            }
+          },
+          {
+            "name": "evicted_epoch",
+            "type": "u64"
+          },
+          {
+            "name": "unpaid",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "settled",
+            "type": "u64"
+          },
+          {
+            "name": "deficit",
+            "type": "u64"
+          },
+          {
+            "name": "new_epoch",
+            "type": "u64"
           }
         ]
       }

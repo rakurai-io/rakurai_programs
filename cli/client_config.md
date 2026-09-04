@@ -126,6 +126,8 @@ rakurai-client-config --url <RPC_URL> --program-id <PROGRAM_ID> --keypair <KEYPA
 
 Always pass a **full** `--config-file` on update / submit.
 
+Large configs are uploaded via ephemeral **staging** PDAs. If a previous staging upload failed mid-way, the CLI aborts any existing staging account before starting a new upload so `init` cannot fail on “account already exists”.
+
 ### Global (manager)
 
 ```sh
