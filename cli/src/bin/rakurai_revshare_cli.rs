@@ -2,19 +2,22 @@ use {
     anchor_lang::AccountDeserialize,
     clap::{Args, Parser, Subcommand, ValueEnum},
     colored::{ColoredString, Colorize},
-    rakurai_cli::{
-        normalize_to_url_if_moniker, parse_keypair, parse_pubkey, sign_and_send_instructions,
-        sign_and_send_transaction,
-    },
     reward_distribution::{
         sdk::{
-            derive_revenue_share_account_v1_address,
+            derive_revenue_share_account_v1_address, derive_tips_and_mev_share_config_address,
             instruction::{
-                record_revenue_v1_ix, settle_revenue_ix, RecordRevenueArgs,
-                RecordRevenueShareAccounts, SettleRevenueAccounts, SettleRevenueArgs,
+                initialize_revenue_share_account_v1_ix, record_revenue_v1_ix, settle_revenue_ix,
+                InitializeRevenueShareAccountV1Accounts, InitializeRevenueShareAccountV1Args,
+                RecordRevenueArgs, RecordRevenueShareAccounts, SettleRevenueAccounts,
+                SettleRevenueArgs,
             },
         },
-        state::{EpochAmountEntryV1, RevenueKind, RevenueShareAccountV1},
+        state::{EpochAmountEntryV1, RevenueKind, RevenueShareAccountV1, RAKURAI_REVENUE_NAME},
+    },
+    rakurai_activation::sdk::derive_activation_account_address,
+    rakurai_cli::{
+        get_node_pubkey_from_vote_account, normalize_to_url_if_moniker, parse_keypair, parse_pubkey,
+        sign_and_send_instructions, sign_and_send_transaction,
     },
     solana_account_decoder_client_types::UiAccountEncoding,
     solana_rpc_client::rpc_client::RpcClient,
@@ -76,6 +79,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Create a partner MCA (Mev-share) vault. TCA init and reserved `rakurai` name are blocked.
+    CreateAccount(CreateAccountArgs),
     /// Fetch and display one TCA or MCA (requires vote pubkey).
     GetAccount(AccountArgs),
     /// List every TCA or MCA for a service (`--revenue-kind` + `--revenue-name`).
@@ -117,6 +122,34 @@ struct ServiceArgs {
     /// Service revenue name (unique id assigned by Rakurai; PDA seed).
     #[arg(long = "revenue-name", required = true)]
     revenue_name: String,
+}
+
+#[derive(Args)]
+struct CreateAccountArgs {
+    /// Partner service id (PDA seed). Reserved name `rakurai` is blocked.
+    #[arg(long = "revenue-name", required = true)]
+    revenue_name: String,
+
+    /// Validator vote account used in the PDA seeds.
+    #[arg(short = 'v', long = "vote-pubkey", required = true, value_parser = parse_pubkey)]
+    vote_pubkey: Pubkey,
+
+    /// MCA record authority (must sign later `record-revenue` calls).
+    #[arg(long = "record-authority", required = true, value_parser = parse_pubkey)]
+    record_authority: Pubkey,
+
+    /// Rakurai Activation program ID (RAA must exist and be enabled for this validator).
+    #[arg(
+        long = "activation-program-id",
+        required = true,
+        value_parser = parse_pubkey,
+        help = "Rakurai Activation Program ID [testnet: pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt, mainnet-beta: rAKACC6Qw8HYa87ntGPRbfYEMnK2D9JVLsmZaKPpMmi]"
+    )]
+    activation_program_id: Pubkey,
+
+    /// Preview without sending a transaction.
+    #[arg(long, default_value_t = false)]
+    dry_run: bool,
 }
 
 #[derive(Args, Clone)]
@@ -307,6 +340,16 @@ fn name_to_bytes(name: &str) -> Result<[u8; 32], String> {
     let mut result = [0u8; 32];
     result[..bytes.len()].copy_from_slice(bytes);
     Ok(result)
+}
+
+fn reject_reserved_rakurai_name(name: &[u8; 32]) -> CliResult {
+    if *name == RAKURAI_REVENUE_NAME {
+        return Err(
+            "reserved revenue name `rakurai` cannot be used to create partner MCA/PSA accounts"
+                .into(),
+        );
+    }
+    Ok(())
 }
 
 fn name_to_string(name: &[u8; 32]) -> String {
@@ -758,6 +801,76 @@ fn print_pending_pivot_table(by_vote: &PendingByVote, epochs: &[u64], grand_tota
 // Command handlers
 // ---------------------------------------------------------------------------
 
+fn process_create_account(
+    rpc_client: Arc<RpcClient>,
+    program_id: Pubkey,
+    keypair_path: &str,
+    args: CreateAccountArgs,
+) -> CliResult {
+    let name = name_to_bytes(&args.revenue_name)?;
+    reject_reserved_rakurai_name(&name)?;
+
+    let payer = parse_keypair(keypair_path)?;
+    let node_pubkey =
+        get_node_pubkey_from_vote_account(rpc_client.clone(), args.vote_pubkey)?;
+    let (raa, _) =
+        derive_activation_account_address(&args.activation_program_id, &node_pubkey);
+    let (tips_config, _) = derive_tips_and_mev_share_config_address(&program_id);
+    let (mca_address, bump) = derive_revenue_share_account_v1_address(
+        &program_id,
+        RevenueKind::MevShare,
+        &name,
+        &args.vote_pubkey,
+    );
+
+    if rpc_client.get_account(&mca_address).is_ok() {
+        return Err(format!("MCA already exists at {mca_address}").into());
+    }
+
+    print_heading("Create Mev-Share Collection Account (MCA)");
+    print_field(
+        "🔗".cyan(),
+        "Pubkey:",
+        mca_address.to_string().bold().green(),
+    );
+    print_field("📝".cyan(), "Name:", args.revenue_name.magenta());
+    print_field("🔑".red(), "Vote:", args.vote_pubkey.to_string());
+    print_field(
+        "🔏".magenta(),
+        "Record auth:",
+        args.record_authority.to_string(),
+    );
+    print_field("🔑".red(), "Payer:", payer.pubkey().to_string());
+    print_field("📦".cyan(), "RAA:", raa.to_string());
+
+    if args.dry_run {
+        println!(
+            "\n   {}",
+            "Dry run only — no transaction was sent.".yellow()
+        );
+        return Ok(());
+    }
+
+    let instruction = initialize_revenue_share_account_v1_ix(
+        program_id,
+        InitializeRevenueShareAccountV1Args {
+            share_kind: RevenueKind::MevShare,
+            name,
+            record_authority: args.record_authority,
+            bump,
+        },
+        InitializeRevenueShareAccountV1Accounts {
+            revenue_share_account: mca_address,
+            tips_and_mev_share_config: tips_config,
+            rakurai_activation_account: raa,
+            validator_vote_account: args.vote_pubkey,
+            payer: payer.pubkey(),
+            system_program: system_program::ID,
+        },
+    );
+    sign_and_send_transaction(rpc_client, instruction, &payer)
+}
+
 fn process_get_account(rpc_client: &RpcClient, program_id: Pubkey, args: AccountArgs) -> CliResult {
     let vault = load_target(rpc_client, program_id, &args.target)?;
     let balance = rpc_client.get_balance(&vault.address())?;
@@ -1132,6 +1245,9 @@ fn main() -> CliResult {
     ));
 
     match cli.command {
+        Commands::CreateAccount(args) => {
+            process_create_account(rpc_client, cli.program_id, &cli.keypair, args)
+        }
         Commands::GetAccount(args) => process_get_account(&rpc_client, cli.program_id, args),
         Commands::GetAllAccounts(args) => {
             process_get_all_accounts(&rpc_client, cli.program_id, args)
@@ -1167,5 +1283,13 @@ mod tests {
     fn rejects_invalid_name_lengths() {
         assert!(name_to_bytes("").is_err());
         assert!(name_to_bytes(&"x".repeat(33)).is_err());
+    }
+
+    #[test]
+    fn rejects_reserved_rakurai_name() {
+        let name = name_to_bytes("rakurai").unwrap();
+        assert!(reject_reserved_rakurai_name(&name).is_err());
+        let ok = name_to_bytes("circularfi").unwrap();
+        assert!(reject_reserved_rakurai_name(&ok).is_ok());
     }
 }

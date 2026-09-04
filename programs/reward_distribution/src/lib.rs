@@ -23,9 +23,9 @@ pub mod state;
 
 pub use state::{
     validate_commission, ClaimStatus, DeficitUpdate, EpochAmountEntry, EpochAmountEntryV1,
-    MerkleRoot, MevShareCollectionAccount, MevShareCollectionAccountV1, P2CEpochEntry,
-    P2CSubscriptionAccount, P2CSubscriptionLedger, P2CSubscriptionStatus, RevenueKind,
-    RevenueLedger, RevenueLedgerV1, RevenueShareAccount, RevenueShareAccountV1,
+    MerkleRoot, MevShareCollectionAccount, MevShareCollectionAccountV1, P2CConfigAccount,
+    P2CEpochEntry, P2CSubscriptionAccount, P2CSubscriptionLedger, P2CSubscriptionStatus,
+    RevenueKind, RevenueLedger, RevenueLedgerV1, RevenueShareAccount, RevenueShareAccountV1,
     RewardCollectionAccount, RewardDistributionConfigAccount, TipsAndMevShareConfigAccount,
     TipsCollectionAccount, TipsCollectionAccountV1, RAKURAI_REVENUE_NAME,
 };
@@ -225,6 +225,82 @@ pub mod reward_distribution {
             .ok_or(ArithmeticError)?;
 
         emit!(TipsAndMevShareConfigClosedEvent {
+            authority: authority.key(),
+            lamports_reclaimed: lamports_to_reclaim,
+        });
+
+        Ok(())
+    }
+
+    /// One-time init of the P2C config singleton (defaults for `initialize_p2c_subscription_account`).
+    pub fn initialize_p2c_config(
+        ctx: Context<InitializeP2CConfig>,
+        authority: Pubkey,
+        manager_authority: Pubkey,
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        grace_epochs: u8,
+        bump: u8,
+    ) -> Result<()> {
+        let cfg = &mut ctx.accounts.p2c_config;
+        cfg.authority = authority;
+        cfg.bump = bump;
+        cfg.manager_authority = manager_authority;
+        cfg.record_authority = record_authority;
+        cfg.max_epoch_entries = max_epoch_entries;
+        cfg.commission_bps = commission_bps;
+        cfg.commission_account = commission_account;
+        cfg.grace_epochs = grace_epochs;
+        cfg.validate()?;
+
+        Ok(())
+    }
+
+    /// Updates P2C config defaults. Only the config authority can invoke this.
+    pub fn update_p2c_config(
+        ctx: Context<UpdateP2CConfig>,
+        manager_authority: Pubkey,
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        grace_epochs: u8,
+    ) -> Result<()> {
+        UpdateP2CConfig::auth(&ctx)?;
+
+        let cfg = &mut ctx.accounts.p2c_config;
+        cfg.manager_authority = manager_authority;
+        cfg.record_authority = record_authority;
+        cfg.max_epoch_entries = max_epoch_entries;
+        cfg.commission_bps = commission_bps;
+        cfg.commission_account = commission_account;
+        cfg.grace_epochs = grace_epochs;
+        cfg.validate()?;
+
+        emit!(P2CConfigUpdatedEvent {
+            authority: ctx.accounts.authority.key(),
+        });
+
+        Ok(())
+    }
+
+    /// Closes the P2C config account and reclaims rent.
+    pub fn close_p2c_config(ctx: Context<CloseP2CConfig>) -> Result<()> {
+        CloseP2CConfig::auth(&ctx)?;
+
+        let config_account = &mut ctx.accounts.p2c_config;
+        let authority = &mut ctx.accounts.signer;
+
+        let lamports_to_reclaim = config_account.to_account_info().lamports();
+        **config_account.to_account_info().try_borrow_mut_lamports()? = 0;
+        **authority.try_borrow_mut_lamports()? = authority
+            .lamports()
+            .checked_add(lamports_to_reclaim)
+            .ok_or(ArithmeticError)?;
+
+        emit!(P2CConfigClosedEvent {
             authority: authority.key(),
             lamports_reclaimed: lamports_to_reclaim,
         });
@@ -1091,32 +1167,30 @@ pub mod reward_distribution {
     // ---- P2C subscription escrow ----
 
     /// Manager-only create of a prepaid P2C subscription PDA (`P2C_SUBSCRIPTION` + name + vote).
+    /// Initializes a P2C subscription escrow using [`P2CConfigAccount`] defaults.
+    /// Any payer may create; manager / record / commission / grace / capacity come from config.
     pub fn initialize_p2c_subscription_account(
         ctx: Context<InitializeP2CSubscriptionAccount>,
         name: [u8; 32],
-        record_authority: Pubkey,
-        max_epoch_entries: u8,
-        commission_bps: u16,
-        commission_account: Pubkey,
-        grace_epochs: u8,
         bump: u8,
     ) -> Result<()> {
-        InitializeP2CSubscriptionAccount::auth(
-            &ctx,
-            name,
+        InitializeP2CSubscriptionAccount::auth(&ctx, name)?;
+
+        let (
+            manager_authority,
             record_authority,
             max_epoch_entries,
             commission_bps,
             commission_account,
-        )?;
+            grace_epochs,
+        ) = ctx.accounts.p2c_config.defaults_for_psa();
 
-        let manager = ctx.accounts.manager_authority.key();
         let p2c = &mut ctx.accounts.p2c_subscription_account;
         p2c.populate_on_init(
             name,
             ctx.accounts.validator_vote_account.key(),
-            manager,
-            manager,
+            ctx.accounts.payer.key(),
+            manager_authority,
             record_authority,
             max_epoch_entries,
             commission_bps,
@@ -1129,7 +1203,7 @@ pub mod reward_distribution {
             p2c_subscription_account: p2c.key(),
             name,
             validator_vote: p2c.validator_vote,
-            manager_authority: manager,
+            manager_authority,
             record_authority,
             max_epoch_entries,
             commission_bps,
@@ -1779,6 +1853,76 @@ pub struct CloseTipsAndMevShareConfig<'info> {
 impl CloseTipsAndMevShareConfig<'_> {
     fn auth(ctx: &Context<CloseTipsAndMevShareConfig>) -> Result<()> {
         if ctx.accounts.tips_and_mev_share_config.authority != ctx.accounts.signer.key() {
+            Err(Unauthorized.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Initializes the P2C config singleton.
+#[derive(Accounts)]
+pub struct InitializeP2CConfig<'info> {
+    #[account(
+        init,
+        seeds = [P2CConfigAccount::SEED],
+        bump,
+        payer = initializer,
+        space = P2CConfigAccount::SIZE,
+        rent_exempt = enforce
+    )]
+    pub p2c_config: Account<'info, P2CConfigAccount>,
+
+    pub system_program: Program<'info, System>,
+
+    #[account(mut)]
+    pub initializer: Signer<'info>,
+}
+
+/// Updates fields in the P2C config singleton.
+#[derive(Accounts)]
+pub struct UpdateP2CConfig<'info> {
+    #[account(
+        mut,
+        seeds = [P2CConfigAccount::SEED],
+        bump = p2c_config.bump,
+        rent_exempt = enforce
+    )]
+    pub p2c_config: Account<'info, P2CConfigAccount>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+}
+
+impl UpdateP2CConfig<'_> {
+    fn auth(ctx: &Context<UpdateP2CConfig>) -> Result<()> {
+        if ctx.accounts.p2c_config.authority != ctx.accounts.authority.key() {
+            Err(Unauthorized.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Closes the P2C config account.
+#[derive(Accounts)]
+pub struct CloseP2CConfig<'info> {
+    #[account(
+        mut,
+        close = signer,
+        seeds = [P2CConfigAccount::SEED],
+        bump = p2c_config.bump,
+        rent_exempt = enforce
+    )]
+    pub p2c_config: Account<'info, P2CConfigAccount>,
+
+    #[account(mut)]
+    pub signer: Signer<'info>,
+}
+
+impl CloseP2CConfig<'_> {
+    fn auth(ctx: &Context<CloseP2CConfig>) -> Result<()> {
+        if ctx.accounts.p2c_config.authority != ctx.accounts.signer.key() {
             Err(Unauthorized.into())
         } else {
             Ok(())
@@ -2510,22 +2654,15 @@ impl UpdateEpochConvertedToBlockRewardV1<'_> {
 
 // ---- P2C subscription account contexts ----
 
-/// Manager-only init of prepaid P2C subscription escrow.
+/// Initializes a P2C subscription escrow PDA using [`P2CConfigAccount`] defaults.
+/// Any payer may create; manager / record / commission / grace / capacity come from config.
 #[derive(Accounts)]
-#[instruction(
-    name: [u8; 32],
-    _record_authority: Pubkey,
-    max_epoch_entries: u8,
-    _commission_bps: u16,
-    _commission_account: Pubkey,
-    _grace_epochs: u8,
-    _bump: u8
-)]
+#[instruction(name: [u8; 32], _bump: u8)]
 pub struct InitializeP2CSubscriptionAccount<'info> {
     #[account(
         init,
-        payer = manager_authority,
-        space = P2CSubscriptionAccount::space_for(max_epoch_entries as usize),
+        payer = payer,
+        space = p2c_config.space_for_psa(),
         seeds = [
             P2CSubscriptionAccount::SEED,
             name.as_ref(),
@@ -2536,39 +2673,28 @@ pub struct InitializeP2CSubscriptionAccount<'info> {
     pub p2c_subscription_account: Account<'info, P2CSubscriptionAccount>,
 
     #[account(
-        seeds = [RewardDistributionConfigAccount::SEED],
-        bump = config.bump,
+        seeds = [P2CConfigAccount::SEED],
+        bump = p2c_config.bump,
     )]
-    pub config: Account<'info, RewardDistributionConfigAccount>,
+    pub p2c_config: Account<'info, P2CConfigAccount>,
 
     /// CHECK: vote key used in PDA seeds.
     pub validator_vote_account: AccountInfo<'info>,
 
-    /// Manager creates and funds rent for the PDA (only manager may create).
+    /// Pays rent; stored as `initializer` (residual on close).
     #[account(mut)]
-    pub manager_authority: Signer<'info>,
+    pub payer: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }
 
 impl InitializeP2CSubscriptionAccount<'_> {
-    fn auth(
-        ctx: &Context<InitializeP2CSubscriptionAccount>,
-        name: [u8; 32],
-        record_authority: Pubkey,
-        max_epoch_entries: u8,
-        commission_bps: u16,
-        commission_account: Pubkey,
-    ) -> Result<()> {
-        P2CSubscriptionAccount::validate_init_params(
-            name,
-            ctx.accounts.manager_authority.key(),
-            record_authority,
-            max_epoch_entries,
-            commission_bps,
-            commission_account,
-            ctx.accounts.config.max_commission_bps,
-        )
+    fn auth(ctx: &Context<InitializeP2CSubscriptionAccount>, name: [u8; 32]) -> Result<()> {
+        if name == [0u8; 32] {
+            return Err(ErrorCode::InvalidRevenueName.into());
+        }
+        // Config already validated at init/update; re-check so a corrupted account cannot init.
+        ctx.accounts.p2c_config.validate()
     }
 }
 
@@ -2803,6 +2929,17 @@ pub struct TipsAndMevShareConfigUpdatedEvent {
 
 #[event]
 pub struct TipsAndMevShareConfigClosedEvent {
+    pub authority: Pubkey,
+    pub lamports_reclaimed: u64,
+}
+
+#[event]
+pub struct P2CConfigUpdatedEvent {
+    pub authority: Pubkey,
+}
+
+#[event]
+pub struct P2CConfigClosedEvent {
     pub authority: Pubkey,
     pub lamports_reclaimed: u64,
 }

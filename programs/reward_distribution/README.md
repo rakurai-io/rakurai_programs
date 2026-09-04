@@ -162,17 +162,18 @@ Full product guide: [Post-pack confirmations](https://docs.rakurai.io/docs/servi
 
 ### Working model
 
-1. Rakurai opens a PSA for your service + this validator
-2. **You top up** SOL into that account (any wallet can fund it)
-3. Epoch ends. Rakurai writes the stake snapshot and the fee due
-4. The fee is taken from prepaid: Rakurai’s cut, rest to the validator identity (**block-reward conversion** on by default)
-5. If the balance is too low, top up and try again — or the shortfall is booked as **deficit**
-6. After a short grace, status becomes **Suspended** and **post-pack is stopped** until you clear the deficit
-7. When you leave, after every epoch is paid, leftover prepaid is returned
+1. **Create PSA first** (`rakurai-p2c create-account`) — manager / record / commission / grace / ledger size come from on-chain **`P2CConfigAccount`**. Reserved name `rakurai` is blocked for partner creates.
+2. **You top up** SOL into that account (`fund`, or any wallet transfer)
+3. For MevShare settlement, **create MCA** next (`rakurai-revshare create-account`) — then start post-pack
+4. Epoch ends. Rakurai writes the stake snapshot and the fee due
+5. The fee is taken from prepaid: Rakurai’s cut, rest to the validator identity (**block-reward conversion** on by default)
+6. If the balance is too low, top up and try again — or the shortfall is booked as **deficit**
+7. After a short grace, status becomes **Suspended** and **post-pack is stopped** until you clear the deficit
+8. When you leave, after every epoch is paid, leftover prepaid is returned
 
 ```
-open account
-    → you top up
+create PSA (defaults from P2CConfig) → fund
+    → create MCA (if sharing MevShare) → start post-pack
     → epoch ends → fee calculated from stake
     → fee taken from prepaid (Rakurai + validator identity → high-priority block reward)
     → if empty: grace, then stream stopped until you top up
@@ -193,8 +194,8 @@ The deal is: you **share that profit** with the validator. The MCA is the accoun
 
 ### Working model
 
-1. When you enable post-pack, Rakurai opens an MCA for **your service + this validator**
-2. You keep the key that is allowed to **report** the amount (without it you cannot update the books)
+1. After the **PSA** exists and is funded, create an **MCA** with `rakurai-revshare create-account` (TCA create is not offered in that CLI; reserved name `rakurai` is blocked)
+2. You keep the key that is allowed to **report** the amount (`--record-authority` at create; without it you cannot update the books)
 3. During the epoch, **nothing** is taken automatically — you trade as usual
 4. After the epoch **you report** the shared profit once, then **send that SOL** into the MCA
 5. Rakurai’s commission is taken; the **remainder** is paid to the **validator identity** (**block-reward conversion** on by default)
@@ -245,13 +246,26 @@ pub struct EpochAmountEntryV1 {
 
 ### 6.2. PSA — P2CSubscriptionAccount
 
-**PDA:** `[P2C_SUBSCRIPTION, name[32], vote]`
+**Config PDA:** `[P2C_CONFIG]` → `P2CConfigAccount` (authority + manager / record / max_epoch / commission / grace defaults).
+
+**PSA PDA:** `[P2C_SUBSCRIPTION, name[32], vote]` — anyone may init; fields above are copied from `P2CConfigAccount`.
 
 ```rust
+pub struct P2CConfigAccount {
+    pub authority: Pubkey,                 // update / close this config
+    pub manager_authority: Pubkey,         // copied onto each PSA at init
+    pub record_authority: Pubkey,          // copied onto each PSA at init
+    pub max_epoch_entries: u8,
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
+    pub grace_epochs: u8,
+    pub bump: u8,
+}
+
 pub struct P2CSubscriptionAccount {
     pub name: [u8; 32],
     pub validator_vote: Pubkey,
-    pub initializer: Pubkey,
+    pub initializer: Pubkey,               // paid rent; residual on close
     pub manager_authority: Pubkey,         // record / claim / config / close
     pub record_authority: Pubkey,          // convert-to-block only (not epoch record)
     pub max_epoch_entries: u8,

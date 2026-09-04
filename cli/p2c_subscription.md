@@ -14,11 +14,19 @@ Post-pack confirmations need a **prepaid subscription escrow** (PSA) per service
 
 This CLI is how **you** manage that escrow:
 
+- **Create** the PSA (`create-account`) — defaults from on-chain `P2CConfigAccount`
 - **Read** balance, status, and deficit (`get-account`, `get-all-accounts`)
 - **Fund** prepaid SOL (`fund`, or a plain `solana transfer` to the PDA)
 - **Clear deficit** when underfunded claims left a shortfall (`clear-deficit`)
 
-This is **not** MevShare revenue sharing. Sharing post-pack backrun profit uses an **MCA** and [`rakurai-revshare`](./partner_reward_settlement.md) with `--revenue-kind Mev-share`. Post-pack product overview: [official guide](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations).
+This is **not** MevShare revenue sharing. Sharing post-pack backrun profit uses an **MCA** and [`rakurai-revshare`](./partner_reward_settlement.md). Post-pack product overview: [official guide](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations).
+
+### Post-pack setup order (required)
+
+1. `rakurai-p2c create-account` — open the PSA for your service + validator
+2. `rakurai-p2c fund` — top up prepaid SOL
+3. `rakurai-revshare create-account` — open the MCA for MevShare settlement
+4. **Then** start using post-pack confirmations
 
 ---
 
@@ -58,12 +66,29 @@ Global flags: `-k` / `--keypair`, `-u` / `--url`, `-p` / `--program-id`.
 
 | Command | Purpose |
 |---------|---------|
+| `create-account` | Create PSA (defaults from `P2CConfig`; name `rakurai` blocked) |
 | `get-account` | Show one escrow (balance after rent-exempt, status, deficit if any) |
 | `get-all-accounts` | List escrows for a service `--name` |
 | `fund` | Top up prepaid SOL |
 | `clear-deficit` | Pay down open deficit (restores `Active` when fully cleared) |
 
-### 3.1. `get-account`
+### 3.1. `create-account`
+
+Creates a PSA for `--name` + `--vote-pubkey`. Manager / record / commission / grace / ledger size come from the on-chain **P2C config** (must already exist).
+
+```sh
+rakurai-p2c \
+  --url <RPC_URL> \
+  --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
+  --keypair <PAYER_KEYPAIR> \
+  create-account \
+  --name <SERVICE_NAME> \
+  --vote-pubkey <VALIDATOR_VOTE_PUBKEY>
+```
+
+Pass `--dry-run` to preview without sending.
+
+### 3.2. `get-account`
 
 ```sh
 rakurai-p2c \
@@ -76,7 +101,7 @@ rakurai-p2c \
 
 Add `--detail` for per-epoch ledger rows.
 
-### 3.2. `get-all-accounts`
+### 3.3. `get-all-accounts`
 
 ```sh
 rakurai-p2c \
@@ -86,7 +111,7 @@ rakurai-p2c \
   --name <SERVICE_NAME>
 ```
 
-### 3.3. `fund`
+### 3.4. `fund`
 
 ```sh
 rakurai-p2c \
@@ -101,7 +126,7 @@ rakurai-p2c \
 
 Anyone may also fund the PDA with a plain `solana transfer` into the escrow address.
 
-### 3.4. `clear-deficit`
+### 3.5. `clear-deficit`
 
 Requires `--validator-identity`. Omit `--amount` to clear the full open deficit.
 

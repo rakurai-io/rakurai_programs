@@ -7,16 +7,18 @@ use {
     },
     reward_distribution::{
         sdk::{
-            derive_p2c_subscription_address,
+            derive_p2c_config_address, derive_p2c_subscription_address,
             instruction::{
                 claim_epoch_p2c_subscription_ix, clear_p2c_deficit_ix, fund_p2c_subscription_ix,
-                record_p2c_subscription_ix, ClaimEpochP2CSubscriptionAccounts,
-                ClaimEpochP2CSubscriptionArgs, ClearP2CDeficitAccounts, ClearP2CDeficitArgs,
-                FundP2CSubscriptionAccounts, FundP2CSubscriptionArgs,
-                RecordP2CSubscriptionAccounts, RecordP2CSubscriptionArgs,
+                initialize_p2c_subscription_account_ix, record_p2c_subscription_ix,
+                ClaimEpochP2CSubscriptionAccounts, ClaimEpochP2CSubscriptionArgs,
+                ClearP2CDeficitAccounts, ClearP2CDeficitArgs, FundP2CSubscriptionAccounts,
+                FundP2CSubscriptionArgs, InitializeP2CSubscriptionAccountAccounts,
+                InitializeP2CSubscriptionAccountArgs, RecordP2CSubscriptionAccounts,
+                RecordP2CSubscriptionArgs,
             },
         },
-        state::{P2CSubscriptionAccount, P2CSubscriptionStatus},
+        state::{P2CSubscriptionAccount, P2CSubscriptionStatus, RAKURAI_REVENUE_NAME},
     },
     solana_account_decoder_client_types::UiAccountEncoding,
     solana_rpc_client::rpc_client::RpcClient,
@@ -75,6 +77,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Create a P2C subscription escrow (PSA). Reserved name `rakurai` is blocked.
+    CreateAccount(CreateAccountArgs),
     /// Fetch and display one P2C subscription escrow.
     GetAccount(AccountArgs),
     /// List every P2C account for a service name.
@@ -94,6 +98,19 @@ struct NameArgs {
     /// P2C service name (PDA seed).
     #[arg(long = "name", alias = "revenue-name", required = true)]
     name: String,
+}
+
+#[derive(Args)]
+struct CreateAccountArgs {
+    #[command(flatten)]
+    name: NameArgs,
+
+    #[arg(short = 'v', long = "vote-pubkey", required = true, value_parser = parse_pubkey)]
+    vote_pubkey: Pubkey,
+
+    /// Preview without sending a transaction.
+    #[arg(long, default_value_t = false)]
+    dry_run: bool,
 }
 
 #[derive(Args)]
@@ -188,6 +205,15 @@ fn name_to_bytes(name: &str) -> Result<[u8; 32], String> {
     let mut out = [0u8; 32];
     out[..bytes.len()].copy_from_slice(bytes);
     Ok(out)
+}
+
+fn reject_reserved_rakurai_name(name: &[u8; 32]) -> CliResult {
+    if *name == RAKURAI_REVENUE_NAME {
+        return Err(
+            "reserved name `rakurai` cannot be used to create partner PSA/MCA accounts".into(),
+        );
+    }
+    Ok(())
 }
 
 fn name_to_string(name: &[u8; 32]) -> String {
@@ -321,6 +347,63 @@ fn display_p2c(address: Pubkey, account: &P2CSubscriptionAccount, balance: u64, 
             );
         }
     }
+}
+
+fn process_create_account(
+    rpc_client: Arc<RpcClient>,
+    program_id: Pubkey,
+    keypair_path: &str,
+    args: CreateAccountArgs,
+) -> CliResult {
+    let name = name_to_bytes(&args.name.name)?;
+    reject_reserved_rakurai_name(&name)?;
+
+    let payer = parse_keypair(keypair_path)?;
+    let (p2c_config, _) = derive_p2c_config_address(&program_id);
+    let (address, bump) =
+        derive_p2c_subscription_address(&program_id, &name, &args.vote_pubkey);
+
+    if rpc_client.get_account(&address).is_ok() {
+        return Err(format!("PSA already exists at {address}").into());
+    }
+    if rpc_client.get_account(&p2c_config).is_err() {
+        return Err(format!(
+            "P2C config does not exist at {p2c_config}; Rakurai must initialize P2CConfig first"
+        )
+        .into());
+    }
+
+    print_heading("Create P2C Subscription Escrow (PSA)");
+    print_field("🔗".cyan(), "Pubkey:", address.to_string().bold().green());
+    print_field("📝".cyan(), "Name:", args.name.name.magenta());
+    print_field("🔑".red(), "Vote:", args.vote_pubkey.to_string());
+    print_field("🔑".red(), "Payer:", payer.pubkey().to_string());
+    print_field(
+        "📦".cyan(),
+        "Defaults from:",
+        format!("P2CConfig {p2c_config}"),
+    );
+
+    if args.dry_run {
+        println!(
+            "\n   {}",
+            "Dry run only — no transaction was sent.".yellow()
+        );
+        return Ok(());
+    }
+
+    let instruction = initialize_p2c_subscription_account_ix(
+        program_id,
+        InitializeP2CSubscriptionAccountArgs { name, bump },
+        InitializeP2CSubscriptionAccountAccounts {
+            p2c_subscription_account: address,
+            p2c_config,
+            validator_vote_account: args.vote_pubkey,
+            payer: payer.pubkey(),
+            system_program: system_program::ID,
+        },
+    );
+    sign_and_send_transaction(rpc_client, instruction, &payer)
 }
 
 fn process_get_account(rpc_client: &RpcClient, program_id: Pubkey, args: &AccountArgs) -> CliResult {
@@ -556,6 +639,9 @@ fn main() -> CliResult {
     ));
 
     match cli.command {
+        Commands::CreateAccount(args) => {
+            process_create_account(rpc_client, cli.program_id, &cli.keypair, args)
+        }
         Commands::GetAccount(ref args) => process_get_account(&rpc_client, cli.program_id, args),
         Commands::GetAllAccounts(args) => {
             process_get_all_accounts(&rpc_client, cli.program_id, args)
@@ -578,5 +664,11 @@ mod tests {
         let name = name_to_bytes("p2c-svc").unwrap();
         assert_eq!(&name[..7], b"p2c-svc");
         assert!(name[7..].iter().all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn rejects_reserved_rakurai_name() {
+        let name = name_to_bytes("rakurai").unwrap();
+        assert!(reject_reserved_rakurai_name(&name).is_err());
     }
 }

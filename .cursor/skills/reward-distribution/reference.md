@@ -49,11 +49,14 @@ Source: `programs/reward_distribution/src/` (v0.3.0).
 
 ## P2C subscription escrow (post-pack confirmation prepaid)
 
-PDA: `[P2C_SUBSCRIPTION, name[32], vote]`. Manager-only create/operations for ledger; anyone can fund. Billing for Pack-to-Chain / [post-pack confirmation](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations) Users/Consumers (not MCA MevShare).
+**Config PDA:** `[P2C_CONFIG]` (`P2CConfigAccount`) — manager / record / commission / grace / max_epoch defaults (like TipsAndMevShareConfig for TCA/MCA).
+
+**PSA PDA:** `[P2C_SUBSCRIPTION, name[32], vote]`. Anyone may create; defaults come from config. Anyone can fund. Manager signs ledger record/claim.
 
 | Instruction | Signer | Notes |
 |-------------|--------|-------|
-| initialize_p2c_subscription_account | manager_authority | Pays rent; stores `record_authority` for BR convert |
+| initialize_p2c_config / update_p2c_config / close_p2c_config | config authority | Singleton defaults for PSA init |
+| initialize_p2c_subscription_account | any payer | Copies manager/record/commission/grace/max_epoch from `P2CConfig` |
 | fund_p2c_subscription | any funder | Or plain SOL transfer into PDA |
 | record_p2c_subscription | **manager_authority** | Upload epoch stake + amount_due |
 | claim_epoch_p2c_subscription | **manager_authority** | Pay `min(remaining, free)`; `force_claim` closes with deficit |

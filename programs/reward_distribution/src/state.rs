@@ -411,6 +411,75 @@ impl TipsAndMevShareConfigAccount {
     }
 }
 
+/// Singleton defaults for P2C subscription account initialization (`initialize_p2c_subscription_account`).
+/// Same idea as [`TipsAndMevShareConfigAccount`]: anyone may create a PSA, but manager / record /
+/// commission / grace / ledger capacity come from this config.
+#[account]
+#[derive(Default)]
+pub struct P2CConfigAccount {
+    /// Authorized updater of this config.
+    pub authority: Pubkey,
+    /// PDA bump.
+    pub bump: u8,
+
+    /// Copied onto each PSA at init (claim / record / config / close).
+    pub manager_authority: Pubkey,
+    /// Copied onto each PSA at init (block-reward convert signer).
+    pub record_authority: Pubkey,
+    /// Ledger capacity written to `max_epoch_entries` (1..=32).
+    pub max_epoch_entries: u8,
+    /// Commission on claim (basis points).
+    pub commission_bps: u16,
+    /// Receives the commission portion on claim / deficit clear.
+    pub commission_account: Pubkey,
+    /// Consecutive unpaid finished epochs allowed before Suspended (0 → PSA default 2).
+    pub grace_epochs: u8,
+}
+
+impl P2CConfigAccount {
+    /// PDA seed for the P2C config singleton.
+    pub const SEED: &'static [u8] = b"P2C_CONFIG";
+    /// Account size for rent-exemption.
+    pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
+
+    /// Defaults copied onto a new PSA: `(manager, record, max_epoch, commission_bps, commission_account, grace)`.
+    pub fn defaults_for_psa(&self) -> (Pubkey, Pubkey, u8, u16, Pubkey, u8) {
+        (
+            self.manager_authority,
+            self.record_authority,
+            self.max_epoch_entries,
+            self.commission_bps,
+            self.commission_account,
+            self.grace_epochs,
+        )
+    }
+
+    /// Rent space for a PSA initialized from this config.
+    pub fn space_for_psa(&self) -> usize {
+        P2CSubscriptionAccount::space_for(self.max_epoch_entries as usize)
+    }
+
+    /// Validates authorities, commission, and epoch capacity.
+    pub fn validate(&self) -> Result<()> {
+        if self.authority == Pubkey::default()
+            || self.manager_authority == Pubkey::default()
+            || self.record_authority == Pubkey::default()
+        {
+            return Err(AccountValidationFailure.into());
+        }
+        if self.max_epoch_entries == 0
+            || self.max_epoch_entries as usize > MAX_REVENUE_EPOCH_ENTRIES_CAP
+        {
+            return Err(InvalidRevenueEpochCapacity.into());
+        }
+        validate_commission(
+            self.commission_bps,
+            self.commission_account,
+            MAX_COMMISSION_BPS,
+        )
+    }
+}
+
 impl RewardCollectionAccount {
     /// PDA seed for collection accounts.
     pub const SEED: &'static [u8] = b"REWARD_COLLECTION_ACCOUNT";
@@ -2070,6 +2139,47 @@ mod tests {
         assert_eq!(mev_comm_acc, cfg.mev_share_commission_account);
         assert_eq!(mev_bps, cfg.mev_share_commission_bps);
         assert_eq!(mev_ep, cfg.mev_share_epoch);
+    }
+
+    fn valid_p2c_config() -> P2CConfigAccount {
+        P2CConfigAccount {
+            authority: Pubkey::new_unique(),
+            bump: 255,
+            manager_authority: Pubkey::new_unique(),
+            record_authority: Pubkey::new_unique(),
+            max_epoch_entries: 8,
+            commission_bps: 2_000,
+            commission_account: Pubkey::new_unique(),
+            grace_epochs: 2,
+        }
+    }
+
+    #[test]
+    fn p2c_config_validate_ok() {
+        assert!(valid_p2c_config().validate().is_ok());
+    }
+
+    #[test]
+    fn p2c_config_rejects_bad_epoch_or_authority() {
+        let mut cfg = valid_p2c_config();
+        cfg.max_epoch_entries = 0;
+        assert!(cfg.validate().is_err());
+        cfg.max_epoch_entries = 8;
+        cfg.manager_authority = Pubkey::default();
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn p2c_config_defaults_for_psa() {
+        let cfg = valid_p2c_config();
+        let (mgr, rec, max_e, bps, comm, grace) = cfg.defaults_for_psa();
+        assert_eq!(mgr, cfg.manager_authority);
+        assert_eq!(rec, cfg.record_authority);
+        assert_eq!(max_e, cfg.max_epoch_entries);
+        assert_eq!(bps, cfg.commission_bps);
+        assert_eq!(comm, cfg.commission_account);
+        assert_eq!(grace, cfg.grace_epochs);
+        assert_eq!(cfg.space_for_psa(), P2CSubscriptionAccount::space_for(8));
     }
 
     #[test]
