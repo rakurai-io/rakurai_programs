@@ -4,8 +4,9 @@ use {
     colored::{ColoredString, Colorize},
     rakurai_activation::sdk::derive_activation_account_address,
     rakurai_cli::{
-        get_node_pubkey_from_vote_account, normalize_to_url_if_moniker, parse_keypair,
-        parse_pubkey, sign_and_send_instructions, sign_and_send_transaction,
+        from_anchor_pubkey, get_node_pubkey_from_vote_account, normalize_to_url_if_moniker,
+        parse_keypair, parse_pubkey, sign_and_send_instructions, sign_and_send_transaction,
+        to_anchor_pubkey, to_solana_instruction,
     },
     reward_distribution::{
         sdk::{
@@ -19,16 +20,19 @@ use {
         },
         state::{EpochAmountEntryV1, RevenueKind, RevenueShareAccountV1, RAKURAI_REVENUE_NAME},
     },
+    solana_account::Account,
     solana_account_decoder_client_types::UiAccountEncoding,
+    solana_commitment_config::CommitmentConfig,
+    solana_instruction::Instruction,
+    solana_pubkey::Pubkey,
+    solana_rent::Rent,
     solana_rpc_client::rpc_client::RpcClient,
     solana_rpc_client_api::{
         config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
         filter::{Memcmp, RpcFilterType},
     },
-    solana_sdk::{
-        account::Account, commitment_config::CommitmentConfig, instruction::Instruction,
-        pubkey::Pubkey, rent::Rent, signature::Signer, system_program,
-    },
+    solana_signer::Signer,
+    solana_system_interface::program as system_program,
     std::{error::Error, sync::Arc},
 };
 
@@ -256,7 +260,7 @@ impl VaultAccount {
     }
 
     fn record_authority(&self) -> Pubkey {
-        self.account.record_authority
+        from_anchor_pubkey(self.account.record_authority)
     }
 
     fn share_kind(&self) -> RevenueKind {
@@ -264,7 +268,7 @@ impl VaultAccount {
     }
 
     fn validator_vote(&self) -> Pubkey {
-        self.account.validator_vote
+        from_anchor_pubkey(self.account.validator_vote)
     }
 
     fn revenue_name(&self) -> [u8; 32] {
@@ -400,8 +404,15 @@ fn load_target(
 ) -> CliResult<VaultAccount> {
     let name = name_to_bytes(&target.service.revenue_name)?;
     let kind = target.service.revenue_kind.into();
-    let v1_address =
-        derive_revenue_share_account_v1_address(&program_id, kind, &name, &target.vote_pubkey).0;
+    let v1_address = from_anchor_pubkey(
+        derive_revenue_share_account_v1_address(
+            &to_anchor_pubkey(program_id),
+            kind,
+            &name,
+            &to_anchor_pubkey(target.vote_pubkey),
+        )
+        .0,
+    );
     let raw = rpc_client.get_account(&v1_address).ok();
     decode_v1(v1_address, raw, program_id)?
         .ok_or_else(|| format!("account does not exist at {v1_address}").into())
@@ -429,20 +440,24 @@ fn load_service_accounts(
         RpcFilterType::Memcmp(Memcmp::new_raw_bytes(NAME_OFFSET, name.to_vec())),
     ];
 
-    let accounts = rpc_client.get_program_accounts_with_config(
-        &program_id,
-        RpcProgramAccountsConfig {
-            filters: Some(filters),
-            account_config: RpcAccountInfoConfig {
-                encoding: Some(UiAccountEncoding::Base64),
-                data_slice: None,
-                commitment: Some(CommitmentConfig::confirmed()),
-                min_context_slot: None,
+    let accounts = rpc_client
+        .get_program_ui_accounts_with_config(
+            &program_id,
+            RpcProgramAccountsConfig {
+                filters: Some(filters),
+                account_config: RpcAccountInfoConfig {
+                    encoding: Some(UiAccountEncoding::Base64),
+                    data_slice: None,
+                    commitment: Some(CommitmentConfig::confirmed()),
+                    min_context_slot: None,
+                },
+                with_context: None,
+                sort_results: None,
             },
-            with_context: None,
-            sort_results: None,
-        },
-    )?;
+        )?
+        .into_iter()
+        .filter_map(|(address, ui)| ui.to_account().map(|raw| (address, raw)))
+        .collect::<Vec<_>>();
 
     let mut vaults = Vec::new();
     for (address, raw) in accounts {
@@ -818,14 +833,21 @@ fn process_create_account(
 
     let payer = parse_keypair(keypair_path)?;
     let node_pubkey = get_node_pubkey_from_vote_account(rpc_client.clone(), args.vote_pubkey)?;
-    let (raa, _) = derive_activation_account_address(&args.activation_program_id, &node_pubkey);
-    let (tips_config, _) = derive_tips_and_mev_share_config_address(&program_id);
-    let (mca_address, bump) = derive_revenue_share_account_v1_address(
-        &program_id,
+    let program_id_a = to_anchor_pubkey(program_id);
+    let vote_a = to_anchor_pubkey(args.vote_pubkey);
+    let (raa_a, _) = derive_activation_account_address(
+        &to_anchor_pubkey(args.activation_program_id),
+        &to_anchor_pubkey(node_pubkey),
+    );
+    let (tips_config_a, _) = derive_tips_and_mev_share_config_address(&program_id_a);
+    let (mca_address_a, bump) = derive_revenue_share_account_v1_address(
+        &program_id_a,
         RevenueKind::MevShare,
         &name,
-        &args.vote_pubkey,
+        &vote_a,
     );
+    let raa = from_anchor_pubkey(raa_a);
+    let mca_address = from_anchor_pubkey(mca_address_a);
 
     if rpc_client.get_account(&mca_address).is_ok() {
         return Err(format!("MCA already exists at {mca_address}").into());
@@ -855,23 +877,23 @@ fn process_create_account(
         return Ok(());
     }
 
-    let instruction = initialize_revenue_share_account_v1_ix(
-        program_id,
+    let instruction = to_solana_instruction(initialize_revenue_share_account_v1_ix(
+        program_id_a,
         InitializeRevenueShareAccountV1Args {
             share_kind: RevenueKind::MevShare,
             name,
-            record_authority: args.record_authority,
+            record_authority: to_anchor_pubkey(args.record_authority),
             bump,
         },
         InitializeRevenueShareAccountV1Accounts {
-            revenue_share_account: mca_address,
-            tips_and_mev_share_config: tips_config,
-            rakurai_activation_account: raa,
-            validator_vote_account: args.vote_pubkey,
-            payer: payer.pubkey(),
-            system_program: system_program::ID,
+            revenue_share_account: mca_address_a,
+            tips_and_mev_share_config: tips_config_a,
+            rakurai_activation_account: raa_a,
+            validator_vote_account: vote_a,
+            payer: to_anchor_pubkey(payer.pubkey()),
+            system_program: to_anchor_pubkey(system_program::id()),
         },
-    );
+    ));
     sign_and_send_transaction(rpc_client, instruction, &payer)
 }
 
@@ -1043,16 +1065,16 @@ fn process_record_revenue(
     }
 
     let accounts = RecordRevenueShareAccounts {
-        revenue_share_account: vault.address(),
-        record_authority: authority.pubkey(),
+        revenue_share_account: to_anchor_pubkey(vault.address()),
+        record_authority: to_anchor_pubkey(authority.pubkey()),
     };
-    let instruction = record_revenue_v1_ix(
-        program_id,
+    let instruction = to_solana_instruction(record_revenue_v1_ix(
+        to_anchor_pubkey(program_id),
         RecordRevenueArgs {
             amount: args.amount,
         },
         accounts,
-    );
+    ));
 
     let clock_epoch = rpc_client.get_epoch_info()?.epoch;
 
@@ -1090,15 +1112,15 @@ fn settle_instruction(
         );
     }
 
-    Ok(settle_revenue_ix(
-        program_id,
+    Ok(to_solana_instruction(settle_revenue_ix(
+        to_anchor_pubkey(program_id),
         SettleRevenueArgs { epoch, amount },
         SettleRevenueAccounts {
-            revenue_share_account: vault.address(),
-            payer,
-            system_program: system_program::ID,
+            revenue_share_account: to_anchor_pubkey(vault.address()),
+            payer: to_anchor_pubkey(payer),
+            system_program: to_anchor_pubkey(system_program::id()),
         },
-    ))
+    )))
 }
 
 fn process_transfer(
