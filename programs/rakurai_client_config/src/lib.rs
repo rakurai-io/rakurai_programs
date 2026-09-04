@@ -39,7 +39,7 @@ pub mod rakurai_client_config {
         config.validate(&limits)?;
         let global = &mut ctx.accounts.global;
         global.manager = ctx.accounts.manager.key();
-        global.bump = ctx.bumps.global;
+        global.bump = *ctx.bumps.get("global").unwrap();
         global.limits = limits;
         global.config = config;
         GlobalConfig::realloc_to_fit(
@@ -95,7 +95,7 @@ pub mod rakurai_client_config {
         validator.manager = global.manager;
         validator.operator = operator;
         validator.vote = ctx.accounts.vote.key();
-        validator.bump = ctx.bumps.validator;
+        validator.bump = *ctx.bumps.get("validator").unwrap();
         validator.limits = global.limits;
         validator.config = global.config.clone();
         ValidatorConfig::realloc_to_fit(
@@ -167,7 +167,7 @@ pub mod rakurai_client_config {
         let proposal = &mut ctx.accounts.proposal;
         proposal.vote = ctx.accounts.vote.key();
         proposal.operator = ctx.accounts.operator.key();
-        proposal.bump = ctx.bumps.proposal;
+        proposal.bump = *ctx.bumps.get("proposal").unwrap();
         proposal.limits = limits;
         proposal.config = config;
         ValidatorProposal::realloc_to_fit(
@@ -232,7 +232,7 @@ pub mod rakurai_client_config {
         );
         let staging = &mut ctx.accounts.staging;
         staging.authority = ctx.accounts.manager.key();
-        staging.bump = ctx.bumps.staging;
+        staging.bump = *ctx.bumps.get("staging").unwrap();
         staging.kind = STAGING_KIND_GLOBAL;
         staging.vote = Pubkey::default();
         staging.expected_len = expected_len;
@@ -285,7 +285,7 @@ pub mod rakurai_client_config {
         );
         let staging = &mut ctx.accounts.staging;
         staging.authority = ctx.accounts.manager.key();
-        staging.bump = ctx.bumps.staging;
+        staging.bump = *ctx.bumps.get("staging").unwrap();
         staging.kind = STAGING_KIND_VALIDATOR;
         staging.vote = ctx.accounts.vote.key();
         staging.expected_len = expected_len;
@@ -345,7 +345,7 @@ pub mod rakurai_client_config {
         );
         let staging = &mut ctx.accounts.staging;
         staging.authority = ctx.accounts.operator.key();
-        staging.bump = ctx.bumps.staging;
+        staging.bump = *ctx.bumps.get("staging").unwrap();
         staging.kind = STAGING_KIND_PROPOSAL;
         staging.vote = ctx.accounts.vote.key();
         staging.expected_len = expected_len;

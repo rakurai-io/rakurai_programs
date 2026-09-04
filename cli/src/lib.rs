@@ -1,17 +1,15 @@
 use {
-    anchor_lang::AccountDeserialize,
+    anchor_lang::{prelude::Pubkey as AnchorPubkey, AccountDeserialize},
     bincode::deserialize,
     colored::*,
     rakurai_activation::state::{RakuraiActivationAccount, RakuraiActivationConfigAccount},
+    solana_instruction::{AccountMeta, Instruction},
+    solana_keypair::{read_keypair_file, Keypair},
+    solana_message::Message,
+    solana_pubkey::Pubkey,
     solana_rpc_client::rpc_client::RpcClient,
-    solana_sdk::{
-        instruction::Instruction,
-        message::Message,
-        pubkey::Pubkey,
-        signature::Keypair,
-        signer::{EncodableKey, Signer},
-        transaction::Transaction,
-    },
+    solana_signer::Signer,
+    solana_transaction::Transaction,
     std::{
         io::{self, Write},
         path::Path,
@@ -23,6 +21,36 @@ use {
 pub const MAX_COMMISSION_BPS: u16 = 10_000;
 
 pub mod validator;
+
+/// Convert workspace `Pubkey` to Anchor / `solana-program` 2 `Pubkey`.
+pub fn to_anchor_pubkey(pubkey: Pubkey) -> AnchorPubkey {
+    AnchorPubkey::new_from_array(*pubkey.as_array())
+}
+
+/// Convert Anchor / `solana-program` 2 `Pubkey` to workspace `Pubkey`.
+pub fn from_anchor_pubkey(pubkey: AnchorPubkey) -> Pubkey {
+    Pubkey::new_from_array(pubkey.to_bytes())
+}
+
+/// Rebuild an Anchor program instruction as a workspace `solana-instruction` value.
+pub fn to_solana_instruction(
+    mut ix: anchor_lang::solana_program::instruction::Instruction,
+) -> Instruction {
+    let acct_metas: Vec<AccountMeta> = ix
+        .accounts
+        .iter_mut()
+        .map(|acct| AccountMeta {
+            pubkey: Pubkey::new_from_array(acct.pubkey.to_bytes()),
+            is_signer: acct.is_signer,
+            is_writable: acct.is_writable,
+        })
+        .collect();
+    Instruction::new_with_bytes(
+        Pubkey::new_from_array(ix.program_id.to_bytes()),
+        &ix.data,
+        acct_metas,
+    )
+}
 
 /// Parses and validates a Solana `Pubkey` from a string
 pub fn parse_pubkey(s: &str) -> Result<Pubkey, String> {
@@ -65,7 +93,7 @@ pub fn parse_keypair(path: &str) -> Result<Arc<Keypair>, Box<dyn std::error::Err
         )
         .into());
     }
-    Keypair::read_from_file(path)
+    read_keypair_file(path)
         .map(Arc::new)
         .map_err(|e| format!("Failed to read keypair from file {}: {}", expanded_path, e).into())
 }

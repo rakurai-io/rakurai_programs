@@ -51,3 +51,8 @@ pub fn derive_proposal_staging_address(program_id: &Pubkey, vote: &Pubkey) -> (P
 pub fn name_from_str(s: &str) -> Uuid {
     Uuid::from_str_truncated(s)
 }
+
+pub fn pubkey_from_str(s: &str) -> Result<Pubkey, String> {
+    use std::str::FromStr;
+    Pubkey::from_str(s.trim()).map_err(|_| format!("Invalid pubkey: {s}"))
+}
