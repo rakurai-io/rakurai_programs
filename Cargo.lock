@@ -2273,7 +2273,7 @@ dependencies = [
 
 [[package]]
 name = "rakurai_cli"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "anchor-lang",
  "bincode",
@@ -2281,11 +2281,14 @@ dependencies = [
  "clap",
  "colored",
  "rakurai_activation",
+ "reward_distribution",
  "serde",
  "serde_derive",
  "serde_json",
  "shellexpand",
+ "solana-account-decoder-client-types",
  "solana-rpc-client",
+ "solana-rpc-client-api",
  "solana-sdk",
 ]
 

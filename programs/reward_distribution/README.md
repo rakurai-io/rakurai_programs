@@ -22,7 +22,7 @@ Each **validator**, for each **epoch**, creates a unique PDA called `RewardColle
 - When creating the account, the validator must specify:
   - `reward_merkle_root_authority` — Authority responsible for uploading the Merkle root post-epoch.
   - `block_reward_commission_bps` — Commission (in basis points) that the validator retains from block rewards.
-  - `client_commission_bps` — Commission (in basis points) for client (i.e: Rakurai) from block rewards.
+  - `client_commission_bps` — Commission (in basis points) for client (i.e., Rakurai) from block rewards.
   - `client_commission_account` — Destination account for client commission.
 
 > The values for `client_commission_bps`, `block_reward_commission_bps`, and `client_commission_account` are pulled from the [RakuraiActivationAccount](../rakurai_activation/README.md#4-rakurai-activation-account-creation), a validator-specific PDA (not epoch-specific), part of the [`rakurai_activation`](../rakurai_activation/README.md) program. This account controls whether the validator is running the Rakurai scheduler (and should be charged commission).
@@ -41,7 +41,7 @@ On the first turn of each epoch, the `RewardCollectionAccount` is automatically 
 ### 3.2. Per-turn transfers
 During every leader turn:
 - The **previous turn's block reward** is processed:
-  - **Client commission** → transferred to client (i.e: Rakurai) account.
+  - **Client commission** → transferred to client (i.e., Rakurai) account.
   - **Validator commission** → remains in the validator's identity account.
   - **Staker share** → accumulated into the `RewardCollectionAccount`.
 
@@ -106,25 +106,25 @@ Most tip revenue flows through accounts controlled by the [Rakurai Tip Manager P
 
 Defaults for TCA/MCA init live on the **`TipsAndMevShareConfigAccount`** singleton (`initialize_revenue_share_account_v1`).
 
-Both use the same underlying `RevenueShareAccount`, parameterized by `share_kind ∈ {Tip, MevShare}` and exposed as the type aliases **`TipsCollectionAccount` (TCA)** and **`MevShareCollectionAccount` (MCA)**. Each account is uniquely tied to one validator, one searcher or transaction inclusion service, and one share kind — one TCA or MCA per `(service, validator)` pair.
+Both use the same underlying `RevenueShareAccount`, parameterized by `share_kind ∈ {Tip, MevShare}` and exposed as the type aliases **`TipsCollectionAccount` (TCA)** and **`MevShareCollectionAccount` (MCA)**. Each account is uniquely tied to one validator, one transaction-landing or post-pack service, and one share kind — one TCA or MCA per `(service, validator)` pair.
 
 ### 5.1. Why a Tips Collection Account (TCA)
 
-By default, searchers tip Rakurai's [eight tip accounts](../rakurai_tip_manager/README.md), and `rakurai_tip_manager` drains them automatically. But an external operator/searcher can [register their own custom tip account](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/rakurai_tip_manager_faqs) and agree to share a commission (e.g. 30%) with Rakurai.
+By default, services tip Rakurai's [eight tip accounts](../rakurai_tip_manager/README.md), and `rakurai_tip_manager` drains them automatically. But an external transaction-landing service can [register their own custom tip account](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/rakurai_tip_manager_faqs) and agree to share a commission (e.g. 30%) with Rakurai.
 
 In that case **the tip is received in the external account holder's own account**, not in a Rakurai tip account. So Rakurai can't just drain it — instead the validator **records** the attributed amount on-chain in the per-validator, per-service TCA ledger each leader turn, and after the epoch the external account holder **settles** their agreed share into the Tips Collection Account PDA, from which the commission is deducted.
 
 ### 5.2. Why a MevShare Collection Account (MCA)
 
-Same idea for [post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations) used for MEV / arbitrage. The MEV-share revenue lands in the searcher or transaction inclusion service's own flow, so there is no account Rakurai can drain. Rakurai tracks the agreed revenue share on-chain in a per-validator, per-service MCA.
+Same idea for [post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations). The MevShare revenue lands in the transaction-landing or post-pack service's own flow, so there is no account Rakurai can drain. When you start using **post-pack**, Rakurai creates an MCA for your service (one per service per validator). That MCA is where you **record** MevShare revenue and **transfer** the corresponding SOL. You **must hold the MCA `record_authority`** — only that keypair can call `record_revenue` / Partner CLI `record-revenue`.
 
-Unlike TCA, **nothing is recorded in the MCA during leader turns**. After the epoch ends, the service **records** the owed amount in the MCA **once** via `record_revenue`, then **settles** by transferring SOL into the PDA.
+Unlike TCA, **nothing is recorded in the MCA during leader turns**. After the epoch ends, the service **records** the owed amount in the MCA **once** via `record_revenue`, then **settles** by transferring SOL into the PDA. See the [Partner Tip and MevShare Revenue Settlement CLI](../../cli/partner_reward_settlement.md#mca-setup-post-pack).
 
 ### 5.3. How Tip and MevShare are distributed
 
 **TCA (custom tips):** the validator **records** attributed amounts in the TCA ledger on each leader turn. After the epoch ends, the tip account holder **settles** by transferring SOL into the TCA, then `claim_revenue` distributes it.
 
-**MCA (post-pack / MevShare):** nothing is recorded during leader turns. After the epoch ends, the service **records** the owed amount in the MCA **once**, **settles** by transferring SOL into the MCA, then `claim_revenue` distributes it.
+**MCA (post-pack / MevShare):** when post-pack starts, Rakurai creates the MCA; the service must hold `record_authority`. Nothing is recorded during leader turns. After the epoch ends, the service **records** the owed amount in the MCA **once**, **settles** by transferring SOL into the MCA, then `claim_revenue` distributes it.
 
 Once settled (TCA or MCA), revenue is split in two parts:
  - **Client** (i.e. Rakurai): share of the claim goes to `commission_account` at `commission_bps`.
@@ -133,7 +133,9 @@ Once settled (TCA or MCA), revenue is split in two parts:
 
 **Rakurai vault claim exception:** when `share_kind == Tip` and `name == RAKURAI_REVENUE_NAME`, both `claim_revenue` and `claim_revenue_v1` force effective `commission_bps = 0`. Tip-manager drain (`change_tip_receiver_v1` / `v2`) already took Rakurai’s cut using tip-manager global commission (previous leader’s TCA terms); the vault only holds the validator share. Applying commission again at claim would double-charge. Partner / custom TCA and MCA vaults still apply `commission_bps` at claim.
 
-**Note:** if the external searcher, trader, or transaction inclusion service does not share revenue within 2 epochs, they will be disabled and will not be able to get custom tip prioritization or post-pack confirmation.
+**Note:** If a service does not record and settle within 2 epochs, post-pack access and MCA prioritization stop after a two-epoch grace period.
+
+Partners settle TCA/MCA balances with the [Partner Tip and MevShare Revenue Settlement CLI](../../cli/partner_reward_settlement.md) (`rakurai-revshare`: `get-account`, `get-all-accounts`, `get-pending-record`, `get-all-pending-records`, `record-revenue` for MCA, `transfer`, `transfer-all`).
 
 ### 5.4. Flow
 
@@ -161,7 +163,9 @@ Instructions: `initialize_tips_and_mev_share_config`, `update_tips_and_mev_share
 
 ### 5.6. RevenueShareAccount / RevenueShareAccountV1 structure
 
-**Legacy** `RevenueShareAccount` (aliases TCA / MCA) and **V1** `RevenueShareAccountV1` (aliases TCAV1 / MCAV1) share the same header fields; V1 adds per-entry `transferred_amount` and account-level `deficit`. See the [Reward Distribution IDL](./idl/reward_distribution.json).
+**Legacy** `RevenueShareAccount` (aliases TCA / MCA) and **V1** `RevenueShareAccountV1` (aliases TCAV1 / MCAV1) share the same header fields. V1 adds per-entry `transferred_amount` (via `RevenueLedgerV1` / `EpochAmountEntryV1`) and account-level `deficit`. See the [Reward Distribution IDL](./idl/reward_distribution.json).
+
+**Shared header fields** (both layouts):
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -174,30 +178,38 @@ Instructions: `initialize_tips_and_mev_share_config`, `update_tips_and_mev_share
 | `max_epoch_entries` | `u8` | Max distinct epochs stored in `ledger` (up to 32) |
 | `commission_bps` | `u16` | Commission on claims; remainder goes to validator. Forced to 0 at claim when `name == RAKURAI_REVENUE_NAME` (Rakurai tip commission was already taken on tip-manager drain) |
 | `commission_account` | `pubkey` | Receives the commission portion on claim |
-| `block_reward_conversion_enabled` | `bool` | Whether claimed amounts can be converted into block rewards |
-| `ledger` | `RevenueLedger` | Per-epoch attributed amounts |
-| `deficit` | `u64` | Cumulative unpaid shortfall from underfunded claims; manager adjusts via `update_deficit` |
+| `block_reward_conversion_enabled` | `bool` | When true, claimed amounts can be marked converted via `update_epoch_converted_to_block_reward` |
 | `bump` | `u8` | PDA bump seed |
 
-**`RevenueLedger` and `EpochAmountEntry`:**
+**Legacy-only vs V1-only:**
+
+| Field | Legacy (`RevenueShareAccount`) | V1 (`RevenueShareAccountV1`) |
+|-------|--------------------------------|------------------------------|
+| `ledger` | `RevenueLedger` → `Vec<EpochAmountEntry>` | `RevenueLedgerV1` → `Vec<EpochAmountEntryV1>` |
+| `deficit` | — | `u64` cumulative unpaid shortfall; manager adjusts via `update_deficit` |
+
+**Ledger entry layouts:**
 
 ```rust
-pub struct RevenueLedger {
-    pub entries: Vec<EpochAmountEntry>,
+// Legacy — no transferred_amount
+pub struct EpochAmountEntry {
+    pub epoch: u64,
+    pub amount: u64,                  // attributed lamports (updated by record_revenue)
+    pub claimed: bool,
+    pub block_reward_converted: bool,
 }
 
-pub struct EpochAmountEntry {
-    pub epoch: u64,                   // epoch this entry belongs to
+// V1 — settle tracking
+pub struct EpochAmountEntryV1 {
+    pub epoch: u64,
     pub amount: u64,                  // attributed lamports (updated by record_revenue)
     pub transferred_amount: u64,      // settle_revenue, or auto on record_revenue for Rakurai tip TCA
-    pub claimed: bool,                // true after claim_revenue succeeds
-    pub block_reward_converted: bool, // whether converted to block rewards
+    pub claimed: bool,
+    pub block_reward_converted: bool,
 }
 ```
 
-Account-level `deficit: u64` (below the ledger) accumulates shortfalls when claim pays less than recorded (`amount - transferred`); manager adjusts via `update_deficit` with [`DeficitUpdate`].
-
-**Example ledger after `record_revenue` + partial settle:**
+**Example V1 ledger after `record_revenue` + partial settle:**
 
 ```json
 {
@@ -211,7 +223,7 @@ Account-level `deficit: u64` (below the ledger) accumulates shortfalls when clai
 }
 ```
 
-`record_revenue` updates `amount`. For the **Rakurai tip TCA** only, it also credits `transferred_amount` (tip-manager deposits SOL in the same drain tx). Non-Rakurai vaults call `settle_revenue` (system-transfer + credit) or `update_transferred_amount` (credit only, after a direct SOL send). `claim_revenue` pays `transferred_amount`, accrues `deficit` when underfunded (`amount > transferred`), and sets `claimed = true`.
+`record_revenue` / `record_revenue_v1` updates `amount`. For the **Rakurai tip TCAV1** only, `record_revenue_v1` also credits `transferred_amount` (tip-manager deposits SOL in the same drain tx). Non-Rakurai V1 vaults call `settle_revenue` (system-transfer + credit) or `update_transferred_amount` (credit only, after a direct SOL send). `claim_revenue_v1` pays `transferred_amount`, accrues `deficit` when underfunded (`amount > transferred`), and sets `claimed = true`. Legacy `claim_revenue` pays recorded `amount` and has no `deficit` / `transferred_amount`.
 
 ### 5.7. How to check status
 
