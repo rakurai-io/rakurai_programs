@@ -144,8 +144,10 @@ Partners settle TCA/MCA balances with the [Partner Tip and MevShare Revenue Sett
 | **Config** | RD config + full init args | One-time `initialize_tips_and_mev_share_config` |
 | **Init** | `initialize_revenue_share_account` | `initialize_revenue_share_account_v1` |
 | **Record** | `record_revenue` (amount only) | `record_revenue_v1` (Rakurai tip also credits `transferred_amount`) |
+| **Record+transfer** | N/A | `record_and_transfer` (record + settle current epoch in one ix; non-Rakurai tip) |
 | **Settle** | N/A (claim needs vault lamports ≥ `amount`) | `settle_revenue` / `update_transferred_amount` |
 | **Claim** | `claim_revenue` (pays `amount`) | `claim_revenue_v1` (pays `transferred_amount`; deficit; Rakurai name skips commission) |
+| **Clear deficit** | — | `clear_deficit_v1` (funder transfers; deduct up to deficit → commission + identity) |
 | **Close** | `close_revenue_share_account` | `close_revenue_share_account_v1` |
 
 ### 5.5. TipsAndMevShareConfigAccount
@@ -186,7 +188,7 @@ Instructions: `initialize_tips_and_mev_share_config`, `update_tips_and_mev_share
 | Field | Legacy (`RevenueShareAccount`) | V1 (`RevenueShareAccountV1`) |
 |-------|--------------------------------|------------------------------|
 | `ledger` | `RevenueLedger` → `Vec<EpochAmountEntry>` | `RevenueLedgerV1` → `Vec<EpochAmountEntryV1>` |
-| `deficit` | — | `u64` cumulative unpaid shortfall; manager adjusts via `update_deficit` |
+| `deficit` | — | `u64` cumulative unpaid shortfall; manager write-off via `update_deficit`; funder clear via `clear_deficit_v1` |
 
 **Ledger entry layouts:**
 
@@ -223,7 +225,7 @@ pub struct EpochAmountEntryV1 {
 }
 ```
 
-`record_revenue` / `record_revenue_v1` updates `amount`. For the **Rakurai tip TCAV1** only, `record_revenue_v1` also credits `transferred_amount` (tip-manager deposits SOL in the same drain tx). Non-Rakurai V1 vaults call `settle_revenue` (system-transfer + credit) or `update_transferred_amount` (credit only, after a direct SOL send). `claim_revenue_v1` pays `transferred_amount`, accrues `deficit` when underfunded (`amount > transferred`), and sets `claimed = true`. Legacy `claim_revenue` pays recorded `amount` and has no `deficit` / `transferred_amount`.
+`record_revenue` / `record_revenue_v1` updates `amount`. For the **Rakurai tip TCAV1** only, `record_revenue_v1` also credits `transferred_amount` (tip-manager deposits SOL in the same drain tx). Non-Rakurai V1 vaults call `settle_revenue` (system-transfer + credit) or `update_transferred_amount` (credit only, after a direct SOL send). `claim_revenue_v1` pays `transferred_amount`, accrues `deficit` when underfunded (`amount > transferred`), and sets `claimed = true`. Later shortfalls can be settled with `clear_deficit_v1` (funder transfers; vault deducts up to deficit and pays commission + identity). Legacy `claim_revenue` pays recorded `amount` and has no `deficit` / `transferred_amount`.
 
 ### 5.7. How to check status
 
@@ -257,3 +259,30 @@ SDK: `derive_revenue_share_account_address` (legacy), `derive_revenue_share_acco
 Legacy and V1 vaults coexist. Each is created once per `(seed space, share_kind, name, vote)`. Manager authority closes them when unused.
 
 ---
+
+## 7. P2C subscription escrow
+
+Prepaid fee escrow for Pack-to-Chain (**P2C**) / **post-pack confirmation** billing, keyed as `[P2C_SUBSCRIPTION, name, vote]`.
+
+**Model:** every User/Consumer who wants P2C pays a **subscription fee based on SOL stake**. They **fund** prepaid SOL into the escrow. After each epoch the manager **uploads stake** (verifiable from any public source) and the calculated **`amount_due`**, then **claims** (deducts) from prepaid. If fees stay unpaid past grace, status becomes **`Suspended`** and **P2C is stopped**. The subscription can be **closed** once all epochs are claimed; remaining funds + rent return to the **initializer**. (Partner **MCA MevShare** settlement after post-pack is separate — see §5 and the [Partner Tip and MevShare Revenue Settlement CLI](../../cli/partner_reward_settlement.md). User-facing walkthrough: [P2C Subscription CLI](../../cli/p2c_subscription.md).)
+
+| Step | Instruction | Auth |
+|------|-------------|------|
+| Init | `initialize_p2c_subscription_account` | **manager** (signs + pays rent); sets `record_authority` arg (storage for BR convert) |
+| Fund | `fund_p2c_subscription` (or system transfer into PDA) | any funder |
+| Record | `record_p2c_subscription` | **manager** (once per epoch: stake snapshot + `amount_due`) |
+| Claim | `claim_epoch_p2c_subscription` | **manager** |
+| Clear deficit | `clear_p2c_deficit` | any funder (transfer in, program deducts + pays commission/identity) |
+| BR flag | `update_p2c_epoch_converted_to_block_reward` | manager **or** `record_authority` **or** validator identity |
+| Config / deficit write-off / close | `update_p2c_subscription_config`, `update_p2c_deficit`, `close_p2c_subscription_account` | **manager** |
+
+- **Stake pricing**: `stake` on each ledger row is an off-chain snapshot used to compute `amount_due`. Anyone can verify stake independently (RPC / explorers / stake accounts); the on-chain value is the priced snapshot for that epoch.
+- **Claim**: pays `min(remaining due, free prepaid)` to commission + identity; notes paid in `amount_deducted`.
+  - Full pay → marks `claimed`, streak reset → `Active`.
+  - Underfunded without `force_claim` → leaves epoch open (top up and claim again).
+  - `force_claim=true` when underfunded → marks `claimed`, books shortfall as **`deficit`** + grace (`Active` / `InGrace` / `Suspended`, default grace = 2). **`Suspended` ⇒ P2C access stopped** until deficit is cleared.
+- **Clear deficit**: `clear_p2c_deficit(amount)` — funder transfers; program deducts up to open deficit, splits to commission + validator identity, reduces `deficit`. Clearing to 0 resets grace to `Active`.
+- **Close**: all ledger epochs must be claimed; residual prepaid SOL + rent → **initializer**. Manager closes; user coordinates close when they want remaining funds returned.
+- **Convert-to-block** same post-claim flag as TCA/MCA.
+
+`record_authority` is still stored on the account (set at init / config) for convert-to-block only — it does **not** sign epoch records.

@@ -91,8 +91,7 @@ pub mod rakurai_activation {
         activation_account.hash = None;
         activation_account.proposer = Some(ctx.accounts.signer.key());
         activation_account.block_reward_commission_bps = block_reward_commission_bps;
-        activation_account.client_commission_bps =
-            ctx.accounts.config.client_commission_bps;
+        activation_account.client_commission_bps = ctx.accounts.config.client_commission_bps;
         activation_account.validator_authority = ctx.accounts.signer.key();
         activation_account.bump = bump;
         activation_account.validate()?;

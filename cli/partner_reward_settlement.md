@@ -6,7 +6,7 @@ Inspect, record (MCA), and settle custom tip and post-pack revenue in validator 
 
 **Product:** Partner Tip and MevShare Revenue Settlement CLI  
 
-For install, see the [CLI overview](./README.md#2-installation). Program details: [Tip and MevShare accounts](../programs/reward_distribution/README.md#5-tip-and-mevshare-collection-accounts).
+For install, see the [CLI overview](./README.md#2-installation). For **P2C / post-pack confirmation prepaid subscription** (Users/Consumers), use **`rakurai-p2c`** — see [P2C Subscription CLI](./p2c_subscription.md). Program details: [Tip and MevShare accounts](../programs/reward_distribution/README.md#5-tip-and-mevshare-collection-accounts).
 
 ---
 
