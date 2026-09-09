@@ -1,19 +1,27 @@
+#![allow(unexpected_cfgs)]
 use anchor_lang::prelude::*;
 #[cfg(not(feature = "no-entrypoint"))]
 use solana_security_txt::security_txt;
 
 use crate::{
-    state::{ClaimStatus, MerkleRoot, RewardCollectionAccount, RewardDistributionConfigAccount},
-    ErrorCode::{InvalidBlockBuilderCommissionAccount, Unauthorized},
+    state::{
+        validate_commission, ClaimStatus, MerkleRoot, RevenueKind, RevenueShareAccount,
+        RewardCollectionAccount, RewardDistributionConfigAccount,
+    },
+    ErrorCode::{InvalidClientCommissionAccount, RakuraiSchedulerNotEnabled, Unauthorized},
 };
+use rakurai_activation::state::RakuraiActivationAccount;
 
 #[cfg(not(feature = "no-entrypoint"))]
 security_txt! {
     // Required fields
     name: "Rakurai Block Reward Distribution Program",
     project_url: "https://rakurai.io/",
-    contacts: "https://rakurai.io/company",
-    policy: "https://rakurai.io/faqs"
+    contacts: "link:https://rakurai.io/company,link:https://discord.gg/QzqQVBAMpp,link:https://t.me/rakurai_official,link:https://github.com/rakurai-io/rakurai-validator,link:https://docs.rakurai.io",
+    policy: "https://rakurai.io/faqs",
+    // Optional fields
+    preferred_languages: "en",
+    source_code: "https://github.com/rakurai-io/rakurai_programs"
 }
 pub mod merkle_proof;
 pub mod sdk;
@@ -23,7 +31,6 @@ declare_id!("A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB");
 
 #[program]
 pub mod reward_distribution {
-    use rakurai_vote_state::VoteState;
     use solana_program::{program::invoke, system_instruction};
 
     use super::*;
@@ -35,79 +42,72 @@ pub mod reward_distribution {
         authority: Pubkey,
         num_epochs_valid: u64,
         max_commission_bps: u16,
-        block_builder_commission_on_mev_commission_enabled: bool,
+        client_commission_on_mev_commission_enabled: bool,
+        revenue_manager_authority: Pubkey,
         bump: u8,
     ) -> Result<()> {
         let cfg = &mut ctx.accounts.config;
         cfg.authority = authority;
         cfg.num_epochs_valid = num_epochs_valid;
         cfg.max_commission_bps = max_commission_bps;
-        cfg.set_mev_commission_enabled(block_builder_commission_on_mev_commission_enabled);
+        cfg.set_mev_commission_enabled(client_commission_on_mev_commission_enabled);
+        cfg.revenue_manager_authority = Some(revenue_manager_authority); // slot reserved in SIZE; set later via update_config
         cfg.bump = bump;
         cfg.validate()?;
 
         Ok(())
     }
 
-    /// Initialize a new [RewardCollectionAccount] associated with the given validator vote key
-    /// and current epoch.
+    /// Initialize a new [RewardCollectionAccount] (legacy account list).
+    /// Prefer `initialize_reward_collection_account_v1` for enabled RAA validation.
     pub fn initialize_reward_collection_account(
         ctx: Context<InitializeRewardCollectionAccount>,
         merkle_root_upload_authority: Pubkey,
         block_reward_commission_bps: u16,
-        block_builder_commission_account: Pubkey,
-        block_builder_commission_bps: u16,
+        client_commission_account: Pubkey,
+        client_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
-        if block_reward_commission_bps > ctx.accounts.config.max_commission_bps
-            || block_builder_commission_bps > ctx.accounts.config.max_commission_bps
-        {
-            return Err(MaxCommissionFeeBpsExceeded.into());
-        }
+        initialize_reward_collection_account_inner(
+            &ctx.accounts.config,
+            ctx.accounts.reward_collection_account.key(),
+            &mut ctx.accounts.reward_collection_account,
+            &ctx.accounts.validator_vote_account,
+            ctx.accounts.signer.key,
+            merkle_root_upload_authority,
+            block_reward_commission_bps,
+            client_commission_account,
+            client_commission_bps,
+            bump,
+        )
+    }
 
-        if ctx.accounts.validator_vote_account.owner != &solana_program::vote::program::id() {
-            return Err(Unauthorized.into());
-        }
-
-        let node_pubkey =
-            VoteState::deserialize_node_pubkey(&ctx.accounts.validator_vote_account).unwrap();
-        if &node_pubkey != ctx.accounts.signer.key {
-            return Err(Unauthorized.into());
-        }
-
-        let current_epoch = Clock::get()?.epoch;
-
-        let reward_collection_acc = &mut ctx.accounts.reward_collection_account;
-        reward_collection_acc.validator_vote_account = ctx.accounts.validator_vote_account.key();
-        reward_collection_acc.creation_epoch = current_epoch;
-        reward_collection_acc.block_reward_commission_bps = block_reward_commission_bps;
-        reward_collection_acc.block_builder_commission_bps = block_builder_commission_bps;
-        reward_collection_acc.block_builder_commission_account = block_builder_commission_account;
-        reward_collection_acc.merkle_root_upload_authority = merkle_root_upload_authority;
-        reward_collection_acc.merkle_root = None;
-        reward_collection_acc.expires_at = current_epoch
-            .checked_add(ctx.accounts.config.num_epochs_valid)
-            .ok_or(ArithmeticError)?;
-        reward_collection_acc.initializer = ctx.accounts.signer.key();
-        reward_collection_acc.bump = bump;
-
-        // Initialize MEV commission based on config setting
-        if ctx.accounts.config.is_mev_commission_enabled() {
-            reward_collection_acc.block_builder_mev_commission_deducted = Some(0);
-        } else {
-            reward_collection_acc.block_builder_mev_commission_deducted = None;
-        }
-
-        reward_collection_acc.validate()?;
-
-        emit!(RewardCollectionAccountInitializedEvent {
-            reward_collection_account: reward_collection_acc.key(),
-        });
-
-        Ok(())
+    /// Initialize a new [RewardCollectionAccount] with Rakurai activation checks.
+    pub fn initialize_reward_collection_account_v1(
+        ctx: Context<InitializeRewardCollectionAccountV1>,
+        merkle_root_upload_authority: Pubkey,
+        block_reward_commission_bps: u16,
+        client_commission_account: Pubkey,
+        client_commission_bps: u16,
+        bump: u8,
+    ) -> Result<()> {
+        initialize_reward_collection_account_inner(
+            &ctx.accounts.config,
+            ctx.accounts.reward_collection_account.key(),
+            &mut ctx.accounts.reward_collection_account,
+            &ctx.accounts.validator_vote_account,
+            ctx.accounts.signer.key,
+            merkle_root_upload_authority,
+            block_reward_commission_bps,
+            client_commission_account,
+            client_commission_bps,
+            bump,
+        )
     }
 
     /// Update config fields. Only the [RewardDistributionConfigAccount] authority can invoke this.
+    /// Grows legacy config accounts to the current [`RewardDistributionConfigAccount::SIZE`]
+    /// (e.g. to persist `revenue_manager_authority`) before applying updates.
     pub fn update_config(
         ctx: Context<UpdateConfig>,
         new_config: RewardDistributionConfigAccount,
@@ -119,6 +119,7 @@ pub mod reward_distribution {
         config.num_epochs_valid = new_config.num_epochs_valid;
         config.max_commission_bps = new_config.max_commission_bps;
         config.set_mev_commission_enabled(new_config.is_mev_commission_enabled());
+        config.revenue_manager_authority = new_config.revenue_manager_authority;
         config.validate()?;
 
         emit!(ConfigUpdatedEvent {
@@ -179,6 +180,14 @@ pub mod reward_distribution {
             return Err(ExpiredRewardCollectionAccount.into());
         }
 
+        let account_info = reward_collection_acc.to_account_info();
+        let min_rent = Rent::get()?.minimum_balance(account_info.data_len());
+        let spendable =
+            RewardCollectionAccount::spendable_lamports(account_info.lamports(), min_rent)?;
+        if max_total_claim > spendable {
+            return Err(ExceedsMaxClaim.into());
+        }
+
         reward_collection_acc.merkle_root = Some(MerkleRoot {
             root,
             max_total_claim,
@@ -196,7 +205,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Transfers staker rewards to the [RewardCollectionAccount] and block builder commission to commission account from `total_rewards`.
+    /// Transfers staker rewards to the [RewardCollectionAccount] and client commission to commission account from `total_rewards`.
     /// Invoked every leader turn.
     pub fn transfer_staker_rewards(
         ctx: Context<TransferStakerRewards>,
@@ -210,30 +219,28 @@ pub mod reward_distribution {
 
         let reward_collection_acc = &ctx.accounts.reward_collection_account;
 
-        // Calculate block builder commission (basis points)
-        let block_builder_commission_amount = total_rewards
-            .checked_mul(reward_collection_acc.block_builder_commission_bps as u64)
+        // Calculate client commission (basis points)
+        let client_commission_amount = total_rewards
+            .checked_mul(reward_collection_acc.client_commission_bps as u64)
             .ok_or(ArithmeticError)?
             .checked_div(10_000)
             .ok_or(ArithmeticError)?;
 
         let staker_rewards = total_rewards
-            .checked_sub(block_builder_commission_amount)
+            .checked_sub(client_commission_amount)
             .ok_or(ArithmeticError)?;
 
-        // Transfer block builder commission if applicable
-        if block_builder_commission_amount > 0 {
+        // Transfer client commission if applicable
+        if client_commission_amount > 0 {
             invoke(
                 &system_instruction::transfer(
                     &ctx.accounts.signer.key(),
-                    &ctx.accounts.block_builder_commission_account.key(),
-                    block_builder_commission_amount,
+                    &ctx.accounts.client_commission_account.key(),
+                    client_commission_amount,
                 ),
                 &[
                     ctx.accounts.signer.to_account_info(),
-                    ctx.accounts
-                        .block_builder_commission_account
-                        .to_account_info(),
+                    ctx.accounts.client_commission_account.to_account_info(),
                     ctx.accounts.system_program.to_account_info(),
                 ],
             )?;
@@ -257,19 +264,19 @@ pub mod reward_distribution {
 
         emit!(StakerRewardsTransferredEvent {
             staker_rewards,
-            block_builder_commission_amount,
+            client_commission_amount,
             total_rewards,
         });
 
         Ok(())
     }
 
-    /// Deducts block builder commission from MEV rewards earned by the validator.
-    pub fn transfer_block_builder_commission_on_mev_commission(
-        ctx: Context<TransferBlockBuilderCommissionOnMevCommission>,
+    /// Deducts client commission from MEV rewards earned by the validator.
+    pub fn transfer_client_commission_on_mev_commission(
+        ctx: Context<TransferClientCommissionOnMevCommission>,
         mev_rewards: u64,
     ) -> Result<()> {
-        TransferBlockBuilderCommissionOnMevCommission::auth(&ctx)?;
+        TransferClientCommissionOnMevCommission::auth(&ctx)?;
 
         if mev_rewards == 0 {
             return Err(RewardsTooLow.into());
@@ -278,44 +285,41 @@ pub mod reward_distribution {
         let reward_collection_acc = &mut ctx.accounts.reward_collection_account;
 
         // Prevent double deduction
-        if let Some(amount) = reward_collection_acc.block_builder_mev_commission_deducted {
+        if let Some(amount) = reward_collection_acc.client_mev_commission_deducted {
             if amount > 0 {
                 return Err(MevCommissionAlreadyDeducted.into());
             }
         }
 
-        // Calculate block builder commission
-        let block_builder_mev_commission = mev_rewards
-            .checked_mul(reward_collection_acc.block_builder_commission_bps as u64)
+        // Calculate client commission
+        let client_mev_commission = mev_rewards
+            .checked_mul(reward_collection_acc.client_commission_bps as u64)
             .ok_or(ArithmeticError)?
             .checked_div(10_000)
             .ok_or(ArithmeticError)?;
 
         // Transfer commission if > 0
-        if block_builder_mev_commission > 0 {
+        if client_mev_commission > 0 {
             invoke(
                 &system_instruction::transfer(
                     &ctx.accounts.signer.key(),
-                    &ctx.accounts.block_builder_commission_account.key(),
-                    block_builder_mev_commission,
+                    &ctx.accounts.client_commission_account.key(),
+                    client_mev_commission,
                 ),
                 &[
                     ctx.accounts.signer.to_account_info(),
-                    ctx.accounts
-                        .block_builder_commission_account
-                        .to_account_info(),
+                    ctx.accounts.client_commission_account.to_account_info(),
                     ctx.accounts.system_program.to_account_info(),
                 ],
             )?;
 
-            reward_collection_acc.block_builder_mev_commission_deducted =
-                Some(block_builder_mev_commission);
+            reward_collection_acc.client_mev_commission_deducted = Some(client_mev_commission);
         }
 
         // Emit event
         emit!(MevCommissionTransferredEvent {
             mev_rewards,
-            commission_amount: block_builder_mev_commission,
+            commission_amount: client_mev_commission,
         });
 
         Ok(())
@@ -443,6 +447,223 @@ pub mod reward_distribution {
 
         Ok(())
     }
+
+    /// Initializes a revenue share vault (tip or mev-share) for a validator.
+    pub fn initialize_revenue_share_account(
+        ctx: Context<InitializeRevenueShareAccount>,
+        share_kind: RevenueKind,
+        name: [u8; 32],
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        bump: u8,
+    ) -> Result<()> {
+        InitializeRevenueShareAccount::auth(
+            &ctx,
+            name,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+        )?;
+
+        let manager_authority = ctx.accounts.config.require_revenue_manager_authority()?;
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        revenue_share_account.populate_on_init(
+            share_kind,
+            name,
+            ctx.accounts.validator_vote_account.key(),
+            ctx.accounts.payer.key(),
+            manager_authority,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+            bump,
+        )?;
+
+        emit!(RevenueShareAccountInitializedEvent {
+            revenue_share_account: revenue_share_account.key(),
+            share_kind,
+            name,
+            validator_vote: revenue_share_account.validator_vote,
+            initializer: ctx.accounts.payer.key(),
+            manager_authority,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+        });
+
+        Ok(())
+    }
+
+    /// Records revenue for the current epoch (accounting only).
+    pub fn record_revenue(ctx: Context<RecordRevenue>, amount: u64) -> Result<()> {
+        RecordRevenue::auth(&ctx)?;
+
+        let epoch = Clock::get()?.epoch;
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        revenue_share_account.record_revenue(epoch, amount)?;
+
+        emit!(RevenueRecordedEvent {
+            revenue_share_account: revenue_share_account.key(),
+            share_kind: revenue_share_account.share_kind,
+            epoch,
+            amount,
+        });
+
+        Ok(())
+    }
+
+    /// Claims revenue for a completed epoch.
+    pub fn claim_revenue(ctx: Context<ClaimRevenue>, epoch: u64) -> Result<()> {
+        ClaimRevenue::auth(&ctx)?;
+
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        let share_kind = revenue_share_account.share_kind;
+        let commission_bps = revenue_share_account.commission_bps;
+        let revenue_share_account_info = revenue_share_account.to_account_info();
+        let (commission_amount, validator_amount) = RevenueShareAccount::claim_revenue(
+            &mut revenue_share_account.ledger,
+            revenue_share_account_info,
+            ctx.accounts.commission_account.to_account_info(),
+            ctx.accounts.validator_identity.to_account_info(),
+            commission_bps,
+            epoch,
+        )?;
+
+        emit!(RevenueClaimedEvent {
+            revenue_share_account: revenue_share_account.key(),
+            share_kind,
+            validator_identity: ctx.accounts.validator_identity.key(),
+            commission_account: ctx.accounts.commission_account.key(),
+            epoch,
+            commission_amount,
+            validator_amount,
+        });
+
+        Ok(())
+    }
+
+    /// Updates revenue share config (`commission_bps`, `commission_account`, `block_reward_conversion_enabled`). Manager authority only.
+    pub fn update_revenue_share_config(
+        ctx: Context<UpdateRevenueShareConfig>,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        block_reward_conversion_enabled: bool,
+        record_authority: Option<Pubkey>,
+    ) -> Result<()> {
+        UpdateRevenueShareConfig::auth(&ctx, commission_bps, commission_account)?;
+
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        revenue_share_account.update_commission(
+            commission_bps,
+            commission_account,
+            block_reward_conversion_enabled,
+            ctx.accounts.manager_authority.key(),
+            record_authority,
+        )?;
+
+        emit!(RevenueShareConfigUpdatedEvent {
+            revenue_share_account: revenue_share_account.key(),
+            share_kind: revenue_share_account.share_kind,
+            commission_bps,
+            commission_account,
+            block_reward_conversion_enabled,
+            record_authority: revenue_share_account.record_authority,
+        });
+
+        Ok(())
+    }
+
+    /// Marks a claimed epoch ledger entry as `block_reward_converted`.
+    /// Requires entry claimed and entry flag still false.
+    /// Callable by manager, record authority, or validator identity (vote node signer).
+    pub fn update_epoch_converted_to_block_reward(
+        ctx: Context<UpdateEpochConvertedToBlockReward>,
+        epoch: u64,
+    ) -> Result<()> {
+        UpdateEpochConvertedToBlockReward::auth(&ctx)?;
+
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        revenue_share_account.mark_epoch_converted_to_block_reward(epoch)?;
+
+        emit!(RevenueEpochConvertedToBlockRewardUpdatedEvent {
+            revenue_share_account: revenue_share_account.key(),
+            share_kind: revenue_share_account.share_kind,
+            epoch,
+            authority: ctx.accounts.signer.key(),
+        });
+
+        Ok(())
+    }
+
+    /// Closes a revenue share account; rent is returned to the original initializer.
+    pub fn close_revenue_share_account(ctx: Context<CloseRevenueShareAccount>) -> Result<()> {
+        CloseRevenueShareAccount::auth(&ctx)?;
+        Ok(())
+    }
+}
+
+fn initialize_reward_collection_account_inner(
+    config: &RewardDistributionConfigAccount,
+    reward_collection_account_pubkey: Pubkey,
+    reward_collection_account: &mut RewardCollectionAccount,
+    validator_vote_account: &AccountInfo,
+    signer: &Pubkey,
+    merkle_root_upload_authority: Pubkey,
+    block_reward_commission_bps: u16,
+    client_commission_account: Pubkey,
+    client_commission_bps: u16,
+    bump: u8,
+) -> Result<()> {
+    use rakurai_vote_state::VoteState;
+
+    if block_reward_commission_bps > config.max_commission_bps
+        || client_commission_bps > config.max_commission_bps
+    {
+        return Err(ErrorCode::MaxCommissionFeeBpsExceeded.into());
+    }
+
+    if validator_vote_account.owner != &solana_program::vote::program::id() {
+        return Err(ErrorCode::Unauthorized.into());
+    }
+
+    let node_pubkey = VoteState::deserialize_node_pubkey(validator_vote_account).unwrap();
+    if &node_pubkey != signer {
+        return Err(ErrorCode::Unauthorized.into());
+    }
+
+    let current_epoch = Clock::get()?.epoch;
+
+    reward_collection_account.validator_vote_account = validator_vote_account.key();
+    reward_collection_account.creation_epoch = current_epoch;
+    reward_collection_account.block_reward_commission_bps = block_reward_commission_bps;
+    reward_collection_account.client_commission_bps = client_commission_bps;
+    reward_collection_account.client_commission_account = client_commission_account;
+    reward_collection_account.merkle_root_upload_authority = merkle_root_upload_authority;
+    reward_collection_account.merkle_root = None;
+    reward_collection_account.expires_at = current_epoch
+        .checked_add(config.num_epochs_valid)
+        .ok_or(ErrorCode::ArithmeticError)?;
+    reward_collection_account.initializer = *signer;
+    reward_collection_account.bump = bump;
+
+    if config.is_mev_commission_enabled() {
+        reward_collection_account.client_mev_commission_deducted = Some(0);
+    } else {
+        reward_collection_account.client_mev_commission_deducted = None;
+    }
+
+    reward_collection_account.validate()?;
+
+    emit!(RewardCollectionAccountInitializedEvent {
+        reward_collection_account: reward_collection_account_pubkey,
+    });
+
+    Ok(())
 }
 
 /// Custom errors for Reward Distribution Program instructions.
@@ -490,11 +711,41 @@ pub enum ErrorCode {
     #[msg("Total rewards must be greater than 0.")]
     RewardsTooLow,
 
-    #[msg("Block Builder commission account must be equal to the RewardCollectionAccount account's block_builder_commission_account.")]
-    InvalidBlockBuilderCommissionAccount,
+    #[msg("Client commission account must be equal to the RewardCollectionAccount account's client_commission_account.")]
+    InvalidClientCommissionAccount,
 
     #[msg("MEV commission has already been deducted for this epoch")]
     MevCommissionAlreadyDeducted,
+
+    #[msg("Revenue label must be non-empty.")]
+    InvalidRevenueName,
+
+    #[msg("Revenue ledger capacity must be between 1 and the program cap.")]
+    InvalidRevenueEpochCapacity,
+
+    #[msg("Epoch entry not found in revenue ledger.")]
+    EpochEntryNotFound,
+
+    #[msg("Revenue for this epoch has already been claimed.")]
+    EpochAlreadyClaimed,
+
+    #[msg("Revenue can only be claimed after the epoch has ended.")]
+    PrematureRevenueClaim,
+
+    #[msg("Revenue for this epoch has not been claimed yet.")]
+    EpochNotClaimed,
+
+    #[msg("Revenue for this epoch is already marked converted to block rewards.")]
+    EpochAlreadyConvertedToBlockReward,
+
+    #[msg("Tip/mev-share revenue manager is not configured on the reward distribution config.")]
+    RevenueManagerNotConfigured,
+
+    #[msg("Rakurai scheduler is not enabled for this validator.")]
+    RakuraiSchedulerNotEnabled,
+
+    #[msg("Revenue ledger is full and all entries are unclaimed.")]
+    RevenueLedgerFull,
 }
 
 /// Closes a `ClaimStatus` account and refunds lamports to the payer.
@@ -539,7 +790,7 @@ pub struct Initialize<'info> {
     pub initializer: Signer<'info>,
 }
 
-/// Initializes a new reward collection account for a validator at the current epoch.
+/// Initializes a new reward collection account for a validator at the current epoch (legacy).
 #[derive(Accounts)]
 #[instruction(
     _merkle_root_upload_authority: Pubkey,
@@ -555,7 +806,7 @@ pub struct InitializeRewardCollectionAccount<'info> {
         seeds = [
             RewardCollectionAccount::SEED,
             validator_vote_account.key().as_ref(),
-            Clock::get().unwrap().epoch.to_le_bytes().as_ref(),
+            Clock::get().map(|c| c.epoch).unwrap_or_default().to_le_bytes().as_ref(),
         ],
         bump,
         payer = signer,
@@ -563,6 +814,50 @@ pub struct InitializeRewardCollectionAccount<'info> {
         rent_exempt = enforce
     )]
     pub reward_collection_account: Account<'info, RewardCollectionAccount>,
+
+    /// CHECK: The validator's vote account (used for metadata and on-chain validation).
+    pub validator_vote_account: AccountInfo<'info>,
+
+    /// CHECK: The validator's identity account (used to derive the PDA and verify authority).
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+/// Initializes a new reward collection account with Rakurai activation checks.
+#[derive(Accounts)]
+#[instruction(
+    _merkle_root_upload_authority: Pubkey,
+    _validator_commission_bps: u16,
+    _bump: u8
+)]
+pub struct InitializeRewardCollectionAccountV1<'info> {
+    /// The global configuration account for Reward Distribution settings.
+    pub config: Account<'info, RewardDistributionConfigAccount>,
+
+    #[account(
+        init,
+        seeds = [
+            RewardCollectionAccount::SEED,
+            validator_vote_account.key().as_ref(),
+            Clock::get().map(|c| c.epoch).unwrap_or_default().to_le_bytes().as_ref(),
+        ],
+        bump,
+        payer = signer,
+        space = RewardCollectionAccount::SIZE,
+        rent_exempt = enforce
+    )]
+    pub reward_collection_account: Account<'info, RewardCollectionAccount>,
+
+    #[account(
+        seeds = [RakuraiActivationAccount::SEED, signer.key().as_ref()],
+        bump = rakurai_activation_account.bump,
+        seeds::program = rakurai_activation::ID,
+        constraint = rakurai_activation_account.validator_authority == signer.key(),
+        constraint = rakurai_activation_account.is_enabled @ RakuraiSchedulerNotEnabled,
+    )]
+    pub rakurai_activation_account: Account<'info, RakuraiActivationAccount>,
 
     /// CHECK: The validator's vote account (used for metadata and on-chain validation).
     pub validator_vote_account: AccountInfo<'info>,
@@ -671,9 +966,6 @@ impl CloseRewardCollectionAccount<'_> {
 #[derive(Accounts)]
 #[instruction(_bump: u8, _amount: u64, _proof: Vec<[u8; 32]>)]
 pub struct Claim<'info> {
-    /// The global configuration account for Reward Distribution settings.
-    pub config: Account<'info, RewardDistributionConfigAccount>,
-
     #[account(mut, rent_exempt = enforce)]
     pub reward_collection_account: Account<'info, RewardCollectionAccount>,
 
@@ -732,12 +1024,12 @@ impl UploadMerkleRoot<'_> {
     }
 }
 
-/// Accounts required to transfer staker rewards with block builder commission applied.
+/// Accounts required to transfer staker rewards with client commission applied.
 #[derive(Accounts)]
 pub struct TransferStakerRewards<'info> {
     /// CHECK:
     #[account(mut)]
-    pub block_builder_commission_account: AccountInfo<'info>,
+    pub client_commission_account: AccountInfo<'info>,
 
     #[account(mut, rent_exempt = enforce)]
     pub reward_collection_account: Account<'info, RewardCollectionAccount>,
@@ -752,25 +1044,25 @@ impl TransferStakerRewards<'_> {
     fn auth(ctx: &Context<TransferStakerRewards>) -> Result<()> {
         if ctx.accounts.signer.key() != ctx.accounts.reward_collection_account.initializer {
             Err(Unauthorized.into())
-        } else if ctx.accounts.block_builder_commission_account.key()
+        } else if ctx.accounts.client_commission_account.key()
             != ctx
                 .accounts
                 .reward_collection_account
-                .block_builder_commission_account
+                .client_commission_account
         {
-            Err(InvalidBlockBuilderCommissionAccount.into())
+            Err(InvalidClientCommissionAccount.into())
         } else {
             Ok(())
         }
     }
 }
 
-/// Accounts required to transfer mev commission with block builder commission applied.
+/// Accounts required to transfer mev commission with client commission applied.
 #[derive(Accounts)]
-pub struct TransferBlockBuilderCommissionOnMevCommission<'info> {
+pub struct TransferClientCommissionOnMevCommission<'info> {
     /// CHECK:
     #[account(mut)]
-    pub block_builder_commission_account: AccountInfo<'info>,
+    pub client_commission_account: AccountInfo<'info>,
 
     #[account(mut, rent_exempt = enforce)]
     pub reward_collection_account: Account<'info, RewardCollectionAccount>,
@@ -781,20 +1073,247 @@ pub struct TransferBlockBuilderCommissionOnMevCommission<'info> {
     pub signer: Signer<'info>,
 }
 
-impl TransferBlockBuilderCommissionOnMevCommission<'_> {
-    fn auth(ctx: &Context<TransferBlockBuilderCommissionOnMevCommission>) -> Result<()> {
+impl TransferClientCommissionOnMevCommission<'_> {
+    fn auth(ctx: &Context<TransferClientCommissionOnMevCommission>) -> Result<()> {
         if ctx.accounts.signer.key() != ctx.accounts.reward_collection_account.initializer {
             Err(Unauthorized.into())
-        } else if ctx.accounts.block_builder_commission_account.key()
+        } else if ctx.accounts.client_commission_account.key()
             != ctx
                 .accounts
                 .reward_collection_account
-                .block_builder_commission_account
+                .client_commission_account
         {
-            Err(InvalidBlockBuilderCommissionAccount.into())
+            Err(InvalidClientCommissionAccount.into())
         } else {
             Ok(())
         }
+    }
+}
+
+/// Initializes a revenue share vault PDA (tip or mev-share).
+#[derive(Accounts)]
+#[instruction(share_kind: RevenueKind, name: [u8; 32], _record_authority: Pubkey, max_epoch_entries: u8, _commission_bps: u16, _commission_account: Pubkey, _bump: u8)]
+pub struct InitializeRevenueShareAccount<'info> {
+    #[account(
+        init,
+        payer = payer,
+        space = RevenueShareAccount::space_for(max_epoch_entries as usize),
+        seeds = [
+            RevenueShareAccount::SEED,
+            share_kind.seed(),
+            name.as_ref(),
+            validator_vote_account.key().as_ref(),
+        ],
+        bump,
+    )]
+    pub revenue_share_account: Account<'info, RevenueShareAccount>,
+
+    #[account(
+        seeds = [RewardDistributionConfigAccount::SEED],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, RewardDistributionConfigAccount>,
+
+    #[account(
+        seeds = [RakuraiActivationAccount::SEED, rakurai_activation_account.validator_authority.as_ref()],
+        bump = rakurai_activation_account.bump,
+        seeds::program = rakurai_activation::ID,
+        constraint = rakurai_activation_account.is_enabled @ RakuraiSchedulerNotEnabled,
+    )]
+    pub rakurai_activation_account: Account<'info, RakuraiActivationAccount>,
+
+    /// CHECK: validator vote account used in PDA seeds; node must match RAA validator authority.
+    pub validator_vote_account: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+impl InitializeRevenueShareAccount<'_> {
+    fn auth(
+        ctx: &Context<InitializeRevenueShareAccount>,
+        name: [u8; 32],
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
+    ) -> Result<()> {
+        use rakurai_vote_state::VoteState;
+
+        if ctx.accounts.validator_vote_account.owner != &solana_program::vote::program::id() {
+            return Err(Unauthorized.into());
+        }
+
+        let node_pubkey = VoteState::deserialize_node_pubkey(&ctx.accounts.validator_vote_account)
+            .map_err(|_| Unauthorized)?;
+        if node_pubkey != ctx.accounts.rakurai_activation_account.validator_authority {
+            return Err(Unauthorized.into());
+        }
+
+        RevenueShareAccount::validate_init_params(
+            name,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+            ctx.accounts.config.max_commission_bps,
+        )
+    }
+}
+
+/// Records revenue for the current epoch.
+#[derive(Accounts)]
+pub struct RecordRevenue<'info> {
+    #[account(mut)]
+    pub revenue_share_account: Account<'info, RevenueShareAccount>,
+
+    pub record_authority: Signer<'info>,
+}
+
+impl RecordRevenue<'_> {
+    fn auth(ctx: &Context<RecordRevenue>) -> Result<()> {
+        ctx.accounts
+            .revenue_share_account
+            .auth_record_signer(ctx.accounts.record_authority.key())
+    }
+}
+
+/// Claims revenue for a completed epoch.
+#[derive(Accounts)]
+#[instruction(epoch: u64)]
+pub struct ClaimRevenue<'info> {
+    #[account(mut)]
+    pub revenue_share_account: Account<'info, RevenueShareAccount>,
+
+    /// CHECK: must match revenue account commission destination
+    #[account(
+        mut,
+        constraint = commission_account.key() == revenue_share_account.commission_account,
+    )]
+    pub commission_account: AccountInfo<'info>,
+
+    /// CHECK: validator identity receives the non-commission share of claimed revenue.
+    #[account(mut)]
+    pub validator_identity: AccountInfo<'info>,
+
+    pub manager_authority: Signer<'info>,
+}
+
+impl ClaimRevenue<'_> {
+    fn auth(ctx: &Context<ClaimRevenue>) -> Result<()> {
+        ctx.accounts
+            .revenue_share_account
+            .auth_manager_signer(ctx.accounts.manager_authority.key())
+    }
+}
+
+/// Marks a claimed epoch as converted to block rewards (`block_reward_converted` false → true).
+#[derive(Accounts)]
+#[instruction(epoch: u64)]
+pub struct UpdateEpochConvertedToBlockReward<'info> {
+    #[account(mut)]
+    pub revenue_share_account: Account<'info, RevenueShareAccount>,
+
+    /// CHECK: must match `revenue_share_account.validator_vote` when signer is validator identity.
+    pub validator_vote_account: AccountInfo<'info>,
+
+    pub signer: Signer<'info>,
+}
+
+impl UpdateEpochConvertedToBlockReward<'_> {
+    fn auth(ctx: &Context<UpdateEpochConvertedToBlockReward>) -> Result<()> {
+        use rakurai_vote_state::VoteState;
+
+        let revenue_share_account = &ctx.accounts.revenue_share_account;
+        let signer = ctx.accounts.signer.key();
+
+        if signer == revenue_share_account.manager_authority
+            || signer == revenue_share_account.record_authority
+        {
+            return Ok(());
+        }
+
+        let vote = &ctx.accounts.validator_vote_account;
+        if vote.key() != revenue_share_account.validator_vote {
+            return Err(Unauthorized.into());
+        }
+        if vote.owner != &solana_program::vote::program::id() {
+            return Err(Unauthorized.into());
+        }
+        let node = VoteState::deserialize_node_pubkey(vote).map_err(|_| Unauthorized)?;
+        if node != signer {
+            return Err(Unauthorized.into());
+        }
+
+        Ok(())
+    }
+}
+
+/// Updates revenue share config (`commission_bps`, `commission_account`, `block_reward_conversion_enabled`).
+#[derive(Accounts)]
+pub struct UpdateRevenueShareConfig<'info> {
+    #[account(mut)]
+    pub revenue_share_account: Account<'info, RevenueShareAccount>,
+
+    #[account(
+        seeds = [RewardDistributionConfigAccount::SEED],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, RewardDistributionConfigAccount>,
+
+    pub manager_authority: Signer<'info>,
+}
+
+impl UpdateRevenueShareConfig<'_> {
+    fn auth(
+        ctx: &Context<UpdateRevenueShareConfig>,
+        commission_bps: u16,
+        commission_account: Pubkey,
+    ) -> Result<()> {
+        ctx.accounts
+            .revenue_share_account
+            .auth_manager_signer(ctx.accounts.manager_authority.key())?;
+        validate_commission(
+            commission_bps,
+            commission_account,
+            ctx.accounts.config.max_commission_bps,
+        )
+    }
+}
+
+/// Closes a revenue share account.
+#[derive(Accounts)]
+pub struct CloseRevenueShareAccount<'info> {
+    #[account(
+        mut,
+        close = initializer,
+        seeds = [
+            RevenueShareAccount::SEED,
+            revenue_share_account.share_kind.seed(),
+            revenue_share_account.name.as_ref(),
+            revenue_share_account.validator_vote.as_ref(),
+        ],
+        bump = revenue_share_account.bump,
+    )]
+    pub revenue_share_account: Account<'info, RevenueShareAccount>,
+
+    /// CHECK: receives rent from the closed account; must match stored `initializer`.
+    #[account(
+        mut,
+        constraint = initializer.key() == revenue_share_account.initializer @ Unauthorized,
+    )]
+    pub initializer: AccountInfo<'info>,
+
+    pub authority: Signer<'info>,
+}
+
+impl CloseRevenueShareAccount<'_> {
+    fn auth(ctx: &Context<CloseRevenueShareAccount>) -> Result<()> {
+        ctx.accounts
+            .revenue_share_account
+            .auth_manager_signer(ctx.accounts.authority.key())
     }
 }
 
@@ -805,21 +1324,6 @@ impl TransferBlockBuilderCommissionOnMevCommission<'_> {
 pub struct RewardCollectionAccountInitializedEvent {
     /// The newly initialized reward colection account.
     pub reward_collection_account: Pubkey,
-}
-
-// Emitted when validator commission basis points are updated.
-#[event]
-pub struct ValidatorCommissionBpsUpdatedEvent {
-    pub reward_collection_account: Pubkey,
-    pub old_commission_bps: u16,
-    pub new_commission_bps: u16,
-}
-
-// Emitted when the Merkle root upload authority is changed.
-#[event]
-pub struct MerkleRootUploadAuthorityUpdatedEvent {
-    pub old_authority: Pubkey,
-    pub new_authority: Pubkey,
 }
 
 // Emitted when a config value is updated by an authorized entity.
@@ -868,18 +1372,18 @@ pub struct MerkleRootUploadedEvent {
 pub struct StakerRewardsTransferredEvent {
     // Total rewards for the last leader turn
     pub total_rewards: u64,
-    // Commission amount sent to block builder
-    pub block_builder_commission_amount: u64,
+    // Commission amount sent to client
+    pub client_commission_amount: u64,
     // Remaining rewards sent to [RewardCollectionAccount]
     pub staker_rewards: u64,
 }
 
-/// Emitted when block builder commission on MEV rewards is transferred.
+/// Emitted when client commission on MEV rewards is transferred.
 #[event]
 pub struct MevCommissionTransferredEvent {
     // Total MEV rewards earned
     pub mev_rewards: u64,
-    // Amount deducted as block builder commission for total mev rewards.
+    // Amount deducted as client commission for total mev rewards.
     pub commission_amount: u64,
 }
 
@@ -904,4 +1408,55 @@ pub struct ClaimStatusClosedEvent {
 
     /// [ClaimStatus] account that was closed.
     pub claim_status_account: Pubkey,
+}
+
+#[event]
+pub struct RevenueShareAccountInitializedEvent {
+    pub revenue_share_account: Pubkey,
+    pub share_kind: RevenueKind,
+    pub name: [u8; 32],
+    pub validator_vote: Pubkey,
+    pub initializer: Pubkey,
+    pub manager_authority: Pubkey,
+    pub record_authority: Pubkey,
+    pub max_epoch_entries: u8,
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
+}
+
+#[event]
+pub struct RevenueRecordedEvent {
+    pub revenue_share_account: Pubkey,
+    pub share_kind: RevenueKind,
+    pub epoch: u64,
+    pub amount: u64,
+}
+
+#[event]
+pub struct RevenueClaimedEvent {
+    pub revenue_share_account: Pubkey,
+    pub share_kind: RevenueKind,
+    pub validator_identity: Pubkey,
+    pub commission_account: Pubkey,
+    pub epoch: u64,
+    pub commission_amount: u64,
+    pub validator_amount: u64,
+}
+
+#[event]
+pub struct RevenueShareConfigUpdatedEvent {
+    pub revenue_share_account: Pubkey,
+    pub share_kind: RevenueKind,
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
+    pub block_reward_conversion_enabled: bool,
+    pub record_authority: Pubkey,
+}
+
+#[event]
+pub struct RevenueEpochConvertedToBlockRewardUpdatedEvent {
+    pub revenue_share_account: Pubkey,
+    pub share_kind: RevenueKind,
+    pub epoch: u64,
+    pub authority: Pubkey,
 }

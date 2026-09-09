@@ -3,14 +3,15 @@ use anchor_lang::{
     prelude::Pubkey, solana_program::instruction::Instruction, InstructionData, ToAccountMetas,
 };
 
-use crate::RewardDistributionConfigAccount;
+use crate::{RevenueKind, RewardDistributionConfigAccount};
 
 /// Arguments for initializing the reward distribution config account.
 pub struct InitializeArgs {
     pub authority: Pubkey,
     pub num_epochs_valid: u64,
     pub max_commission_bps: u16,
-    pub block_builder_commission_on_mev_commission_enabled: bool,
+    pub client_commission_on_mev_commission_enabled: bool,
+    pub revenue_manager_authority: Pubkey,
     pub bump: u8,
 }
 
@@ -31,7 +32,8 @@ pub fn initialize_ix(
         authority,
         num_epochs_valid,
         max_commission_bps,
-        block_builder_commission_on_mev_commission_enabled,
+        client_commission_on_mev_commission_enabled,
+        revenue_manager_authority,
         bump,
     } = args;
 
@@ -47,7 +49,8 @@ pub fn initialize_ix(
             authority,
             num_epochs_valid,
             max_commission_bps,
-            block_builder_commission_on_mev_commission_enabled,
+            client_commission_on_mev_commission_enabled,
+            revenue_manager_authority,
             bump,
         }
         .data(),
@@ -64,21 +67,21 @@ pub fn initialize_ix(
 pub struct InitializeRewardCollectionAccountArgs {
     pub merkle_root_upload_authority: Pubkey,
     pub block_reward_commission_bps: u16,
-    pub block_builder_commission_account: Pubkey,
-    pub block_builder_commission_bps: u16,
+    pub client_commission_account: Pubkey,
+    pub client_commission_bps: u16,
     pub bump: u8,
 }
 
-/// Accounts needed to initialize the reward collection account.
+/// Accounts needed to initialize the reward collection account (legacy).
 pub struct InitializeRewardCollectionAccountAccounts {
     pub config: Pubkey,
-    pub signer: Pubkey,
-    pub system_program: Pubkey,
     pub reward_collection_account: Pubkey,
     pub validator_vote_account: Pubkey,
+    pub signer: Pubkey,
+    pub system_program: Pubkey,
 }
 
-/// Builds the instruction to initialize the reward collection account.
+/// Builds the instruction to initialize the reward collection account (legacy).
 pub fn initialize_reward_collection_account_ix(
     program_id: Pubkey,
     args: InitializeRewardCollectionAccountArgs,
@@ -87,17 +90,17 @@ pub fn initialize_reward_collection_account_ix(
     let InitializeRewardCollectionAccountArgs {
         merkle_root_upload_authority,
         block_reward_commission_bps,
-        block_builder_commission_account,
-        block_builder_commission_bps,
+        client_commission_account,
+        client_commission_bps,
         bump,
     } = args;
 
     let InitializeRewardCollectionAccountAccounts {
         config,
         reward_collection_account,
-        system_program,
         validator_vote_account,
         signer,
+        system_program,
     } = accounts;
 
     Instruction {
@@ -105,17 +108,72 @@ pub fn initialize_reward_collection_account_ix(
         data: crate::instruction::InitializeRewardCollectionAccount {
             merkle_root_upload_authority,
             block_reward_commission_bps,
-            block_builder_commission_account,
-            block_builder_commission_bps,
+            client_commission_account,
+            client_commission_bps,
             bump,
         }
         .data(),
         accounts: crate::accounts::InitializeRewardCollectionAccount {
             config,
-            signer,
-            system_program,
             reward_collection_account,
             validator_vote_account,
+            signer,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+/// Accounts needed to initialize the reward collection account with RAA checks.
+pub struct InitializeRewardCollectionAccountV1Accounts {
+    pub config: Pubkey,
+    pub reward_collection_account: Pubkey,
+    pub rakurai_activation_account: Pubkey,
+    pub validator_vote_account: Pubkey,
+    pub signer: Pubkey,
+    pub system_program: Pubkey,
+}
+
+/// Builds the instruction to initialize the reward collection account with RAA checks.
+pub fn initialize_reward_collection_account_v1_ix(
+    program_id: Pubkey,
+    args: InitializeRewardCollectionAccountArgs,
+    accounts: InitializeRewardCollectionAccountV1Accounts,
+) -> Instruction {
+    let InitializeRewardCollectionAccountArgs {
+        merkle_root_upload_authority,
+        block_reward_commission_bps,
+        client_commission_account,
+        client_commission_bps,
+        bump,
+    } = args;
+
+    let InitializeRewardCollectionAccountV1Accounts {
+        config,
+        reward_collection_account,
+        rakurai_activation_account,
+        validator_vote_account,
+        signer,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::InitializeRewardCollectionAccountV1 {
+            merkle_root_upload_authority,
+            block_reward_commission_bps,
+            client_commission_account,
+            client_commission_bps,
+            bump,
+        }
+        .data(),
+        accounts: crate::accounts::InitializeRewardCollectionAccountV1 {
+            config,
+            reward_collection_account,
+            rakurai_activation_account,
+            validator_vote_account,
+            signer,
+            system_program,
         }
         .to_account_metas(None),
     }
@@ -263,7 +321,7 @@ pub struct TransferStakerRewardsArgs {
 
 /// Accounts required to transfer rewards to stakers.
 pub struct TransferStakerRewardsAccounts {
-    pub block_builder_commission_account: Pubkey,
+    pub client_commission_account: Pubkey,
     pub reward_collection_account: Pubkey,
     pub system_program: Pubkey,
     pub signer: Pubkey,
@@ -278,7 +336,7 @@ pub fn transfer_staker_rewards_ix(
     let TransferStakerRewardsArgs { total_rewards } = args;
 
     let TransferStakerRewardsAccounts {
-        block_builder_commission_account,
+        client_commission_account,
         reward_collection_account,
         system_program,
         signer,
@@ -288,7 +346,7 @@ pub fn transfer_staker_rewards_ix(
         program_id,
         data: crate::instruction::TransferStakerRewards { total_rewards }.data(),
         accounts: crate::accounts::TransferStakerRewards {
-            block_builder_commission_account,
+            client_commission_account,
             reward_collection_account,
             system_program,
             signer,
@@ -298,28 +356,28 @@ pub fn transfer_staker_rewards_ix(
 }
 
 /// Total MEV rewards earned by the validator in the epoch (if MEV commission is set by validator in TipDistributionAccount).
-pub struct TransferBlockBuilderCommissionOnMevCommissionArgs {
+pub struct TransferClientCommissionOnMevCommissionArgs {
     pub mev_rewards: u64,
 }
 
-/// Accounts required to transfer MEV commission to the block builder commission account.
-pub struct TransferBlockBuilderCommissionOnMevCommissionAccounts {
-    pub block_builder_commission_account: Pubkey,
+/// Accounts required to transfer MEV commission to the client commission account.
+pub struct TransferClientCommissionOnMevCommissionAccounts {
+    pub client_commission_account: Pubkey,
     pub reward_collection_account: Pubkey,
     pub system_program: Pubkey,
     pub signer: Pubkey,
 }
 
-/// Builds the instruction to deduct block builder commission from the validator’s MEV rewards.
-pub fn transfer_block_builder_commission_on_mev_commission_ix(
+/// Builds the instruction to deduct client commission from the validator’s MEV rewards.
+pub fn transfer_client_commission_on_mev_commission_ix(
     program_id: Pubkey,
-    args: TransferBlockBuilderCommissionOnMevCommissionArgs,
-    accounts: TransferBlockBuilderCommissionOnMevCommissionAccounts,
+    args: TransferClientCommissionOnMevCommissionArgs,
+    accounts: TransferClientCommissionOnMevCommissionAccounts,
 ) -> Instruction {
-    let TransferBlockBuilderCommissionOnMevCommissionArgs { mev_rewards } = args;
+    let TransferClientCommissionOnMevCommissionArgs { mev_rewards } = args;
 
-    let TransferBlockBuilderCommissionOnMevCommissionAccounts {
-        block_builder_commission_account,
+    let TransferClientCommissionOnMevCommissionAccounts {
+        client_commission_account,
         reward_collection_account,
         system_program,
         signer,
@@ -327,10 +385,10 @@ pub fn transfer_block_builder_commission_on_mev_commission_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::TransferBlockBuilderCommissionOnMevCommission { mev_rewards }
+        data: crate::instruction::TransferClientCommissionOnMevCommission { mev_rewards }
             .data(),
-        accounts: crate::accounts::TransferBlockBuilderCommissionOnMevCommission {
-            block_builder_commission_account,
+        accounts: crate::accounts::TransferClientCommissionOnMevCommission {
+            client_commission_account,
             reward_collection_account,
             system_program,
             signer,
@@ -392,7 +450,6 @@ pub struct ClaimArgs {
 
 /// Accounts needed to execute a Merkle reward claim.
 pub struct ClaimAccounts {
-    pub config: Pubkey,
     pub reward_collection_account: Pubkey,
     pub claim_status: Pubkey,
     pub claimant: Pubkey,
@@ -409,7 +466,6 @@ pub fn claim_ix(program_id: Pubkey, args: ClaimArgs, accounts: ClaimAccounts) ->
     } = args;
 
     let ClaimAccounts {
-        config,
         reward_collection_account,
         claim_status,
         claimant,
@@ -426,12 +482,255 @@ pub fn claim_ix(program_id: Pubkey, args: ClaimArgs, accounts: ClaimAccounts) ->
         }
         .data(),
         accounts: crate::accounts::Claim {
-            config,
             reward_collection_account,
             claimant,
             claim_status,
             payer,
             system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct InitializeRevenueShareAccountArgs {
+    pub share_kind: RevenueKind,
+    pub name: [u8; 32],
+    pub record_authority: Pubkey,
+    pub max_epoch_entries: u8,
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
+    pub bump: u8,
+}
+
+pub struct InitializeRevenueShareAccountAccounts {
+    pub revenue_share_account: Pubkey,
+    pub config: Pubkey,
+    pub rakurai_activation_account: Pubkey,
+    pub validator_vote_account: Pubkey,
+    pub payer: Pubkey,
+    pub system_program: Pubkey,
+}
+
+pub fn initialize_revenue_share_account_ix(
+    program_id: Pubkey,
+    args: InitializeRevenueShareAccountArgs,
+    accounts: InitializeRevenueShareAccountAccounts,
+) -> Instruction {
+    let InitializeRevenueShareAccountArgs {
+        share_kind,
+        name,
+        record_authority,
+        max_epoch_entries,
+        commission_bps,
+        commission_account,
+        bump,
+    } = args;
+    let InitializeRevenueShareAccountAccounts {
+        revenue_share_account,
+        config,
+        rakurai_activation_account,
+        validator_vote_account,
+        payer,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::InitializeRevenueShareAccount {
+            share_kind,
+            name,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+            bump,
+        }
+        .data(),
+        accounts: crate::accounts::InitializeRevenueShareAccount {
+            revenue_share_account,
+            config,
+            rakurai_activation_account,
+            validator_vote_account,
+            payer,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct RecordRevenueArgs {
+    pub amount: u64,
+}
+
+pub struct RecordRevenueShareAccounts {
+    pub revenue_share_account: Pubkey,
+    pub record_authority: Pubkey,
+}
+
+pub fn record_revenue_ix(
+    program_id: Pubkey,
+    args: RecordRevenueArgs,
+    accounts: RecordRevenueShareAccounts,
+) -> Instruction {
+    let RecordRevenueArgs { amount } = args;
+    let RecordRevenueShareAccounts {
+        revenue_share_account,
+        record_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::RecordRevenue { amount }.data(),
+        accounts: crate::accounts::RecordRevenue {
+            revenue_share_account,
+            record_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct ClaimRevenueArgs {
+    pub epoch: u64,
+}
+
+pub struct ClaimRevenueShareAccounts {
+    pub revenue_share_account: Pubkey,
+    pub commission_account: Pubkey,
+    pub validator_identity: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+pub fn claim_revenue_ix(
+    program_id: Pubkey,
+    args: ClaimRevenueArgs,
+    accounts: ClaimRevenueShareAccounts,
+) -> Instruction {
+    let ClaimRevenueArgs { epoch } = args;
+    let ClaimRevenueShareAccounts {
+        revenue_share_account,
+        commission_account,
+        validator_identity,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::ClaimRevenue { epoch }.data(),
+        accounts: crate::accounts::ClaimRevenue {
+            revenue_share_account,
+            commission_account,
+            validator_identity,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateRevenueShareConfigArgs {
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
+    pub block_reward_conversion_enabled: bool,
+    pub record_authority: Option<Pubkey>,
+}
+
+pub struct UpdateRevenueShareConfigAccounts {
+    pub revenue_share_account: Pubkey,
+    pub config: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+pub fn update_revenue_share_config_ix(
+    program_id: Pubkey,
+    args: UpdateRevenueShareConfigArgs,
+    accounts: UpdateRevenueShareConfigAccounts,
+) -> Instruction {
+    let UpdateRevenueShareConfigArgs {
+        commission_bps,
+        commission_account,
+        block_reward_conversion_enabled,
+        record_authority,
+    } = args;
+    let UpdateRevenueShareConfigAccounts {
+        revenue_share_account,
+        config,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateRevenueShareConfig {
+            commission_bps,
+            commission_account,
+            block_reward_conversion_enabled,
+            record_authority,
+        }
+        .data(),
+        accounts: crate::accounts::UpdateRevenueShareConfig {
+            revenue_share_account,
+            config,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateEpochConvertedToBlockRewardArgs {
+    pub epoch: u64,
+}
+
+pub struct UpdateEpochConvertedToBlockRewardAccounts {
+    pub revenue_share_account: Pubkey,
+    pub validator_vote_account: Pubkey,
+    pub signer: Pubkey,
+}
+
+pub fn update_epoch_converted_to_block_reward_ix(
+    program_id: Pubkey,
+    args: UpdateEpochConvertedToBlockRewardArgs,
+    accounts: UpdateEpochConvertedToBlockRewardAccounts,
+) -> Instruction {
+    let UpdateEpochConvertedToBlockRewardArgs { epoch } = args;
+    let UpdateEpochConvertedToBlockRewardAccounts {
+        revenue_share_account,
+        validator_vote_account,
+        signer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateEpochConvertedToBlockReward { epoch }.data(),
+        accounts: crate::accounts::UpdateEpochConvertedToBlockReward {
+            revenue_share_account,
+            validator_vote_account,
+            signer,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct CloseRevenueShareAccountAccounts {
+    pub revenue_share_account: Pubkey,
+    pub initializer: Pubkey,
+    pub authority: Pubkey,
+}
+
+pub fn close_revenue_share_account_ix(
+    program_id: Pubkey,
+    accounts: CloseRevenueShareAccountAccounts,
+) -> Instruction {
+    let CloseRevenueShareAccountAccounts {
+        revenue_share_account,
+        initializer,
+        authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::CloseRevenueShareAccount {}.data(),
+        accounts: crate::accounts::CloseRevenueShareAccount {
+            revenue_share_account,
+            initializer,
+            authority,
         }
         .to_account_metas(None),
     }

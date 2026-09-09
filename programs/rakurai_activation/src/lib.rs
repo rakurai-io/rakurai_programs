@@ -12,8 +12,11 @@ security_txt! {
     // Required fields
     name: "Rakurai Multisig Based Activation Program",
     project_url: "https://rakurai.io/",
-    contacts: "https://rakurai.io/company",
-    policy: "https://rakurai.io/faqs"
+    contacts: "link:https://rakurai.io/company,link:https://discord.gg/QzqQVBAMpp,link:https://t.me/rakurai_official,link:https://github.com/rakurai-io/rakurai-validator,link:https://docs.rakurai.io",
+    policy: "https://rakurai.io/faqs",
+    // Optional fields
+    preferred_languages: "en",
+    source_code: "https://github.com/rakurai-io/rakurai_programs"
 }
 pub mod sdk;
 pub mod state;
@@ -30,16 +33,16 @@ pub mod rakurai_activation {
     pub fn initialize(
         ctx: Context<Initialize>,
         authority: Pubkey,
-        block_builder_authority: Pubkey,
-        block_builder_commission_account: Pubkey,
-        block_builder_commission_bps: u16,
+        client_authority: Pubkey,
+        client_commission_account: Pubkey,
+        client_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
         let cfg = &mut ctx.accounts.config;
         cfg.authority = authority;
-        cfg.block_builder_authority = block_builder_authority;
-        cfg.block_builder_commission_account = block_builder_commission_account;
-        cfg.block_builder_commission_bps = block_builder_commission_bps;
+        cfg.client_authority = client_authority;
+        cfg.client_commission_account = client_commission_account;
+        cfg.client_commission_bps = client_commission_bps;
         cfg.bump = bump;
         cfg.validate()?;
 
@@ -55,9 +58,9 @@ pub mod rakurai_activation {
 
         let config = &mut ctx.accounts.config;
         config.authority = new_config.authority;
-        config.block_builder_authority = new_config.block_builder_authority;
-        config.block_builder_commission_account = new_config.block_builder_commission_account;
-        config.block_builder_commission_bps = new_config.block_builder_commission_bps;
+        config.client_authority = new_config.client_authority;
+        config.client_commission_account = new_config.client_commission_account;
+        config.client_commission_bps = new_config.client_commission_bps;
         config.validate()?;
 
         emit!(ConfigUpdatedEvent {
@@ -88,8 +91,8 @@ pub mod rakurai_activation {
         activation_account.hash = None;
         activation_account.proposer = Some(ctx.accounts.signer.key());
         activation_account.block_reward_commission_bps = block_reward_commission_bps;
-        activation_account.block_builder_commission_bps =
-            ctx.accounts.config.block_builder_commission_bps;
+        activation_account.client_commission_bps =
+            ctx.accounts.config.client_commission_bps;
         activation_account.validator_authority = ctx.accounts.signer.key();
         activation_account.bump = bump;
         activation_account.validate()?;
@@ -101,7 +104,7 @@ pub mod rakurai_activation {
         Ok(())
     }
 
-    /// Updates rakurai activation account approval. This can be done either by the Validator or the block builder.
+    /// Updates rakurai activation account approval. This can be done either by the Validator or the client.
     pub fn update_rakurai_activation_approval(
         ctx: Context<UpdateRakuraiActivationApproval>,
         grant_approval: bool,
@@ -111,25 +114,25 @@ pub mod rakurai_activation {
 
         let activation_account = &mut ctx.accounts.activation_account;
         let signer_key = ctx.accounts.signer.key();
-        let is_block_builder = signer_key == ctx.accounts.config.block_builder_authority;
+        let is_client = signer_key == ctx.accounts.config.client_authority;
 
         if !grant_approval {
             activation_account.is_enabled = false;
             activation_account.hash = None;
             activation_account.proposer = None;
             msg!("Permission Revoked");
-        } else if activation_account.is_enabled && is_block_builder {
+        } else if activation_account.is_enabled && is_client {
             activation_account.hash = hash;
-            msg!("Hash updated by block builder.");
+            msg!("Hash updated by client.");
         } else if !activation_account.is_enabled {
             match activation_account.proposer {
                 None => {
-                    if is_block_builder {
+                    if is_client {
                         if hash.is_none() {
                             return Err(error!(ErrorCode::MissingHashForEnable));
                         }
                         activation_account.hash = hash;
-                        msg!("Proposal initiated by block builder.");
+                        msg!("Proposal initiated by client.");
                     } else {
                         msg!("Proposal Pending");
                     }
@@ -139,10 +142,10 @@ pub mod rakurai_activation {
                     msg!("Proposal Pending");
                 }
                 Some(_) => {
-                    if is_block_builder && hash.is_none() {
+                    if is_client && hash.is_none() {
                         return Err(error!(ErrorCode::MissingHashForEnable));
                     }
-                    if is_block_builder {
+                    if is_client {
                         activation_account.hash = hash;
                     }
 
@@ -163,7 +166,7 @@ pub mod rakurai_activation {
         Ok(())
     }
 
-    /// Updates commission BPS for either Validator or block builder based on signer authority.
+    /// Updates commission BPS for either Validator or client based on signer authority.
     pub fn update_rakurai_activation_commission(
         ctx: Context<UpdateRakuraiActivationCommission>,
         commission_bps: u16,
@@ -178,8 +181,8 @@ pub mod rakurai_activation {
 
         if ctx.accounts.signer.key() == activation_account.validator_authority.key() {
             activation_account.block_reward_commission_bps = commission_bps;
-        } else if ctx.accounts.signer.key() == ctx.accounts.config.block_builder_authority.key() {
-            activation_account.block_builder_commission_bps = commission_bps;
+        } else if ctx.accounts.signer.key() == ctx.accounts.config.client_authority.key() {
+            activation_account.client_commission_bps = commission_bps;
         } else {
             return Err(Unauthorized.into());
         }
@@ -192,7 +195,7 @@ pub mod rakurai_activation {
         Ok(())
     }
 
-    /// Closes the Rakurai activation account and claims any remaining lamports to validator identity account. This can only be done by the block builder authority.
+    /// Closes the Rakurai activation account and claims any remaining lamports to validator identity account. This can only be done by the client authority.
     pub fn close_rakurai_activation_account(
         ctx: Context<CloseRakuraiActivationAccount>,
     ) -> Result<()> {
@@ -225,7 +228,7 @@ pub enum ErrorCode {
     #[msg("Validator's commission basis points must be less than or equal to 10_000")]
     MaxCommissionBpsExceeded,
 
-    #[msg("Hash must be provided when enabling the account as block builder.")]
+    #[msg("Hash must be provided when enabling the account as client.")]
     MissingHashForEnable,
 
     #[msg("Unauthorized signer.")]
@@ -336,16 +339,16 @@ pub struct UpdateRakuraiActivationApproval<'info> {
     /// CHECK: Validator identity associated with the activation account
     pub validator_identity_account: AccountInfo<'info>,
 
-    /// Signer must match either validator authority or block builder authority
+    /// Signer must match either validator authority or client authority
     #[account(mut)]
     pub signer: Signer<'info>,
 }
 
 impl UpdateRakuraiActivationApproval<'_> {
-    /// Authorizes signer as either validator authority or block builder authority
+    /// Authorizes signer as either validator authority or client authority
     fn auth(ctx: &Context<UpdateRakuraiActivationApproval>) -> Result<()> {
         if ctx.accounts.signer.key() == ctx.accounts.activation_account.validator_authority.key()
-            || ctx.accounts.signer.key() == ctx.accounts.config.block_builder_authority.key()
+            || ctx.accounts.signer.key() == ctx.accounts.config.client_authority.key()
         {
             Ok(())
         } else {
@@ -376,16 +379,16 @@ pub struct UpdateRakuraiActivationCommission<'info> {
     #[account(mut)]
     pub validator_identity_account: AccountInfo<'info>,
 
-    /// Signer who must be either validator authority or block builder authority.
+    /// Signer who must be either validator authority or client authority.
     #[account(mut)]
     pub signer: Signer<'info>,
 }
 
 impl UpdateRakuraiActivationCommission<'_> {
-    /// Checks if signer is authorized to update commission (validator or block builder authority).
+    /// Checks if signer is authorized to update commission (validator or client authority).
     fn auth(ctx: &Context<UpdateRakuraiActivationCommission>) -> Result<()> {
         if ctx.accounts.signer.key() == ctx.accounts.activation_account.validator_authority.key()
-            || ctx.accounts.signer.key() == ctx.accounts.config.block_builder_authority.key()
+            || ctx.accounts.signer.key() == ctx.accounts.config.client_authority.key()
         {
             Ok(())
         } else {
@@ -416,15 +419,15 @@ pub struct CloseRakuraiActivationAccount<'info> {
     #[account(mut)]
     pub validator_identity_account: AccountInfo<'info>,
 
-    /// Signer authorized to close activation accounts (must match block_builder_authority).
+    /// Signer authorized to close activation accounts (must match client_authority).
     #[account(mut)]
     pub signer: Signer<'info>,
 }
 
 impl CloseRakuraiActivationAccount<'_> {
-    /// Ensures the signer is the `block_builder_authority` from the config.
+    /// Ensures the signer is the `client_authority` from the config.
     fn auth(ctx: &Context<CloseRakuraiActivationAccount>) -> Result<()> {
-        if ctx.accounts.signer.key() == ctx.accounts.config.block_builder_authority.key() {
+        if ctx.accounts.signer.key() == ctx.accounts.config.client_authority.key() {
             Ok(())
         } else {
             Err(Unauthorized.into())

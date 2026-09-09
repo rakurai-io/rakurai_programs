@@ -97,16 +97,16 @@ pub enum Commands {
 #[command(arg_required_else_help = false, color = clap::ColorChoice::Always)]
 pub struct InitConfigArgs {
     /// Initial commission percentage in base points (0 to 10,000)
-    #[arg(short = 'c', long = "commission_bps", required = true, value_parser = validate_commission, help = "Block builder commission percentage in base points")]
-    pub block_builder_commission_bps: Option<u16>,
+    #[arg(short = 'c', long = "commission_bps", required = true, value_parser = validate_commission, help = "Client commission percentage in base points")]
+    pub client_commission_bps: Option<u16>,
 
-    /// Block builder commission account pubkey
-    #[arg(short = 'a', long = "commission_account", required = true, value_parser = parse_pubkey, help = "Block builder commission account pubkey")]
-    pub block_builder_commission_account: Option<Pubkey>,
+    /// Client commission account pubkey
+    #[arg(short = 'a', long = "commission_account", required = true, value_parser = parse_pubkey, help = "Client commission account pubkey")]
+    pub client_commission_account: Option<Pubkey>,
 
-    /// Block builder authority pubkey
-    #[arg(short = 'b', long = "authority", required = true, value_parser = parse_pubkey, help = "Block builder activation authority pubkey")]
-    pub block_builder_authority: Option<Pubkey>,
+    /// Client authority pubkey
+    #[arg(short = 'b', long = "authority", required = true, value_parser = parse_pubkey, help = "Client activation authority pubkey")]
+    pub client_authority: Option<Pubkey>,
 
     /// Config authority pubkey
     #[arg(short = 'x', long = "config_authority", required = true, value_parser = parse_pubkey, help = "Config account authority pubkey")]
@@ -192,10 +192,10 @@ fn process_init_config(
     let signer_pubkey = kp.pubkey();
 
     let config_authority = args.config_authority.unwrap_or(signer_pubkey);
-    let block_builder_authority = args.block_builder_authority.unwrap_or(signer_pubkey);
-    let block_builder_commission_bps = args.block_builder_commission_bps.unwrap_or(1000);
-    let block_builder_commission_account = args
-        .block_builder_commission_account
+    let client_authority = args.client_authority.unwrap_or(signer_pubkey);
+    let client_commission_bps = args.client_commission_bps.unwrap_or(1000);
+    let client_commission_account = args
+        .client_commission_account
         .unwrap_or(signer_pubkey);
 
     let (activation_config_pubkey, bump) = derive_config_account_address(&program_id);
@@ -206,12 +206,12 @@ fn process_init_config(
 
     println!(
         "{} {}\n{} {}\n{} {}\n{} {}",
-        "🚀 Block builder commission:".green(),
-        block_builder_commission_bps,
+        "🚀 Client commission:".green(),
+        client_commission_bps,
         "🏦 Commission Account:".blue(),
-        block_builder_commission_account,
+        client_commission_account,
         "🔑 Authority:".purple(),
-        block_builder_authority,
+        client_authority,
         "🔗 Signer and Config Authority:".cyan(),
         signer_pubkey
     );
@@ -220,9 +220,9 @@ fn process_init_config(
         program_id,
         InitializeArgs {
             authority: config_authority,
-            block_builder_commission_bps,
-            block_builder_commission_account,
-            block_builder_authority,
+            client_commission_bps,
+            client_commission_account,
+            client_authority,
             bump,
         },
         InitializeAccounts {
@@ -337,11 +337,11 @@ pub fn process_scheduler_control(
         derive_activation_account_address(&program_id, &identity_pubkey);
     let activation_account = get_activation_account(rpc_client.clone(), activation_pubkey)?;
     if !(identity_pubkey == signer_pubkey
-        || activation_config_account.block_builder_authority == signer_pubkey)
+        || activation_config_account.client_authority == signer_pubkey)
     {
         return Err(format!(
-            "❌ Unauthorized Signer! Expected: Validator({}) or BlockBuilder({}), Found: {}",
-            identity_pubkey, activation_config_account.block_builder_authority, signer_pubkey
+            "❌ Unauthorized Signer! Expected: Validator({}) or Client({}), Found: {}",
+            identity_pubkey, activation_config_account.client_authority, signer_pubkey
         )
         .into());
     }
@@ -426,7 +426,7 @@ fn process_update_commission(
         "💰 Commission BPS:".green(),
         format!("{} bps", block_reward_commission_bps),
         (block_reward_commission_bps as f64 / 100.0),
-        if signer_pubkey != activation_config_account.block_builder_authority {
+        if signer_pubkey != activation_config_account.client_authority {
             if block_reward_commission_bps == MAX_COMMISSION_BPS {
                 "Validator will keep 100% of the block rewards. No rewards will be distributed to stakers."
                 .green()
@@ -444,18 +444,18 @@ fn process_update_commission(
     );
 
     if !(signer_pubkey == activation_account.validator_authority
-        || signer_pubkey == activation_config_account.block_builder_authority)
+        || signer_pubkey == activation_config_account.client_authority)
     {
         return Err(format!(
-            "❌ Unauthorized Signer! Expected: Validator({}) or BlockBuilder({}), Found: {}",
-            identity_pubkey, activation_config_account.block_builder_authority, signer_pubkey
+            "❌ Unauthorized Signer! Expected: Validator({}) or Client({}), Found: {}",
+            identity_pubkey, activation_config_account.client_authority, signer_pubkey
         )
         .into());
     }
     if signer_pubkey == activation_account.validator_authority
         && block_reward_commission_bps == activation_account.block_reward_commission_bps
-        || signer_pubkey == activation_config_account.block_builder_authority
-            && block_reward_commission_bps == activation_account.block_builder_commission_bps
+        || signer_pubkey == activation_config_account.client_authority
+            && block_reward_commission_bps == activation_account.client_commission_bps
     {
         return Err(format!("❌ No transaction required, commission value is unchanged.").into());
     }
@@ -495,10 +495,10 @@ fn process_close(
     let (activation_pubkey, _bump) =
         derive_activation_account_address(&program_id, &identity_pubkey);
 
-    if activation_config_account.block_builder_authority != signer_pubkey {
+    if activation_config_account.client_authority != signer_pubkey {
         return Err(format!(
-            "❌ Unauthorized Signer! Expected: BlockBuilder({}), Found: {}",
-            activation_config_account.block_builder_authority, signer_pubkey
+            "❌ Unauthorized Signer! Expected: Client({}), Found: {}",
+            activation_config_account.client_authority, signer_pubkey
         )
         .into());
     }

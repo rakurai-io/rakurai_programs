@@ -8,24 +8,24 @@
   },
   "docs": [
     "Rakurai Tip Manager Program: users send tips to one of eight tip accounts, validators periodically drain them",
-    "and tips are split between the configured tip receiver and an block builder commission account."
+    "and tips are split between the configured tip receiver and an client commission account."
   ],
   "instructions": [
     {
-      "name": "change_block_builder",
+      "name": "change_client",
       "docs": [
-        "Changes the block builder and its commission by first draining all pending tips (distributing shares to the tip receiver",
-        "and old block builder) and then setting the new block builder and its commission."
+        "Changes the client and its commission by first draining all pending tips (distributing shares to the tip receiver",
+        "and old client) and then setting the new client and its commission."
       ],
       "discriminator": [
-        134,
-        80,
-        38,
-        137,
-        165,
-        21,
-        114,
-        123
+        110,
+        15,
+        229,
+        83,
+        227,
+        101,
+        115,
+        245
       ],
       "accounts": [
         {
@@ -72,11 +72,11 @@
           "writable": true
         },
         {
-          "name": "old_block_builder",
+          "name": "old_client",
           "writable": true
         },
         {
-          "name": "new_block_builder",
+          "name": "new_client",
           "writable": true
         },
         {
@@ -359,7 +359,7 @@
       ],
       "args": [
         {
-          "name": "block_builder_commission_bps",
+          "name": "client_commission_bps",
           "type": "u64"
         }
       ]
@@ -367,8 +367,8 @@
     {
       "name": "change_tip_receiver",
       "docs": [
-        "Changes the active tip receiver by first draining all pending tips (giving the old tip receiver and block builder",
-        "their respective shares) and then setting the new tip receiver for future tips."
+        "Changes the active tip receiver (legacy). Drains tips and rotates config receiver.",
+        "Prefer `change_tip_receiver_v1` for RAA gate, vote auth, and TCA validation."
       ],
       "discriminator": [
         69,
@@ -429,7 +429,7 @@
           "writable": true
         },
         {
-          "name": "block_builder_commission_account",
+          "name": "client_commission_account",
           "writable": true
         },
         {
@@ -713,20 +713,20 @@
       "args": []
     },
     {
-      "name": "claim_tips",
+      "name": "change_tip_receiver_v1",
       "docs": [
-        "Claims all accumulated tips by draining all Rakurai tip accounts (preserving rent exemption) and splitting",
-        "the tips between the tip receiver and the block builder commission account."
+        "Changes the active tip receiver and drains tips to `old_tip_receiver` (wallet or TCA).",
+        "When `old_tip_receiver` is a TCA, CPIs `record_revenue` to update the ledger."
       ],
       "discriminator": [
-        247,
-        28,
-        193,
-        228,
-        55,
-        238,
-        31,
-        113
+        179,
+        239,
+        235,
+        38,
+        16,
+        72,
+        133,
+        229
       ],
       "accounts": [
         {
@@ -767,6 +767,21 @@
               }
             ]
           }
+        },
+        {
+          "name": "old_tip_receiver",
+          "writable": true
+        },
+        {
+          "name": "new_tip_receiver",
+          "docs": [
+            "Rakurai tip revenue share PDA (`TipsCollectionAccount` / TCA) for this validator vote."
+          ],
+          "writable": true
+        },
+        {
+          "name": "client_commission_account",
+          "writable": true
         },
         {
           "name": "rakurai_tip_account_0",
@@ -1041,20 +1056,40 @@
           }
         },
         {
-          "name": "validator_tip_receiver_account",
-          "docs": [
-            "can be an account with a private key to a PDA owned by some other program."
-          ],
-          "writable": true
-        },
-        {
-          "name": "block_builder_commission_account",
-          "writable": true
-        },
-        {
           "name": "signer",
           "writable": true,
           "signer": true
+        },
+        {
+          "name": "record_authority",
+          "docs": [
+            "receiving TCA's `record_authority`; the seeds constraint guarantees only this program can sign."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  69,
+                  67,
+                  79,
+                  82,
+                  68,
+                  95,
+                  65,
+                  85,
+                  84,
+                  72,
+                  79,
+                  82,
+                  73,
+                  84,
+                  89
+                ]
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -1770,6 +1805,19 @@
       ]
     },
     {
+      "name": "RevenueShareAccount",
+      "discriminator": [
+        208,
+        67,
+        189,
+        177,
+        228,
+        142,
+        105,
+        231
+      ]
+    },
+    {
       "name": "TipManagerConfigAccount",
       "discriminator": [
         66,
@@ -1820,15 +1868,50 @@
     {
       "code": 6001,
       "name": "MaxCommissionBpsExceeded",
-      "msg": "Block Builder commission basis points must be less than or equal to 10_000"
+      "msg": "Client commission basis points must be less than or equal to 10_000"
     },
     {
       "code": 6002,
       "name": "Unauthorized",
       "msg": "Unauthorized signer."
+    },
+    {
+      "code": 6003,
+      "name": "RakuraiSchedulerNotEnabled",
+      "msg": "Rakurai scheduler is not enabled for this validator."
     }
   ],
   "types": [
+    {
+      "name": "EpochAmountEntry",
+      "docs": [
+        "Per-epoch attributed amount."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "claimed",
+            "type": "bool"
+          },
+          {
+            "name": "block_reward_converted",
+            "docs": [
+              "Whether this epoch's block reward conversion is complete."
+            ],
+            "type": "bool"
+          }
+        ]
+      }
+    },
     {
       "name": "RakuraiTipAccount",
       "docs": [
@@ -1888,6 +1971,143 @@
       }
     },
     {
+      "name": "RevenueKind",
+      "docs": [
+        "Revenue share vault kind; included in PDA seeds after [`RevenueShareAccount::SEED`]."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Tip"
+          },
+          {
+            "name": "MevShare"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RevenueLedger",
+      "docs": [
+        "Per-account epoch revenue ledger; grows until `max_epoch_entries` then evicts oldest claimed entry (errors if all unclaimed)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "entries",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "EpochAmountEntry"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "RevenueShareAccount",
+      "docs": [
+        "Tip/mev-share revenue share vault per validator (accounting + lamport vault)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "share_kind",
+            "docs": [
+              "Tip vs mev-share; part of the PDA seeds with `name` and `validator_vote`."
+            ],
+            "type": {
+              "defined": {
+                "name": "RevenueKind"
+              }
+            }
+          },
+          {
+            "name": "name",
+            "docs": [
+              "UTF-8 padded label (used in PDA seeds)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "validator_vote",
+            "type": "pubkey"
+          },
+          {
+            "name": "initializer",
+            "docs": [
+              "Who paid to create this account; receives rent on close."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "manager_authority",
+            "docs": [
+              "Claims revenue, updates config, and closes the account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "record_authority",
+            "docs": [
+              "Signs `record_revenue`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "max_epoch_entries",
+            "docs": [
+              "Max distinct epochs in `ledger`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "commission_bps",
+            "docs": [
+              "Commission on revenue claims (basis points); remainder goes to validator identity."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "commission_account",
+            "docs": [
+              "Receives the commission portion on claim."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "block_reward_conversion_enabled",
+            "docs": [
+              "When true, epoch entries require explicit block reward conversion via `update_epoch_converted_to_block_reward`."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "ledger",
+            "type": {
+              "defined": {
+                "name": "RevenueLedger"
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "TipManagerConfigAccount",
       "docs": [
         "State Accounts",
@@ -1911,14 +2131,14 @@
             "type": "pubkey"
           },
           {
-            "name": "block_builder_commission_account",
+            "name": "client_commission_account",
             "docs": [
-              "Block builder commission account"
+              "Client commission account"
             ],
             "type": "pubkey"
           },
           {
-            "name": "block_builder_commission_bps",
+            "name": "client_commission_bps",
             "docs": [
               "Commission in basis points"
             ],
@@ -1955,11 +2175,11 @@
             "type": "u64"
           },
           {
-            "name": "block_builder_commission_account",
+            "name": "client_commission_account",
             "type": "pubkey"
           },
           {
-            "name": "block_builder_amount",
+            "name": "client_amount",
             "type": "u64"
           }
         ]
