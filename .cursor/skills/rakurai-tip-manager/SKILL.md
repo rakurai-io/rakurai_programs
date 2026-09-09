@@ -2,13 +2,13 @@
 name: rakurai-tip-manager
 description: >-
   Rakurai Tip Manager on-chain program (8 tip PDAs, config singleton), tip draining,
-  and commission split. Use for tip manager, change_tip_receiver, tip
+  and commission split. Use for tip manager, change_tip_receiver_v2, tip
   accounts, client commission on tips, or integrating tips with revenue-share vaults.
 ---
 
 # Rakurai Tip Manager
 
-`programs/rakurai_tip_manager/`. Users send SOL to **8 tip PDAs** (write-lock sharding). Validators drain via **`change_tip_receiver`** (Rakurai-enabled validator + vote) or **`change_client`** (authority rotates client).
+`programs/rakurai_tip_manager/`. Users send SOL to **8 tip PDAs**. Validators drain via versioned tip-receiver ixs.
 
 **Source**: `lib.rs`, `sdk/`. **Tables**: [reference.md](reference.md).
 
@@ -17,42 +17,35 @@ description: >-
 ## Architecture
 
 ```
-TipManagerConfigAccount (singleton): authority, receivers, bps, bumps
-RakuraiTipAccount x8: empty state, lamport vaults (seeds _0.._7)
+TipManagerConfigAccount (singleton)
+RakuraiTipAccount x8
 
-Users ──SOL──► any tip PDA
-
-change_tip_receiver: drain → old_tip_receiver + commission; config → tip receiver (legacy)
-change_rakurai_tip_receiver: same drain; RAA + vote + TCA validation; config → TCA PDA
-change_client: drain → validator receiver + old client; update client (authority)
+change_tip_receiver / v1  → legacy TCA (REVENUE_SHARE) + record_revenue
+change_tip_receiver_v2    → TCAV1 (REVENUE_SHARE_V1) + record_revenue_v1
+                          → drain: TM global commission (previous leader)
+                          → after drain: sync global from new TCAV1
+change_client             → drain + rotate client (authority)
 ```
-
-No reward_distribution CPI. Drained lamports land on `old_tip_receiver`; config `validator_tip_receiver_account` is set to the Rakurai **TCA** PDA for subsequent drains.
 
 ---
 
 ## Instructions
 
-| Instruction | Signer | Purpose |
-|-------------|--------|---------|
-| `initialize_rakurai_tip_manager` | payer | Config + 8 tip PDAs |
-| `close_rakurai_tip_manager` | authority | Close all; reclaim rent |
-| `change_tip_receiver` | Rakurai validator identity | Legacy drain + rotate (no RAA/vote/TCA checks) |
-| `change_rakurai_tip_receiver` | Rakurai-enabled validator | Drain + rotate; RAA enabled, vote auth, TCA PDA enforced |
-| `change_client` | authority | Drain → validator receiver + old client; update client |
+| Instruction | Signer | Tip receiver | Commission | Record CPI |
+|-------------|--------|--------------|------------|------------|
+| `change_tip_receiver` | validator | unchecked | TM global bps | none |
+| `change_tip_receiver_v1` | Rakurai-enabled validator | legacy TCA | TM global bps (previous leader); sync from new TCA after | `record_revenue` |
+| `change_tip_receiver_v2` | Rakurai-enabled validator | TCAV1 (mirror of v1) | TM global bps (previous leader); sync from new TCAV1 after | `record_revenue_v1` |
 
-`change_tip_receiver` auth: signer only (legacy). `change_rakurai_tip_receiver` auth: enabled RAA PDA; vote node == signer; `new_tip_receiver` must be `[REVENUE_SHARE, "TIP", "Rakurai", vote]` PDA (pass `reward_distribution_program`).
+Auth: enabled RAA + reward_distribution program in remaining accounts. `new_tip_receiver` must match derive for the path (legacy TIP or V1).
 
 ---
 
 ## Tip Flow
 
-1. Init **TCA**: `initialize_revenue_share_account` (`share_kind = Tip`, name `"Rakurai"`).
-2. Users tip any of 8 PDAs.
-3. Each leader turn: `change_rakurai_tip_receiver` drains → `old_tip_receiver` + commission; config → TCA.
-4. `record_revenue` (ledger) → settle SOL into TCA → `claim_revenue` post-epoch.
-
-Use legacy `change_tip_receiver` only until clients migrate. First drain credits the init payer until config points at TCA.
+1. Legacy: init TCA → `change_tip_receiver_v1` (old validators unchanged).
+2. V1: init TCAV1 (`initialize_revenue_share_account_v1`) → `change_tip_receiver_v2`.
+3. Claim: legacy `claim_revenue` or V1 `claim_revenue_v1`.
 
 ---
 
@@ -60,26 +53,12 @@ Use legacy `change_tip_receiver` only until clients migrate. First drain credits
 
 ```rust
 use rakurai_tip_manager::sdk::{
-    derive_rakurai_tip_manager_config_account_address,
-    derive_rakurai_tip_payment_account_pdas,
-    derive_rakurai_tip_collection_address,
+    derive_rakurai_tip_collection_address,      // REVENUE_SHARE
+    derive_rakurai_tip_collection_v1_address,   // REVENUE_SHARE_V1
+    derive_record_authority_address,
+    change_tip_receiver_v1_ix,
+    change_tip_receiver_v2_ix,
 };
 ```
 
-Builders: `initialize_rakurai_tip_manager_ix`, `close_rakurai_tip_manager_ix`, `change_tip_receiver_ix`, `change_rakurai_tip_receiver_ix`, `change_client_ix`.
-
----
-
-## Build & Program IDs
-
-```bash
-anchor build -p rakurai_tip_manager --no-idl
-```
-
-| Cluster | Program ID |
-|---------|------------|
-| mainnet | `rKtiPTD7WuCdEEQ2JXWgAmZHHL9iZLc3niCXwtS7wSH` |
-| testnet | `4qRZaFzf7MvgfBTCP9grb69cCST8UmKHPtkpGAgkJosD` |
-| localnet | `6z4rnNKVzSYBxqfshk1QZFgJv17KjZoirFhpWSjqQMfu` |
-
-**Related**: `reward_distribution` (revenue-share PDAs), `rakurai_activation` (RAA gate).
+**Related**: `reward_distribution` (legacy + TCAV1), `rakurai_activation` (RAA gate).

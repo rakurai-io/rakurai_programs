@@ -7,6 +7,8 @@ use crate::ErrorCode::{
 use anchor_lang::prelude::*;
 use std::mem::size_of;
 
+const HEADER_SIZE: usize = 8;
+
 /// Stores configuration for the reward distribution program.
 #[account]
 #[derive(Default)]
@@ -70,7 +72,44 @@ pub struct MerkleRoot {
 
 pub const MAX_REVENUE_EPOCH_ENTRIES_CAP: usize = 32;
 
-/// Per-epoch attributed amount.
+/// Rakurai label for tip/mev revenue share vaults (`name` field in PDA seeds; lowercase padded).
+pub const RAKURAI_REVENUE_NAME: [u8; 32] = {
+    let mut name = [0u8; 32];
+    name[0] = b'r';
+    name[1] = b'a';
+    name[2] = b'k';
+    name[3] = b'u';
+    name[4] = b'r';
+    name[5] = b'a';
+    name[6] = b'i';
+    name
+};
+
+/// Singleton defaults for tip and mev-share revenue share account initialization (`init_v1`).
+#[account]
+#[derive(Default)]
+pub struct TipsAndMevShareConfigAccount {
+    /// Authorized updater of this config.
+    pub authority: Pubkey,
+    /// PDA bump.
+    pub bump: u8,
+
+    /// Tip defaults (copied onto TCA at `initialize_revenue_share_account_v1`).
+    pub tip_manager_authority: Pubkey,
+    pub tip_commission_account: Pubkey,
+    pub tip_commission_bps: u16,
+    /// Ledger capacity written to `max_epoch_entries` (1..=32).
+    pub tip_epoch: u8,
+
+    /// MevShare defaults (copied onto MCA at `initialize_revenue_share_account_v1`).
+    pub mev_share_manager_authority: Pubkey,
+    pub mev_share_commission_account: Pubkey,
+    pub mev_share_commission_bps: u16,
+    /// Ledger capacity written to `max_epoch_entries` (1..=32).
+    pub mev_share_epoch: u8,
+}
+
+/// Legacy per-epoch attributed amount (no `transferred_amount`).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct EpochAmountEntry {
     pub epoch: u64,
@@ -80,13 +119,45 @@ pub struct EpochAmountEntry {
     pub block_reward_converted: bool,
 }
 
-/// Per-account epoch revenue ledger; grows until `max_epoch_entries` then evicts oldest claimed entry (errors if all unclaimed).
+/// V1 per-epoch attributed amount with settle tracking.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct EpochAmountEntryV1 {
+    pub epoch: u64,
+    /// Accumulated via `record_revenue`.
+    pub amount: u64,
+    /// Settled SOL credited via `settle_revenue`, or auto-credited on `record_revenue` for Rakurai tip TCA.
+    pub transferred_amount: u64,
+    pub claimed: bool,
+    /// Whether this epoch's block reward conversion is complete.
+    pub block_reward_converted: bool,
+}
+
+/// Fixed header bytes after the 8-byte Anchor discriminator, before the ledger vec.
+/// `share_kind` through `block_reward_conversion_enabled`.
+pub const REVENUE_SHARE_FIXED_PREFIX_LEN: usize = 1  // share_kind
+    + 32 // name
+    + 32 // validator_vote
+    + 32 // initializer
+    + 32 // manager_authority
+    + 32 // record_authority
+    + 1  // max_epoch_entries
+    + 2  // commission_bps
+    + 32 // commission_account
+    + 1; // block_reward_conversion_enabled
+
+/// Legacy per-account epoch revenue ledger.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Default, Debug, PartialEq, Eq)]
 pub struct RevenueLedger {
     pub entries: Vec<EpochAmountEntry>,
 }
 
-/// Revenue share vault kind; included in PDA seeds after [`RevenueShareAccount::SEED`].
+/// V1 per-account epoch revenue ledger.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default, Debug, PartialEq, Eq)]
+pub struct RevenueLedgerV1 {
+    pub entries: Vec<EpochAmountEntryV1>,
+}
+
+/// Revenue share vault kind; included in PDA seeds after the vault base seed.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RevenueKind {
     Tip,
@@ -105,7 +176,34 @@ impl RevenueKind {
     }
 }
 
-/// Tip/mev-share revenue share vault per validator (accounting + lamport vault).
+/// How the manager adjusts account-level [`RevenueShareAccountV1::deficit`].
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeficitUpdate {
+    /// Replace deficit with `value`.
+    Set { value: u64 },
+    /// Write off all deficit (`0`).
+    Clear,
+    /// Add `amount` to deficit.
+    Increase { amount: u64 },
+    /// Subtract `amount` from deficit (saturating at 0).
+    Decrease { amount: u64 },
+}
+
+impl DeficitUpdate {
+    pub fn apply(self, current: u64) -> Result<u64> {
+        use crate::ErrorCode::ArithmeticError;
+
+        Ok(match self {
+            Self::Set { value } => value,
+            Self::Clear => 0,
+            Self::Increase { amount } => current.checked_add(amount).ok_or(ArithmeticError)?,
+            Self::Decrease { amount } => current.saturating_sub(amount),
+        })
+    }
+}
+
+/// Legacy tip/mev-share revenue share vault (no `transferred_amount` / `deficit`).
+/// PDA: `[REVENUE_SHARE, TIP|MEV_SHARE, name, vote]`.
 #[account]
 pub struct RevenueShareAccount {
     /// Tip vs mev-share; part of the PDA seeds with `name` and `validator_vote`.
@@ -131,14 +229,45 @@ pub struct RevenueShareAccount {
     pub bump: u8,
 }
 
-/// Tips Collection Account (TCA): a [`RevenueShareAccount`] with `share_kind = Tip`.
-/// Collects the validator's tip revenue (settled from a custom tip account).
+/// V1 tip/mev-share revenue share vault with settle tracking and deficit.
+/// PDA: `[REVENUE_SHARE_V1, TIP|MEV_SHARE, name, vote]`.
+#[account]
+pub struct RevenueShareAccountV1 {
+    /// Tip vs mev-share; part of the PDA seeds with `name` and `validator_vote`.
+    pub share_kind: RevenueKind,
+    /// UTF-8 padded label (used in PDA seeds).
+    pub name: [u8; 32],
+    pub validator_vote: Pubkey,
+    /// Who paid to create this account; receives rent on close.
+    pub initializer: Pubkey,
+    /// Claims revenue, updates config, and closes the account.
+    pub manager_authority: Pubkey,
+    /// Signs `record_revenue`.
+    pub record_authority: Pubkey,
+    /// Max distinct epochs in `ledger`.
+    pub max_epoch_entries: u8,
+    /// Commission on revenue claims (basis points); remainder goes to validator identity.
+    pub commission_bps: u16,
+    /// Receives the commission portion on claim.
+    pub commission_account: Pubkey,
+    /// When true, epoch entries require explicit block reward conversion via `update_epoch_converted_to_block_reward`.
+    pub block_reward_conversion_enabled: bool,
+    pub ledger: RevenueLedgerV1,
+    /// Cumulative unpaid shortfall (`record amount - transferred` when claimed underfunded); manager can write off via `update_deficit`.
+    pub deficit: u64,
+    pub bump: u8,
+}
+
+/// Tips Collection Account (TCA): legacy [`RevenueShareAccount`] with `share_kind = Tip`.
 pub type TipsCollectionAccount = RevenueShareAccount;
-/// Mev Share Collection Account (MCA): a [`RevenueShareAccount`] with `share_kind = MevShare`.
-/// Collects the agreed MEV / arbitrage revenue share.
+/// Mev Share Collection Account (MCA): legacy [`RevenueShareAccount`] with `share_kind = MevShare`.
 pub type MevShareCollectionAccount = RevenueShareAccount;
 
-const HEADER_SIZE: usize = 8;
+/// Tips Collection Account V1 (TCAV1): [`RevenueShareAccountV1`] with `share_kind = Tip`.
+pub type TipsCollectionAccountV1 = RevenueShareAccountV1;
+/// Mev Share Collection Account V1 (MCAV1): [`RevenueShareAccountV1`] with `share_kind = MevShare`.
+pub type MevShareCollectionAccountV1 = RevenueShareAccountV1;
+
 const MAX_COMMISSION_BPS: u16 = 10000;
 
 /// Validates revenue commission fields against config caps.
@@ -193,6 +322,80 @@ impl RewardDistributionConfigAccount {
         }
 
         Ok(())
+    }
+}
+
+impl TipsAndMevShareConfigAccount {
+    /// PDA seed for the tips-and-mev-share config singleton.
+    pub const SEED: &'static [u8] = b"TIPS_AND_MEV_SHARE_CONFIG";
+    /// Account size for rent-exemption.
+    pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
+
+    /// Returns `(manager, commission_account, commission_bps, epoch)` for `share_kind`.
+    /// `record_authority` is passed as an instruction arg (same as legacy init).
+    pub fn defaults_for(&self, share_kind: RevenueKind) -> (Pubkey, Pubkey, u16, u8) {
+        match share_kind {
+            RevenueKind::Tip => (
+                self.tip_manager_authority,
+                self.tip_commission_account,
+                self.tip_commission_bps,
+                self.tip_epoch,
+            ),
+            RevenueKind::MevShare => (
+                self.mev_share_manager_authority,
+                self.mev_share_commission_account,
+                self.mev_share_commission_bps,
+                self.mev_share_epoch,
+            ),
+        }
+    }
+
+    /// Rent space for a V1 revenue share vault initialized from this config for `share_kind`.
+    pub fn space_for_share_kind(&self, share_kind: RevenueKind) -> usize {
+        let max_epoch_entries = match share_kind {
+            RevenueKind::Tip => self.tip_epoch,
+            RevenueKind::MevShare => self.mev_share_epoch,
+        };
+        RevenueShareAccountV1::space_for(max_epoch_entries as usize)
+    }
+
+    /// Validates tip and mev-share field groups (commission, epoch capacity, authorities).
+    pub fn validate(&self) -> Result<()> {
+        if self.authority == Pubkey::default() {
+            return Err(AccountValidationFailure.into());
+        }
+
+        Self::validate_side(
+            self.tip_manager_authority,
+            self.tip_commission_account,
+            self.tip_commission_bps,
+            self.tip_epoch,
+        )?;
+        Self::validate_side(
+            self.mev_share_manager_authority,
+            self.mev_share_commission_account,
+            self.mev_share_commission_bps,
+            self.mev_share_epoch,
+        )?;
+
+        Ok(())
+    }
+
+    fn validate_side(
+        manager_authority: Pubkey,
+        commission_account: Pubkey,
+        commission_bps: u16,
+        epoch: u8,
+    ) -> Result<()> {
+        if manager_authority == Pubkey::default() {
+            return Err(AccountValidationFailure.into());
+        }
+
+        if epoch == 0 || epoch as usize > MAX_REVENUE_EPOCH_ENTRIES_CAP {
+            return Err(InvalidRevenueEpochCapacity.into());
+        }
+
+        validate_commission(commission_bps, commission_account, MAX_COMMISSION_BPS)
     }
 }
 
@@ -319,7 +522,71 @@ impl RevenueLedger {
     }
 }
 
+impl RevenueLedgerV1 {
+    pub fn get_mut(&mut self, epoch: u64) -> Result<&mut EpochAmountEntryV1> {
+        self.entries
+            .iter_mut()
+            .find(|e| e.epoch == epoch)
+            .ok_or(EpochEntryNotFound.into())
+    }
+
+    pub fn add(
+        &mut self,
+        epoch: u64,
+        amount: u64,
+        capacity: usize,
+        block_reward_converted: bool,
+    ) -> Result<()> {
+        if amount == 0 {
+            return Ok(());
+        }
+
+        for entry in &mut self.entries {
+            if entry.epoch == epoch {
+                entry.amount = entry.amount.checked_add(amount).ok_or(ArithmeticError)?;
+                return Ok(());
+            }
+        }
+
+        let new_entry = EpochAmountEntryV1 {
+            epoch,
+            amount,
+            transferred_amount: 0,
+            claimed: false,
+            block_reward_converted,
+        };
+
+        if self.entries.len() < capacity {
+            self.entries.push(new_entry);
+            return Ok(());
+        }
+
+        let mut oldest_claimed_idx: Option<usize> = None;
+        let mut oldest_claimed_epoch = u64::MAX;
+        for (i, entry) in self.entries.iter().enumerate() {
+            if entry.claimed && entry.epoch < oldest_claimed_epoch {
+                oldest_claimed_epoch = entry.epoch;
+                oldest_claimed_idx = Some(i);
+            }
+        }
+
+        let evict_idx = oldest_claimed_idx.ok_or(RevenueLedgerFull)?;
+        self.entries[evict_idx] = new_entry;
+        Ok(())
+    }
+
+    pub fn mark_claimed(&mut self, epoch: u64) -> Result<()> {
+        let entry = self.get_mut(epoch)?;
+        if entry.claimed {
+            return Err(EpochAlreadyClaimed.into());
+        }
+        entry.claimed = true;
+        Ok(())
+    }
+}
+
 impl RevenueShareAccount {
+    /// Legacy vault PDA base seed.
     pub const SEED: &'static [u8] = b"REVENUE_SHARE";
 
     pub fn pda_seeds<'a>(
@@ -337,19 +604,10 @@ impl RevenueShareAccount {
 
     pub fn space_for(max_epoch_entries: usize) -> usize {
         HEADER_SIZE
-            + 1  //share_kind
-            + 32 // name
-            + 32 // validator_vote
-            + 32 // initializer
-            + 32 // manager_authority
-            + 32 // record_authority
-            + 1 // max_epoch_entries
-            + 2 // commission_bps
-            + 32 // commission_account
-            + 1 // block_reward_conversion_enabled
+            + REVENUE_SHARE_FIXED_PREFIX_LEN
             + 4 // vec length (u32)
-            + max_epoch_entries * size_of::<EpochAmountEntry>() // ledger size
-            + 1 // bump
+            + max_epoch_entries * size_of::<EpochAmountEntry>()
+            + 1 // bump (no deficit)
     }
 
     pub fn populate_on_init(
@@ -380,6 +638,7 @@ impl RevenueShareAccount {
         self.validate()
     }
 
+    /// Records attributed revenue for an epoch (amount only; legacy semantics).
     pub fn record_revenue(&mut self, epoch: u64, amount: u64) -> Result<()> {
         let capacity = self.max_epoch_entries as usize;
         self.ledger
@@ -387,7 +646,283 @@ impl RevenueShareAccount {
     }
 
     /// Marks a claimed epoch entry as converted to block rewards.
-    /// Requires entry `claimed` and entry flag still false.
+    pub fn mark_epoch_converted_to_block_reward(&mut self, epoch: u64) -> Result<()> {
+        let entry = self.ledger.get_mut(epoch)?;
+        if !entry.claimed {
+            return Err(EpochNotClaimed.into());
+        }
+        if entry.block_reward_converted {
+            return Err(EpochAlreadyConvertedToBlockReward.into());
+        }
+
+        entry.block_reward_converted = true;
+        Ok(())
+    }
+
+    pub fn update_commission(
+        &mut self,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        block_reward_conversion_enabled: bool,
+        manager_authority: Pubkey,
+        record_authority: Option<Pubkey>,
+    ) -> Result<()> {
+        self.commission_bps = commission_bps;
+        self.commission_account = commission_account;
+        self.block_reward_conversion_enabled = block_reward_conversion_enabled;
+        self.manager_authority = manager_authority;
+        if let Some(new_record_authority) = record_authority {
+            self.record_authority = new_record_authority;
+        }
+        self.validate()
+    }
+
+    pub fn auth_record_signer(&self, signer: Pubkey) -> Result<()> {
+        if signer != self.record_authority {
+            return Err(crate::ErrorCode::Unauthorized.into());
+        }
+        Ok(())
+    }
+
+    pub fn auth_manager_signer(&self, signer: Pubkey) -> Result<()> {
+        if signer != self.manager_authority {
+            return Err(crate::ErrorCode::Unauthorized.into());
+        }
+        Ok(())
+    }
+
+    pub fn is_rakurai_tip_tca(&self) -> bool {
+        self.share_kind == RevenueKind::Tip && self.name == RAKURAI_REVENUE_NAME
+    }
+
+    /// Validates init instruction args before the account is populated.
+    pub fn validate_init_params(
+        name: [u8; 32],
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        max_commission_bps: u16,
+    ) -> Result<()> {
+        if name == [0u8; 32] {
+            return Err(InvalidRevenueName.into());
+        }
+
+        if record_authority == Pubkey::default() {
+            return Err(AccountValidationFailure.into());
+        }
+
+        if max_epoch_entries == 0 || max_epoch_entries as usize > MAX_REVENUE_EPOCH_ENTRIES_CAP {
+            return Err(InvalidRevenueEpochCapacity.into());
+        }
+
+        validate_commission(commission_bps, commission_account, max_commission_bps)?;
+
+        Ok(())
+    }
+
+    /// Validates persisted account fields.
+    pub fn validate(&self) -> Result<()> {
+        Self::validate_init_params(
+            self.name,
+            self.record_authority,
+            self.max_epoch_entries,
+            self.commission_bps,
+            self.commission_account,
+            MAX_COMMISSION_BPS,
+        )?;
+
+        if self.manager_authority == Pubkey::default()
+            || self.validator_vote == Pubkey::default()
+            || self.initializer == Pubkey::default()
+        {
+            return Err(AccountValidationFailure.into());
+        }
+
+        Ok(())
+    }
+
+    /// Splits a claimable epoch entry between the commission account and validator identity,
+    /// transferring lamports out of the revenue share vault. Pays recorded `amount` if vault funded.
+    /// Returns `(commission, validator)`.
+    pub fn claim_revenue(
+        ledger: &mut RevenueLedger,
+        revenue_share_account: AccountInfo,
+        commission_account: AccountInfo,
+        validator_identity: AccountInfo,
+        commission_bps: u16,
+        epoch: u64,
+    ) -> Result<(u64, u64)> {
+        use crate::ErrorCode::*;
+
+        let current_epoch = Clock::get()?.epoch;
+        if current_epoch <= epoch {
+            return Err(PrematureRevenueClaim.into());
+        }
+
+        let entry_amount = {
+            let entry = ledger
+                .entries
+                .iter()
+                .find(|e| e.epoch == epoch)
+                .ok_or(EpochEntryNotFound)?;
+            if entry.claimed {
+                return Err(EpochAlreadyClaimed.into());
+            }
+            if entry.amount == 0 {
+                return Err(RewardsTooLow.into());
+            }
+            entry.amount
+        };
+
+        let commission_amount = if commission_bps == 0 {
+            0
+        } else {
+            entry_amount
+                .checked_mul(commission_bps as u64)
+                .ok_or(ArithmeticError)?
+                .checked_div(10_000)
+                .ok_or(ArithmeticError)?
+        };
+        let validator_amount = entry_amount
+            .checked_sub(commission_amount)
+            .ok_or(ArithmeticError)?;
+
+        let rent = Rent::get()?;
+        let min_rent = rent.minimum_balance(revenue_share_account.data_len());
+        let available = revenue_share_account.lamports().saturating_sub(min_rent);
+        if available < entry_amount {
+            return Err(RewardsTooLow.into());
+        }
+
+        if commission_amount > 0 {
+            RewardCollectionAccount::transfer_lamports(
+                revenue_share_account.clone(),
+                commission_account,
+                commission_amount,
+            )?;
+        }
+        if validator_amount > 0 {
+            RewardCollectionAccount::transfer_lamports(
+                revenue_share_account,
+                validator_identity,
+                validator_amount,
+            )?;
+        }
+
+        ledger.mark_claimed(epoch)?;
+
+        Ok((commission_amount, validator_amount))
+    }
+}
+
+impl RevenueShareAccountV1 {
+    /// V1 vault PDA base seed.
+    pub const SEED: &'static [u8] = b"REVENUE_SHARE_V1";
+    /// Alias for [`Self::SEED`].
+    pub const SEED_V1: &'static [u8] = b"REVENUE_SHARE_V1";
+
+    pub fn pda_seeds<'a>(
+        share_kind: RevenueKind,
+        name: &'a [u8; 32],
+        validator_vote: &'a Pubkey,
+    ) -> [&'a [u8]; 4] {
+        Self::pda_seeds_v1(share_kind, name, validator_vote)
+    }
+
+    pub fn pda_seeds_v1<'a>(
+        share_kind: RevenueKind,
+        name: &'a [u8; 32],
+        validator_vote: &'a Pubkey,
+    ) -> [&'a [u8]; 4] {
+        [
+            Self::SEED_V1,
+            share_kind.seed(),
+            name.as_ref(),
+            validator_vote.as_ref(),
+        ]
+    }
+
+    pub fn space_for(max_epoch_entries: usize) -> usize {
+        HEADER_SIZE
+            + REVENUE_SHARE_FIXED_PREFIX_LEN
+            + 4 // vec length (u32)
+            + max_epoch_entries * size_of::<EpochAmountEntryV1>()
+            + 8 // deficit
+            + 1 // bump
+    }
+
+    pub fn populate_on_init(
+        &mut self,
+        share_kind: RevenueKind,
+        name: [u8; 32],
+        validator_vote: Pubkey,
+        initializer: Pubkey,
+        manager_authority: Pubkey,
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        bump: u8,
+    ) -> Result<()> {
+        self.share_kind = share_kind;
+        self.name = name;
+        self.validator_vote = validator_vote;
+        self.initializer = initializer;
+        self.manager_authority = manager_authority;
+        self.record_authority = record_authority;
+        self.max_epoch_entries = max_epoch_entries;
+        self.commission_bps = commission_bps;
+        self.commission_account = commission_account;
+        self.block_reward_conversion_enabled = false;
+        self.ledger = RevenueLedgerV1::default();
+        self.deficit = 0;
+        self.bump = bump;
+        self.validate()
+    }
+
+    /// Records attributed revenue for an epoch.
+    /// Rakurai tip TCA (`Tip` + `RAKURAI_REVENUE_NAME`): also `saturating_add`s `transferred_amount`
+    /// (tip-manager deposits SOL in the same drain tx).
+    /// Non-Rakurai: only updates `amount`; callers must use `settle_revenue` (CPI transfer + credit).
+    pub fn record_revenue(&mut self, epoch: u64, amount: u64) -> Result<()> {
+        let capacity = self.max_epoch_entries as usize;
+        self.ledger
+            .add(epoch, amount, capacity, !self.block_reward_conversion_enabled)?;
+
+        if self.share_kind == RevenueKind::Tip && self.name == RAKURAI_REVENUE_NAME {
+            let entry = self.ledger.get_mut(epoch)?;
+            entry.transferred_amount = entry.transferred_amount.saturating_add(amount);
+        }
+        Ok(())
+    }
+
+    /// Credits `transferred_amount` after a settle CPI transfer (non-Rakurai path).
+    /// May exceed recorded `amount` (over-settle); claim pays `transferred_amount`.
+    pub fn credit_transferred(&mut self, epoch: u64, amount: u64) -> Result<()> {
+        use crate::ErrorCode::*;
+
+        if amount == 0 {
+            return Err(RewardsTooLow.into());
+        }
+
+        let entry = self.ledger.get_mut(epoch)?;
+        if entry.claimed {
+            return Err(EpochAlreadyClaimed.into());
+        }
+
+        entry.transferred_amount = entry
+            .transferred_amount
+            .checked_add(amount)
+            .ok_or(ArithmeticError)?;
+        Ok(())
+    }
+
+    pub fn is_rakurai_tip_tca(&self) -> bool {
+        self.share_kind == RevenueKind::Tip && self.name == RAKURAI_REVENUE_NAME
+    }
+
+    /// Marks a claimed epoch entry as converted to block rewards.
     pub fn mark_epoch_converted_to_block_reward(&mut self, epoch: u64) -> Result<()> {
         let entry = self.ledger.get_mut(epoch)?;
         if !entry.claimed {
@@ -480,16 +1015,19 @@ impl RevenueShareAccount {
         Ok(())
     }
 
-    /// Splits a claimable epoch entry between the commission account and validator identity,
-    /// transferring lamports out of the revenue share vault. Returns `(commission, validator)`.
+    /// Splits claimable settled funds for an epoch between commission and validator identity.
+    /// Claimable = `transferred_amount` (may be above or below recorded `amount`).
+    /// If underfunded (`transferred < amount`), adds shortfall to `deficit`.
+    /// Returns `(commission, validator, claimed_total, shortfall)`.
     pub fn claim_revenue(
-        ledger: &mut RevenueLedger,
+        ledger: &mut RevenueLedgerV1,
+        deficit: &mut u64,
         revenue_share_account: AccountInfo,
         commission_account: AccountInfo,
         validator_identity: AccountInfo,
         commission_bps: u16,
         epoch: u64,
-    ) -> Result<(u64, u64)> {
+    ) -> Result<(u64, u64, u64, u64)> {
         use crate::ErrorCode::*;
 
         let current_epoch = Clock::get()?.epoch;
@@ -497,7 +1035,7 @@ impl RevenueShareAccount {
             return Err(PrematureRevenueClaim.into());
         }
 
-        let entry_amount = {
+        let (record_amount, transferred_amount) = {
             let entry = ledger
                 .entries
                 .iter()
@@ -506,29 +1044,37 @@ impl RevenueShareAccount {
             if entry.claimed {
                 return Err(EpochAlreadyClaimed.into());
             }
-            if entry.amount == 0 {
+            if entry.amount == 0 && entry.transferred_amount == 0 {
                 return Err(RewardsTooLow.into());
             }
-            entry.amount
+            (entry.amount, entry.transferred_amount)
         };
+
+        // Always pay what was transferred (supports under-settle and over-settle).
+        let claimable = transferred_amount;
+        if claimable == 0 {
+            return Err(RewardsTooLow.into());
+        }
+
+        let shortfall = record_amount.saturating_sub(claimable);
 
         let commission_amount = if commission_bps == 0 {
             0
         } else {
-            entry_amount
+            claimable
                 .checked_mul(commission_bps as u64)
                 .ok_or(ArithmeticError)?
                 .checked_div(10_000)
                 .ok_or(ArithmeticError)?
         };
-        let validator_amount = entry_amount
+        let validator_amount = claimable
             .checked_sub(commission_amount)
             .ok_or(ArithmeticError)?;
 
         let rent = Rent::get()?;
         let min_rent = rent.minimum_balance(revenue_share_account.data_len());
         let available = revenue_share_account.lamports().saturating_sub(min_rent);
-        if available < entry_amount {
+        if available < claimable {
             return Err(RewardsTooLow.into());
         }
 
@@ -547,11 +1093,16 @@ impl RevenueShareAccount {
             )?;
         }
 
+        if shortfall > 0 {
+            *deficit = deficit.checked_add(shortfall).ok_or(ArithmeticError)?;
+        }
+
         ledger.mark_claimed(epoch)?;
 
-        Ok((commission_amount, validator_amount))
+        Ok((commission_amount, validator_amount, claimable, shortfall))
     }
 }
+
 /// Stores claim status for a given leaf in the Merkle tree.
 #[account]
 #[derive(Default)]
@@ -678,6 +1229,26 @@ mod tests {
     }
 
     #[test]
+    fn revenue_share_v1_pda_differs_from_legacy() {
+        let mut name = [0u8; 32];
+        name[..7].copy_from_slice(b"rakurai");
+        let vote = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+
+        let legacy = Pubkey::find_program_address(
+            &RevenueShareAccount::pda_seeds(RevenueKind::Tip, &name, &vote),
+            &program,
+        )
+        .0;
+        let v1 = Pubkey::find_program_address(
+            &RevenueShareAccountV1::pda_seeds_v1(RevenueKind::Tip, &name, &vote),
+            &program,
+        )
+        .0;
+        assert_ne!(legacy, v1);
+    }
+
+    #[test]
     fn commission_rejects_bps_above_cap() {
         assert!(validate_commission(10_001, Pubkey::new_unique(), 10_000).is_err());
     }
@@ -686,6 +1257,116 @@ mod tests {
     fn commission_requires_account_when_bps_positive() {
         assert!(validate_commission(100, Pubkey::default(), 10_000).is_err());
         assert!(validate_commission(0, Pubkey::default(), 10_000).is_ok());
+    }
+
+    fn valid_tips_and_mev_share_config() -> TipsAndMevShareConfigAccount {
+        TipsAndMevShareConfigAccount {
+            authority: Pubkey::new_unique(),
+            bump: 255,
+            tip_manager_authority: Pubkey::new_unique(),
+            tip_commission_account: Pubkey::new_unique(),
+            tip_commission_bps: 500,
+            tip_epoch: 8,
+            mev_share_manager_authority: Pubkey::new_unique(),
+            mev_share_commission_account: Pubkey::new_unique(),
+            mev_share_commission_bps: 1_000,
+            mev_share_epoch: 16,
+        }
+    }
+
+    #[test]
+    fn tips_and_mev_share_config_validate_ok() {
+        assert!(valid_tips_and_mev_share_config().validate().is_ok());
+    }
+
+    #[test]
+    fn tips_and_mev_share_config_rejects_bad_epoch() {
+        let mut cfg = valid_tips_and_mev_share_config();
+        cfg.tip_epoch = 0;
+        assert!(cfg.validate().is_err());
+        cfg.tip_epoch = 8;
+        cfg.mev_share_epoch = 33;
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn tips_and_mev_share_config_defaults_for_selects_field_group() {
+        let cfg = valid_tips_and_mev_share_config();
+        let (tip_mgr, tip_comm_acc, tip_bps, tip_ep) = cfg.defaults_for(RevenueKind::Tip);
+        assert_eq!(tip_mgr, cfg.tip_manager_authority);
+        assert_eq!(tip_comm_acc, cfg.tip_commission_account);
+        assert_eq!(tip_bps, cfg.tip_commission_bps);
+        assert_eq!(tip_ep, cfg.tip_epoch);
+
+        let (mev_mgr, mev_comm_acc, mev_bps, mev_ep) = cfg.defaults_for(RevenueKind::MevShare);
+        assert_eq!(mev_mgr, cfg.mev_share_manager_authority);
+        assert_eq!(mev_comm_acc, cfg.mev_share_commission_account);
+        assert_eq!(mev_bps, cfg.mev_share_commission_bps);
+        assert_eq!(mev_ep, cfg.mev_share_epoch);
+    }
+
+    #[test]
+    fn revenue_share_layout_sizes_differ() {
+        assert_ne!(
+            RevenueShareAccount::space_for(8),
+            RevenueShareAccountV1::space_for(8)
+        );
+        assert!(RevenueShareAccountV1::space_for(8) > RevenueShareAccount::space_for(8));
+    }
+
+    #[test]
+    fn deficit_update_apply_variants() {
+        assert_eq!(DeficitUpdate::Set { value: 42 }.apply(7).unwrap(), 42);
+        assert_eq!(DeficitUpdate::Clear.apply(100).unwrap(), 0);
+        assert_eq!(
+            DeficitUpdate::Increase { amount: 5 }.apply(10).unwrap(),
+            15
+        );
+        assert_eq!(
+            DeficitUpdate::Decrease { amount: 3 }.apply(10).unwrap(),
+            7
+        );
+        assert_eq!(
+            DeficitUpdate::Decrease { amount: 99 }.apply(10).unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn credit_transferred_allows_over_settle() {
+        let mut acc = test_revenue_share_account_v1(false);
+        acc.record_revenue(10, 100).unwrap();
+        acc.credit_transferred(10, 40).unwrap();
+        acc.credit_transferred(10, 80).unwrap(); // 120 > recorded 100
+        assert_eq!(acc.ledger.entries[0].transferred_amount, 120);
+    }
+
+    #[test]
+    fn record_revenue_rakurai_tip_also_credits_transferred() {
+        let mut acc = test_revenue_share_account_v1(false);
+        acc.share_kind = RevenueKind::Tip;
+        acc.name = RAKURAI_REVENUE_NAME;
+        acc.record_revenue(10, 100).unwrap();
+        assert_eq!(acc.ledger.entries[0].amount, 100);
+        assert_eq!(acc.ledger.entries[0].transferred_amount, 100);
+        acc.record_revenue(10, 25).unwrap();
+        assert_eq!(acc.ledger.entries[0].amount, 125);
+        assert_eq!(acc.ledger.entries[0].transferred_amount, 125);
+    }
+
+    #[test]
+    fn record_revenue_non_rakurai_does_not_auto_credit_transferred() {
+        let mut acc = test_revenue_share_account_v1(false);
+        acc.record_revenue(10, 100).unwrap();
+        assert_eq!(acc.ledger.entries[0].transferred_amount, 0);
+    }
+
+    #[test]
+    fn legacy_record_revenue_only_updates_amount() {
+        let mut acc = test_revenue_share_account(false);
+        acc.record_revenue(10, 100).unwrap();
+        assert_eq!(acc.ledger.entries[0].amount, 100);
+        assert!(!acc.ledger.entries[0].claimed);
     }
 
     fn test_revenue_share_account(block_reward_conversion_enabled: bool) -> RevenueShareAccount {
@@ -703,6 +1384,28 @@ mod tests {
             commission_account: Pubkey::default(),
             block_reward_conversion_enabled,
             ledger: RevenueLedger::default(),
+            bump: 0,
+        }
+    }
+
+    fn test_revenue_share_account_v1(
+        block_reward_conversion_enabled: bool,
+    ) -> RevenueShareAccountV1 {
+        let mut name = [0u8; 32];
+        name[0] = b'X';
+        RevenueShareAccountV1 {
+            share_kind: RevenueKind::Tip,
+            name,
+            validator_vote: Pubkey::new_unique(),
+            initializer: Pubkey::new_unique(),
+            manager_authority: Pubkey::new_unique(),
+            record_authority: Pubkey::new_unique(),
+            max_epoch_entries: 4,
+            commission_bps: 0,
+            commission_account: Pubkey::default(),
+            block_reward_conversion_enabled,
+            ledger: RevenueLedgerV1::default(),
+            deficit: 0,
             bump: 0,
         }
     }

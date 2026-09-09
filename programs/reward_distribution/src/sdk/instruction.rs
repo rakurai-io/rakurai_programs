@@ -265,6 +265,157 @@ pub fn close_config_ix(
     }
 }
 
+pub struct InitializeTipsAndMevShareConfigArgs {
+    pub authority: Pubkey,
+    pub tip_manager_authority: Pubkey,
+    pub tip_commission_account: Pubkey,
+    pub tip_commission_bps: u16,
+    pub tip_epoch: u8,
+    pub mev_share_manager_authority: Pubkey,
+    pub mev_share_commission_account: Pubkey,
+    pub mev_share_commission_bps: u16,
+    pub mev_share_epoch: u8,
+    pub bump: u8,
+}
+
+pub struct InitializeTipsAndMevShareConfigAccounts {
+    pub tips_and_mev_share_config: Pubkey,
+    pub system_program: Pubkey,
+    pub initializer: Pubkey,
+}
+
+pub fn initialize_tips_and_mev_share_config_ix(
+    program_id: Pubkey,
+    args: InitializeTipsAndMevShareConfigArgs,
+    accounts: InitializeTipsAndMevShareConfigAccounts,
+) -> Instruction {
+    let InitializeTipsAndMevShareConfigArgs {
+        authority,
+        tip_manager_authority,
+        tip_commission_account,
+        tip_commission_bps,
+        tip_epoch,
+        mev_share_manager_authority,
+        mev_share_commission_account,
+        mev_share_commission_bps,
+        mev_share_epoch,
+        bump,
+    } = args;
+    let InitializeTipsAndMevShareConfigAccounts {
+        tips_and_mev_share_config,
+        system_program,
+        initializer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::InitializeTipsAndMevShareConfig {
+            authority,
+            tip_manager_authority,
+            tip_commission_account,
+            tip_commission_bps,
+            tip_epoch,
+            mev_share_manager_authority,
+            mev_share_commission_account,
+            mev_share_commission_bps,
+            mev_share_epoch,
+            bump,
+        }
+        .data(),
+        accounts: crate::accounts::InitializeTipsAndMevShareConfig {
+            tips_and_mev_share_config,
+            system_program,
+            initializer,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateTipsAndMevShareConfigArgs {
+    pub tip_manager_authority: Pubkey,
+    pub tip_commission_account: Pubkey,
+    pub tip_commission_bps: u16,
+    pub tip_epoch: u8,
+    pub mev_share_manager_authority: Pubkey,
+    pub mev_share_commission_account: Pubkey,
+    pub mev_share_commission_bps: u16,
+    pub mev_share_epoch: u8,
+}
+
+pub struct UpdateTipsAndMevShareConfigAccounts {
+    pub tips_and_mev_share_config: Pubkey,
+    pub authority: Pubkey,
+}
+
+pub fn update_tips_and_mev_share_config_ix(
+    program_id: Pubkey,
+    args: UpdateTipsAndMevShareConfigArgs,
+    accounts: UpdateTipsAndMevShareConfigAccounts,
+) -> Instruction {
+    let UpdateTipsAndMevShareConfigArgs {
+        tip_manager_authority,
+        tip_commission_account,
+        tip_commission_bps,
+        tip_epoch,
+        mev_share_manager_authority,
+        mev_share_commission_account,
+        mev_share_commission_bps,
+        mev_share_epoch,
+    } = args;
+    let UpdateTipsAndMevShareConfigAccounts {
+        tips_and_mev_share_config,
+        authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateTipsAndMevShareConfig {
+            tip_manager_authority,
+            tip_commission_account,
+            tip_commission_bps,
+            tip_epoch,
+            mev_share_manager_authority,
+            mev_share_commission_account,
+            mev_share_commission_bps,
+            mev_share_epoch,
+        }
+        .data(),
+        accounts: crate::accounts::UpdateTipsAndMevShareConfig {
+            tips_and_mev_share_config,
+            authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct CloseTipsAndMevShareConfigArgs;
+
+pub struct CloseTipsAndMevShareConfigAccounts {
+    pub tips_and_mev_share_config: Pubkey,
+    pub signer: Pubkey,
+}
+
+pub fn close_tips_and_mev_share_config_ix(
+    program_id: Pubkey,
+    _args: CloseTipsAndMevShareConfigArgs,
+    accounts: CloseTipsAndMevShareConfigAccounts,
+) -> Instruction {
+    let CloseTipsAndMevShareConfigAccounts {
+        tips_and_mev_share_config,
+        signer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::CloseTipsAndMevShareConfig {}.data(),
+        accounts: crate::accounts::CloseTipsAndMevShareConfig {
+            tips_and_mev_share_config,
+            signer,
+        }
+        .to_account_metas(None),
+    }
+}
+
 /// Merkle root and claim limits for uploading new rewards.
 pub struct UploadMerkleRootArgs {
     pub root: [u8; 32],
@@ -558,6 +709,63 @@ pub fn initialize_revenue_share_account_ix(
     }
 }
 
+pub struct InitializeRevenueShareAccountV1Args {
+    pub share_kind: RevenueKind,
+    pub name: [u8; 32],
+    pub record_authority: Pubkey,
+    pub bump: u8,
+}
+
+pub struct InitializeRevenueShareAccountV1Accounts {
+    pub revenue_share_account: Pubkey,
+    pub tips_and_mev_share_config: Pubkey,
+    pub rakurai_activation_account: Pubkey,
+    pub validator_vote_account: Pubkey,
+    pub payer: Pubkey,
+    pub system_program: Pubkey,
+}
+
+pub fn initialize_revenue_share_account_v1_ix(
+    program_id: Pubkey,
+    args: InitializeRevenueShareAccountV1Args,
+    accounts: InitializeRevenueShareAccountV1Accounts,
+) -> Instruction {
+    let InitializeRevenueShareAccountV1Args {
+        share_kind,
+        name,
+        record_authority,
+        bump,
+    } = args;
+    let InitializeRevenueShareAccountV1Accounts {
+        revenue_share_account,
+        tips_and_mev_share_config,
+        rakurai_activation_account,
+        validator_vote_account,
+        payer,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::InitializeRevenueShareAccountV1 {
+            share_kind,
+            name,
+            record_authority,
+            bump,
+        }
+        .data(),
+        accounts: crate::accounts::InitializeRevenueShareAccountV1 {
+            revenue_share_account,
+            tips_and_mev_share_config,
+            rakurai_activation_account,
+            validator_vote_account,
+            payer,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
 pub struct RecordRevenueArgs {
     pub amount: u64,
 }
@@ -584,6 +792,126 @@ pub fn record_revenue_ix(
         accounts: crate::accounts::RecordRevenue {
             revenue_share_account,
             record_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub fn record_revenue_v1_ix(
+    program_id: Pubkey,
+    args: RecordRevenueArgs,
+    accounts: RecordRevenueShareAccounts,
+) -> Instruction {
+    let RecordRevenueArgs { amount } = args;
+    let RecordRevenueShareAccounts {
+        revenue_share_account,
+        record_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::RecordRevenueV1 { amount }.data(),
+        accounts: crate::accounts::RecordRevenueV1 {
+            revenue_share_account,
+            record_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct SettleRevenueArgs {
+    pub epoch: u64,
+    pub amount: u64,
+}
+
+pub struct SettleRevenueAccounts {
+    pub revenue_share_account: Pubkey,
+    pub payer: Pubkey,
+    pub system_program: Pubkey,
+}
+
+pub fn settle_revenue_ix(
+    program_id: Pubkey,
+    args: SettleRevenueArgs,
+    accounts: SettleRevenueAccounts,
+) -> Instruction {
+    let SettleRevenueArgs { epoch, amount } = args;
+    let SettleRevenueAccounts {
+        revenue_share_account,
+        payer,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::SettleRevenue { epoch, amount }.data(),
+        accounts: crate::accounts::SettleRevenue {
+            revenue_share_account,
+            payer,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateTransferredAmountArgs {
+    pub epoch: u64,
+    pub amount: u64,
+}
+
+pub struct UpdateTransferredAmountAccounts {
+    pub revenue_share_account: Pubkey,
+    pub authority: Pubkey,
+}
+
+pub fn update_transferred_amount_ix(
+    program_id: Pubkey,
+    args: UpdateTransferredAmountArgs,
+    accounts: UpdateTransferredAmountAccounts,
+) -> Instruction {
+    let UpdateTransferredAmountArgs { epoch, amount } = args;
+    let UpdateTransferredAmountAccounts {
+        revenue_share_account,
+        authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateTransferredAmount { epoch, amount }.data(),
+        accounts: crate::accounts::UpdateTransferredAmount {
+            revenue_share_account,
+            authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateDeficitArgs {
+    pub update: crate::state::DeficitUpdate,
+}
+
+pub struct UpdateDeficitAccounts {
+    pub revenue_share_account: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+pub fn update_deficit_ix(
+    program_id: Pubkey,
+    args: UpdateDeficitArgs,
+    accounts: UpdateDeficitAccounts,
+) -> Instruction {
+    let UpdateDeficitArgs { update } = args;
+    let UpdateDeficitAccounts {
+        revenue_share_account,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateDeficit { update }.data(),
+        accounts: crate::accounts::UpdateDeficit {
+            revenue_share_account,
+            manager_authority,
         }
         .to_account_metas(None),
     }
@@ -617,6 +945,32 @@ pub fn claim_revenue_ix(
         program_id,
         data: crate::instruction::ClaimRevenue { epoch }.data(),
         accounts: crate::accounts::ClaimRevenue {
+            revenue_share_account,
+            commission_account,
+            validator_identity,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub fn claim_revenue_v1_ix(
+    program_id: Pubkey,
+    args: ClaimRevenueArgs,
+    accounts: ClaimRevenueShareAccounts,
+) -> Instruction {
+    let ClaimRevenueArgs { epoch } = args;
+    let ClaimRevenueShareAccounts {
+        revenue_share_account,
+        commission_account,
+        validator_identity,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::ClaimRevenueV1 { epoch }.data(),
+        accounts: crate::accounts::ClaimRevenueV1 {
             revenue_share_account,
             commission_account,
             validator_identity,
@@ -674,6 +1028,42 @@ pub fn update_revenue_share_config_ix(
     }
 }
 
+/// Updates TCAV1 / MCAV1 config (`REVENUE_SHARE_V1`).
+pub fn update_revenue_share_config_v1_ix(
+    program_id: Pubkey,
+    args: UpdateRevenueShareConfigArgs,
+    accounts: UpdateRevenueShareConfigAccounts,
+) -> Instruction {
+    let UpdateRevenueShareConfigArgs {
+        commission_bps,
+        commission_account,
+        block_reward_conversion_enabled,
+        record_authority,
+    } = args;
+    let UpdateRevenueShareConfigAccounts {
+        revenue_share_account,
+        config,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateRevenueShareConfigV1 {
+            commission_bps,
+            commission_account,
+            block_reward_conversion_enabled,
+            record_authority,
+        }
+        .data(),
+        accounts: crate::accounts::UpdateRevenueShareConfigV1 {
+            revenue_share_account,
+            config,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
 pub struct UpdateEpochConvertedToBlockRewardArgs {
     pub epoch: u64,
 }
@@ -708,6 +1098,31 @@ pub fn update_epoch_converted_to_block_reward_ix(
     }
 }
 
+/// Marks a claimed TCAV1 / MCAV1 epoch as `block_reward_converted`.
+pub fn update_epoch_converted_to_block_reward_v1_ix(
+    program_id: Pubkey,
+    args: UpdateEpochConvertedToBlockRewardArgs,
+    accounts: UpdateEpochConvertedToBlockRewardAccounts,
+) -> Instruction {
+    let UpdateEpochConvertedToBlockRewardArgs { epoch } = args;
+    let UpdateEpochConvertedToBlockRewardAccounts {
+        revenue_share_account,
+        validator_vote_account,
+        signer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateEpochConvertedToBlockRewardV1 { epoch }.data(),
+        accounts: crate::accounts::UpdateEpochConvertedToBlockRewardV1 {
+            revenue_share_account,
+            validator_vote_account,
+            signer,
+        }
+        .to_account_metas(None),
+    }
+}
+
 pub struct CloseRevenueShareAccountAccounts {
     pub revenue_share_account: Pubkey,
     pub initializer: Pubkey,
@@ -728,6 +1143,34 @@ pub fn close_revenue_share_account_ix(
         program_id,
         data: crate::instruction::CloseRevenueShareAccount {}.data(),
         accounts: crate::accounts::CloseRevenueShareAccount {
+            revenue_share_account,
+            initializer,
+            authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct CloseRevenueShareAccountV1Accounts {
+    pub revenue_share_account: Pubkey,
+    pub initializer: Pubkey,
+    pub authority: Pubkey,
+}
+
+pub fn close_revenue_share_account_v1_ix(
+    program_id: Pubkey,
+    accounts: CloseRevenueShareAccountV1Accounts,
+) -> Instruction {
+    let CloseRevenueShareAccountV1Accounts {
+        revenue_share_account,
+        initializer,
+        authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::CloseRevenueShareAccountV1 {}.data(),
+        accounts: crate::accounts::CloseRevenueShareAccountV1 {
             revenue_share_account,
             initializer,
             authority,
