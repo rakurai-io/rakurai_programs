@@ -38,7 +38,7 @@ type CliResult<T = ()> = Result<T, Box<dyn Error>>;
 const SHARE_KIND_OFFSET: usize = 8;
 const NAME_OFFSET: usize = 9;
 /// Default instructions per settle-all transaction (tx size limits).
-const DEFAULT_TRANSFER_ALL_BATCH_SIZE: usize = 10;
+const DEFAULT_TRANSFER_ALL_BATCH_SIZE: usize = 5;
 
 #[derive(Parser)]
 #[command(
@@ -226,7 +226,7 @@ struct TransferAllArgs {
     #[command(flatten)]
     service: ServiceArgs,
 
-    /// Instructions (settle epochs) per transaction. Default: 10.
+    /// Instructions (settle epochs) per transaction (keeps tx size under limits). Default: 5.
     #[arg(long, default_value_t = DEFAULT_TRANSFER_ALL_BATCH_SIZE)]
     batch_size: usize,
 
@@ -687,19 +687,25 @@ fn display_pending_amount(epoch: u64, pending: &PendingAmount) {
 // ---------------------------------------------------------------------------
 
 type PendingByVote = std::collections::BTreeMap<String, std::collections::BTreeMap<u64, u64>>;
+type DeficitByVote = std::collections::BTreeMap<String, u64>;
 
 fn aggregate_pending_by_vote(
     vaults: &[VaultAccount],
     skip_rakurai_tip: bool,
     exclude_epoch: Option<u64>,
-) -> (PendingByVote, Vec<u64>, u64) {
+) -> (PendingByVote, DeficitByVote, Vec<u64>, u64, u64) {
     let mut by_vote: PendingByVote = std::collections::BTreeMap::new();
+    let mut deficits: DeficitByVote = std::collections::BTreeMap::new();
     let mut epochs = std::collections::BTreeSet::new();
     for vault in vaults {
         if skip_rakurai_tip && vault.is_rakurai_tip_tca() {
             continue;
         }
         let vote = vault.validator_vote().to_string();
+        let deficit = vault.account.deficit;
+        if deficit > 0 {
+            *deficits.entry(vote.clone()).or_default() = deficit;
+        }
         let vote_map = by_vote.entry(vote).or_default();
         for (epoch, pending) in vault.all_pending() {
             if pending.pending == 0 {
@@ -719,16 +725,34 @@ fn aggregate_pending_by_vote(
             grand_total = grand_total.saturating_add(*amount);
         }
     }
-    by_vote.retain(|_, m| !m.is_empty());
-    (by_vote, epochs, grand_total)
+    let grand_deficit: u64 = deficits.values().copied().sum();
+    // Keep rows that have pending epochs and/or open deficit.
+    by_vote.retain(|vote, m| !m.is_empty() || deficits.get(vote).copied().unwrap_or(0) > 0);
+    for vote in deficits.keys() {
+        by_vote.entry(vote.clone()).or_default();
+    }
+    (by_vote, deficits, epochs, grand_total, grand_deficit)
 }
 
-fn print_pending_pivot_table(by_vote: &PendingByVote, epochs: &[u64], grand_total: u64) {
+fn print_pending_pivot_table(
+    by_vote: &PendingByVote,
+    deficits: &DeficitByVote,
+    epochs: &[u64],
+    grand_total: u64,
+    grand_deficit: u64,
+) {
     print_field(
         "💰".green(),
-        "Total:",
+        "Total owed:",
         format_total_with_sol(grand_total).bold().yellow(),
     );
+    if grand_deficit > 0 {
+        print_field(
+            "⚠️".red(),
+            "Total deficit:",
+            format_total_with_sol(grand_deficit).bold().yellow(),
+        );
+    }
     print_field(
         "🔑".red(),
         "Validators:",
@@ -737,7 +761,7 @@ fn print_pending_pivot_table(by_vote: &PendingByVote, epochs: &[u64], grand_tota
     print_field("🕒".cyan(), "Epochs:", epochs.len().to_string().magenta());
 
     println!();
-    if epochs.is_empty() {
+    if epochs.is_empty() && grand_deficit == 0 {
         println!("   {}", "(no pending revenue records)".yellow());
         return;
     }
@@ -756,19 +780,21 @@ fn print_pending_pivot_table(by_vote: &PendingByVote, epochs: &[u64], grand_tota
 
     const VOTE_W: usize = 15;
     const EPOCH_W: usize = 15;
+    const DEFICIT_W: usize = 15;
     const TOTAL_W: usize = 30;
 
     print!("   {:<width$}", "Vote".bold(), width = VOTE_W);
     for epoch in epochs {
         print!("  {:>width$}", epoch.to_string().bold(), width = EPOCH_W);
     }
+    print!("  {:>width$}", "Deficit".bold(), width = DEFICIT_W);
     print!(
         "  {:>width$}",
         "TOTAL (lamports / SOL)".bold(),
         width = TOTAL_W
     );
     println!();
-    let line_w = VOTE_W + epochs.len() * (EPOCH_W + 2) + TOTAL_W + 2;
+    let line_w = VOTE_W + epochs.len() * (EPOCH_W + 2) + (DEFICIT_W + 2) + TOTAL_W + 2;
     println!("   {}", "-".repeat(line_w));
 
     for (vote, vote_map) in by_vote {
@@ -777,6 +803,8 @@ fn print_pending_pivot_table(by_vote: &PendingByVote, epochs: &[u64], grand_tota
             let amount = vote_map.get(epoch).copied().unwrap_or(0);
             print!("  {:>width$}", format_lamports(amount), width = EPOCH_W);
         }
+        let deficit = deficits.get(vote).copied().unwrap_or(0);
+        print!("  {:>width$}", format_lamports(deficit), width = DEFICIT_W);
         let row_total = row_totals.get(vote).copied().unwrap_or(0);
         print!(
             "  {:>width$}",
@@ -795,6 +823,11 @@ fn print_pending_pivot_table(by_vote: &PendingByVote, epochs: &[u64], grand_tota
             width = EPOCH_W
         );
     }
+    print!(
+        "  {:>width$}",
+        format_sol_only(grand_deficit).bold().yellow(),
+        width = DEFICIT_W
+    );
     print!(
         "  {:>width$}",
         format_sol_only(grand_total).bold().yellow(),
@@ -904,9 +937,9 @@ fn process_get_all_accounts(
         return Ok(());
     }
 
-    let (by_vote, epochs, grand_total) =
+    let (by_vote, deficits, epochs, grand_total, grand_deficit) =
         aggregate_pending_by_vote(&vaults, false, Some(current_epoch));
-    print_pending_pivot_table(&by_vote, &epochs, grand_total);
+    print_pending_pivot_table(&by_vote, &deficits, &epochs, grand_total, grand_deficit);
 
     if !args.detail {
         println!(
@@ -953,6 +986,13 @@ fn process_get_all_accounts(
                 pending_total.to_string().yellow()
             ),
         );
+        if vault.account.deficit > 0 {
+            print_field(
+                "⚠️".red(),
+                "Deficit:",
+                format_total_with_sol(vault.account.deficit).yellow(),
+            );
+        }
         if pending_total > 0 && available < pending_total {
             println!(
                 "   {} {}",
@@ -1214,8 +1254,9 @@ fn process_transfer_all(
     );
     print_field("🔑".red(), "Payer:", payer.pubkey().to_string());
 
-    let (by_vote, epochs, grand_total) = aggregate_pending_by_vote(&vaults, true, None);
-    print_pending_pivot_table(&by_vote, &epochs, grand_total);
+    let (by_vote, deficits, epochs, grand_total, grand_deficit) =
+        aggregate_pending_by_vote(&vaults, true, None);
+    print_pending_pivot_table(&by_vote, &deficits, &epochs, grand_total, grand_deficit);
 
     if jobs.is_empty() {
         println!("\n   {}", "Nothing pending to settle.".green());

@@ -40,7 +40,7 @@ type CliResult<T = ()> = Result<T, Box<dyn Error>>;
 
 /// P2C account name starts immediately after the 8-byte Anchor discriminator.
 const P2C_NAME_OFFSET: usize = 8;
-const DEFAULT_FUND_ALL_BATCH_SIZE: usize = 10;
+const DEFAULT_FUND_ALL_BATCH_SIZE: usize = 5;
 
 #[derive(Parser)]
 #[command(
@@ -160,7 +160,7 @@ struct FundAllArgs {
     #[command(flatten)]
     name: NameArgs,
 
-    /// Fund instructions per transaction. Default: 10.
+    /// Fund instructions per transaction (keeps tx size under limits). Default: 5.
     #[arg(long, default_value_t = DEFAULT_FUND_ALL_BATCH_SIZE)]
     batch_size: usize,
 
@@ -255,6 +255,186 @@ fn print_field(icon: ColoredString, label: &str, value: impl std::fmt::Display) 
 
 fn format_total_with_sol(lamports: u64) -> String {
     format!("{} lamports ({:.9} SOL)", lamports, lamports as f64 / 1e9)
+}
+
+const SOL_DECIMALS: usize = 5;
+
+fn lamports_to_sol(lamports: u64) -> f64 {
+    lamports as f64 / 1_000_000_000.0
+}
+
+fn format_lamports(lamports: u64) -> String {
+    if lamports == 0 {
+        "-".to_string()
+    } else {
+        lamports.to_string()
+    }
+}
+
+fn format_sol_only(lamports: u64) -> String {
+    if lamports == 0 {
+        return "-".to_string();
+    }
+    format!(
+        "{sol:.prec$} SOL",
+        sol = lamports_to_sol(lamports),
+        prec = SOL_DECIMALS
+    )
+}
+
+fn format_row_total_with_sol(lamports: u64) -> String {
+    if lamports == 0 {
+        return "-".to_string();
+    }
+    format!(
+        "{lamports} ({sol:.prec$} SOL)",
+        lamports = lamports,
+        sol = lamports_to_sol(lamports),
+        prec = SOL_DECIMALS
+    )
+}
+
+type PendingByVote = std::collections::BTreeMap<String, std::collections::BTreeMap<u64, u64>>;
+type DeficitByVote = std::collections::BTreeMap<String, u64>;
+
+fn aggregate_p2c_by_vote(
+    accounts: &[(Pubkey, P2CSubscriptionAccount, u64)],
+    current_epoch: u64,
+) -> (PendingByVote, DeficitByVote, Vec<u64>, u64, u64) {
+    let mut by_vote: PendingByVote = std::collections::BTreeMap::new();
+    let mut deficits: DeficitByVote = std::collections::BTreeMap::new();
+    let mut epochs = std::collections::BTreeSet::new();
+
+    for (_, account, _) in accounts {
+        let vote = account.validator_vote.to_string();
+        if account.deficit > 0 {
+            *deficits.entry(vote.clone()).or_default() = account.deficit;
+        }
+        let vote_map = by_vote.entry(vote).or_default();
+        for (epoch, owed) in actionable_owed(account, current_epoch) {
+            if owed == 0 {
+                continue;
+            }
+            epochs.insert(epoch);
+            *vote_map.entry(epoch).or_default() += owed;
+        }
+    }
+
+    let epochs: Vec<u64> = epochs.into_iter().collect();
+    let mut grand_total = 0u64;
+    for vote_map in by_vote.values() {
+        for amount in vote_map.values() {
+            grand_total = grand_total.saturating_add(*amount);
+        }
+    }
+    let grand_deficit: u64 = deficits.values().copied().sum();
+    by_vote.retain(|vote, m| !m.is_empty() || deficits.get(vote).copied().unwrap_or(0) > 0);
+    for vote in deficits.keys() {
+        by_vote.entry(vote.clone()).or_default();
+    }
+    (by_vote, deficits, epochs, grand_total, grand_deficit)
+}
+
+fn print_p2c_pivot_table(
+    by_vote: &PendingByVote,
+    deficits: &DeficitByVote,
+    epochs: &[u64],
+    grand_total: u64,
+    grand_deficit: u64,
+) {
+    print_field(
+        "💸".yellow(),
+        "Total owed:",
+        format_total_with_sol(grand_total).bold().yellow(),
+    );
+    if grand_deficit > 0 {
+        print_field(
+            "⚠️".red(),
+            "Total deficit:",
+            format_total_with_sol(grand_deficit).bold().yellow(),
+        );
+    }
+    print_field(
+        "🔑".red(),
+        "Validators:",
+        by_vote.len().to_string().magenta(),
+    );
+    print_field("🕒".cyan(), "Epochs:", epochs.len().to_string().magenta());
+
+    println!();
+    if epochs.is_empty() && grand_deficit == 0 {
+        println!("   {}", "(no pending owed / deficit)".yellow());
+        return;
+    }
+
+    let mut epoch_totals = vec![0u64; epochs.len()];
+    let mut row_totals: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+    for (vote, vote_map) in by_vote {
+        let mut row_total = 0u64;
+        for (i, epoch) in epochs.iter().enumerate() {
+            let amount = vote_map.get(epoch).copied().unwrap_or(0);
+            epoch_totals[i] = epoch_totals[i].saturating_add(amount);
+            row_total = row_total.saturating_add(amount);
+        }
+        row_totals.insert(vote.clone(), row_total);
+    }
+
+    const VOTE_W: usize = 15;
+    const EPOCH_W: usize = 15;
+    const DEFICIT_W: usize = 15;
+    const TOTAL_W: usize = 30;
+
+    print!("   {:<width$}", "Vote".bold(), width = VOTE_W);
+    for epoch in epochs {
+        print!("  {:>width$}", epoch.to_string().bold(), width = EPOCH_W);
+    }
+    print!("  {:>width$}", "Deficit".bold(), width = DEFICIT_W);
+    print!(
+        "  {:>width$}",
+        "TOTAL (lamports / SOL)".bold(),
+        width = TOTAL_W
+    );
+    println!();
+    let line_w = VOTE_W + epochs.len() * (EPOCH_W + 2) + (DEFICIT_W + 2) + TOTAL_W + 2;
+    println!("   {}", "-".repeat(line_w));
+
+    for (vote, vote_map) in by_vote {
+        print!("   {:<width$}", short_pubkey(vote), width = VOTE_W);
+        for epoch in epochs {
+            let amount = vote_map.get(epoch).copied().unwrap_or(0);
+            print!("  {:>width$}", format_lamports(amount), width = EPOCH_W);
+        }
+        let deficit = deficits.get(vote).copied().unwrap_or(0);
+        print!("  {:>width$}", format_lamports(deficit), width = DEFICIT_W);
+        let row_total = row_totals.get(vote).copied().unwrap_or(0);
+        print!(
+            "  {:>width$}",
+            format_row_total_with_sol(row_total),
+            width = TOTAL_W
+        );
+        println!();
+    }
+
+    println!("   {}", "-".repeat(line_w));
+    print!("   {:<width$}", "TOTAL".bold(), width = VOTE_W);
+    for total in &epoch_totals {
+        print!(
+            "  {:>width$}",
+            format_sol_only(*total).bold().yellow(),
+            width = EPOCH_W
+        );
+    }
+    print!(
+        "  {:>width$}",
+        format_sol_only(grand_deficit).bold().yellow(),
+        width = DEFICIT_W
+    );
+    print!(
+        "  {:>width$}",
+        format_sol_only(grand_total).bold().yellow(),
+        width = TOTAL_W
+    );
+    println!();
 }
 
 fn load_p2c(
@@ -569,9 +749,32 @@ fn process_get_all_accounts(
     print_heading("P2C Subscription Accounts");
     print_field("📝".cyan(), "Name:", args.name.name.magenta());
     print_field("📦".cyan(), "Found:", accounts.len().to_string().magenta());
+    print_field(
+        "🕒".cyan(),
+        "Excludes epoch:",
+        current_epoch.to_string().blue(),
+    );
 
+    if accounts.is_empty() {
+        println!("\n   {}", "No P2C accounts found for this name.".yellow());
+        return Ok(());
+    }
+
+    let (by_vote, deficits, epochs, grand_total, grand_deficit) =
+        aggregate_p2c_by_vote(&accounts, current_epoch);
+    print_p2c_pivot_table(&by_vote, &deficits, &epochs, grand_total, grand_deficit);
+
+    if !args.detail {
+        println!(
+            "\n   {}",
+            "--detail for per-account pubkey, status, balance, and epoch breakdown.".dimmed()
+        );
+        return Ok(());
+    }
+
+    print_heading("Account details");
     for (address, account, lamports) in accounts {
-        display_p2c(address, &account, lamports, current_epoch, args.detail);
+        display_p2c(address, &account, lamports, current_epoch, true);
     }
     Ok(())
 }
@@ -617,6 +820,7 @@ struct PendingFund {
     vote: Pubkey,
     address: Pubkey,
     owed: u64,
+    deficit: u64,
     available: u64,
     shortfall: u64,
     instruction: Instruction,
@@ -658,6 +862,7 @@ fn process_fund_all(
             vote: account.validator_vote,
             address: *address,
             owed,
+            deficit: account.deficit,
             available,
             shortfall,
             instruction,
@@ -695,20 +900,32 @@ fn process_fund_all(
         current_epoch.to_string().blue(),
     );
 
+    let (by_vote, deficits, epochs, grand_total, grand_deficit) =
+        aggregate_p2c_by_vote(&accounts, current_epoch);
+    println!();
+    print_p2c_pivot_table(&by_vote, &deficits, &epochs, grand_total, grand_deficit);
+
     if jobs.is_empty() {
         println!(
             "\n   {}",
             "Nothing underfunded to fund (past epochs only).".green()
         );
+        if grand_deficit > 0 {
+            println!(
+                "   {}",
+                "Open deficit is not cleared by fund-all — use clear-deficit.".yellow()
+            );
+        }
         return Ok(());
     }
 
     println!();
     for job in &jobs {
         println!(
-            "   {}  owed {}  bal {}  fund {}",
+            "   {}  owed {}  deficit {}  bal {}  fund {}",
             short_pubkey(&job.vote.to_string()).cyan(),
             format_total_with_sol(job.owed).yellow(),
+            format_total_with_sol(job.deficit).yellow(),
             format_total_with_sol(job.available).yellow(),
             format_total_with_sol(job.shortfall).yellow(),
         );

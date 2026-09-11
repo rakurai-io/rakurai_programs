@@ -34,7 +34,7 @@ PSA accounts are created by Rakurai / ops before you fund them.
    - underfunded alert (only when balance < owed for past epochs)
 3. If balance is low, `fund` or `fund-all`.
 
-`get-all-accounts` lists every subscription for the same `--name`. `--detail` adds manager/auth and per-epoch owed rows.
+`get-all-accounts` lists every subscription for the same `--name` as a vote × epoch table with **Deficit** (before TOTAL). `--detail` adds manager/auth and per-epoch owed rows.
 
 ### Status meanings
 
@@ -80,6 +80,8 @@ rakurai-p2c \
 
 ### 3.2. `get-all-accounts`
 
+Lists every subscription for `--name` as a vote × epoch owed table with a **Deficit** column (after epochs, before TOTAL). Past epochs only (current cluster epoch excluded). `--detail` adds per-account pubkey, status, balance, and epoch breakdown.
+
 ```sh
 rakurai-p2c \
   --url <RPC_URL> \
@@ -105,7 +107,7 @@ Anyone may also fund the PDA with a plain `solana transfer` into the escrow addr
 
 ### 3.4. `fund-all`
 
-Funds the shortfall (`owed − balance`) for every underfunded PSA with the same `--name`. Owed excludes the current cluster epoch. Skips accounts that already cover past-epoch due.
+Funds the shortfall (`owed − balance`) for every underfunded PSA with the same `--name`. Owed excludes the current cluster epoch. Skips accounts that already cover past-epoch due. Prints the owed/deficit pivot table; **open deficit is not cleared by fund-all** (use `clear-deficit`).
 
 ```sh
 rakurai-p2c \
@@ -116,7 +118,7 @@ rakurai-p2c \
   --name <SERVICE_NAME>
 ```
 
-`--batch-size` (default 10) controls fund instructions per transaction. Pass `--dry-run` to preview.
+`--batch-size` (default **5** ix/txn) controls fund instructions per transaction to stay under Solana size limits. Pass `--dry-run` to preview.
 
 ---
 

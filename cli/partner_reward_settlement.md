@@ -73,7 +73,7 @@ rakurai-revshare \
 
 ### 3.2. `get-all-accounts`
 
-All vaults for `--revenue-kind` + `--revenue-name`. Default: vote × epoch pending table. `--detail` adds per-account fields.
+All vaults for `--revenue-kind` + `--revenue-name`. Default: vote × epoch pending table with a **Deficit** column (after epochs, before TOTAL). `--detail` adds per-account fields.
 
 ### 3.3. `get-pending-record` / `get-all-pending-records`
 
@@ -97,7 +97,7 @@ rakurai-revshare \
 
 ### 3.5. `transfer` / `transfer-all`
 
-Settle one epoch on one vault, or all pending epochs across matching vaults. `--dry-run` supported.
+Settle one epoch on one vault, or all pending epochs across matching vaults. `--dry-run` supported. `transfer-all` prints the same vote × epoch table (including **Deficit**); deficit is not settled by transfer — clear it separately on-chain. Batches settles with `--batch-size` (default **5** ix/txn) to stay under Solana transaction size limits.
 
 ---
 
