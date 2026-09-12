@@ -2023,7 +2023,7 @@
       "name": "record_and_transfer",
       "docs": [
         "Record attributed amount and settle SOL in one ix on TCAV1 / MCAV1 (non-Rakurai tip).",
-        "Current epoch only. Auth: `record_authority`. Payer funds the transfer (may be same signer)."
+        "`epoch` must not be in the future. Auth: `record_authority`. Payer funds the transfer."
       ],
       "discriminator": [
         23,
@@ -2058,6 +2058,10 @@
         }
       ],
       "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        },
         {
           "name": "amount",
           "type": "u64"
@@ -2140,7 +2144,7 @@
     {
       "name": "record_revenue_v1",
       "docs": [
-        "Records revenue on a **TCAV1** vault (`REVENUE_SHARE_V1`).",
+        "Records revenue on a **TCAV1** vault (`REVENUE_SHARE_V1`) for the current cluster epoch.",
         "Rakurai tip TCAV1 also credits `transferred_amount`.",
         "If the ledger is full of unclaimed rows, the oldest epoch is moved into `deficit`."
       ],
@@ -2165,6 +2169,42 @@
         }
       ],
       "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "record_revenue_v1_with_epoch",
+      "docs": [
+        "Like [`record_revenue_v1`], but attributes to an explicit `epoch` (must not be in the future)."
+      ],
+      "discriminator": [
+        178,
+        208,
+        92,
+        95,
+        203,
+        9,
+        133,
+        11
+      ],
+      "accounts": [
+        {
+          "name": "revenue_share_account",
+          "writable": true
+        },
+        {
+          "name": "record_authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        },
         {
           "name": "amount",
           "type": "u64"
@@ -3695,6 +3735,11 @@
       "code": 6030,
       "name": "Deprecated",
       "msg": "This instruction is deprecated; use the corresponding v1 instruction."
+    },
+    {
+      "code": 6031,
+      "name": "FutureEpochNotAllowed",
+      "msg": "Cannot record revenue for a future epoch."
     }
   ],
   "types": [

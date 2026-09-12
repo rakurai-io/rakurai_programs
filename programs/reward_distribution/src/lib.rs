@@ -688,45 +688,34 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Records revenue on a **TCAV1** vault (`REVENUE_SHARE_V1`).
+    /// Records revenue on a **TCAV1** vault (`REVENUE_SHARE_V1`) for the current cluster epoch.
     /// Rakurai tip TCAV1 also credits `transferred_amount`.
     /// If the ledger is full of unclaimed rows, the oldest epoch is moved into `deficit`.
     pub fn record_revenue_v1(ctx: Context<RecordRevenueV1>, amount: u64) -> Result<()> {
         RecordRevenueV1::auth(&ctx)?;
+        record_revenue_v1_impl(ctx, Clock::get()?.epoch, amount)
+    }
 
-        let epoch = Clock::get()?.epoch;
-        let revenue_key = ctx.accounts.revenue_share_account.key();
-        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
-        let share_kind = revenue_share_account.share_kind;
-        let eviction = revenue_share_account.record_revenue(epoch, amount)?;
-
-        if let Some(evicted) = eviction {
-            emit!(RevenueLedgerEvictedToDeficitEvent {
-                revenue_share_account: revenue_key,
-                share_kind,
-                evicted_epoch: evicted.epoch,
-                unpaid: evicted.unpaid,
-                amount: evicted.amount,
-                settled: evicted.settled,
-                deficit: revenue_share_account.deficit,
-                new_epoch: epoch,
-            });
-        }
-
-        emit!(RevenueRecordedEvent {
-            revenue_share_account: revenue_key,
-            share_kind,
-            epoch,
-            amount,
-        });
-
-        Ok(())
+    /// Like [`record_revenue_v1`], but attributes to an explicit `epoch` (must not be in the future).
+    pub fn record_revenue_v1_with_epoch(
+        ctx: Context<RecordRevenueV1>,
+        epoch: u64,
+        amount: u64,
+    ) -> Result<()> {
+        RecordRevenueV1::auth(&ctx)?;
+        require_epoch_not_future(epoch)?;
+        record_revenue_v1_impl(ctx, epoch, amount)
     }
 
     /// Record attributed amount and settle SOL in one ix on TCAV1 / MCAV1 (non-Rakurai tip).
-    /// Current epoch only. Auth: `record_authority`. Payer funds the transfer (may be same signer).
-    pub fn record_and_transfer(ctx: Context<RecordAndTransfer>, amount: u64) -> Result<()> {
+    /// `epoch` must not be in the future. Auth: `record_authority`. Payer funds the transfer.
+    pub fn record_and_transfer(
+        ctx: Context<RecordAndTransfer>,
+        epoch: u64,
+        amount: u64,
+    ) -> Result<()> {
         RecordAndTransfer::auth(&ctx)?;
+        require_epoch_not_future(epoch)?;
 
         if ctx.accounts.revenue_share_account.is_rakurai_tip_tca() {
             // Rakurai tip auto-credits transferred on record; transfer would double-count.
@@ -736,7 +725,6 @@ pub mod reward_distribution {
             return Err(RewardsTooLow.into());
         }
 
-        let epoch = Clock::get()?.epoch;
         let revenue_key = ctx.accounts.revenue_share_account.key();
         let share_kind = ctx.accounts.revenue_share_account.share_kind;
 
@@ -1462,6 +1450,42 @@ pub mod reward_distribution {
     }
 }
 
+fn require_epoch_not_future(epoch: u64) -> Result<()> {
+    if epoch > Clock::get()?.epoch {
+        return Err(ErrorCode::FutureEpochNotAllowed.into());
+    }
+    Ok(())
+}
+
+fn record_revenue_v1_impl(ctx: Context<RecordRevenueV1>, epoch: u64, amount: u64) -> Result<()> {
+    let revenue_key = ctx.accounts.revenue_share_account.key();
+    let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+    let share_kind = revenue_share_account.share_kind;
+    let eviction = revenue_share_account.record_revenue(epoch, amount)?;
+
+    if let Some(evicted) = eviction {
+        emit!(RevenueLedgerEvictedToDeficitEvent {
+            revenue_share_account: revenue_key,
+            share_kind,
+            evicted_epoch: evicted.epoch,
+            unpaid: evicted.unpaid,
+            amount: evicted.amount,
+            settled: evicted.settled,
+            deficit: revenue_share_account.deficit,
+            new_epoch: epoch,
+        });
+    }
+
+    emit!(RevenueRecordedEvent {
+        revenue_share_account: revenue_key,
+        share_kind,
+        epoch,
+        amount,
+    });
+
+    Ok(())
+}
+
 fn initialize_reward_collection_account_inner(
     config: &RewardDistributionConfigAccount,
     reward_collection_account_pubkey: Pubkey,
@@ -1616,6 +1640,9 @@ pub enum ErrorCode {
 
     #[msg("This instruction is deprecated; use the corresponding v1 instruction.")]
     Deprecated,
+
+    #[msg("Cannot record revenue for a future epoch.")]
+    FutureEpochNotAllowed,
 }
 
 /// Closes a `ClaimStatus` account and refunds lamports to the payer.
@@ -2281,9 +2308,8 @@ impl RecordRevenueV1<'_> {
     }
 }
 
-/// Record + settle SOL for the current epoch on a TCAV1 / MCAV1 vault.
+/// Record + settle SOL on a TCAV1 / MCAV1 vault.
 #[derive(Accounts)]
-#[instruction(amount: u64)]
 pub struct RecordAndTransfer<'info> {
     #[account(mut)]
     pub revenue_share_account: Account<'info, RevenueShareAccountV1>,

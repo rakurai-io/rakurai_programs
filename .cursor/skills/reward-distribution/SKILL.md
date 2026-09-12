@@ -53,7 +53,7 @@ RevenueShareAccountV1 (TCAV1/MCAV1) ── [REVENUE_SHARE_V1, TIP|MEV_SHARE, nam
 | P2C config | `initialize_p2c_config`, `update_p2c_config`, `close_p2c_config` |
 | RCA | `initialize_reward_collection_account_v1`, `upload_merkle_root`, `transfer_staker_rewards`, … |
 | Legacy revenue | `initialize_revenue_share_account`, `record_revenue`, `claim_revenue`, `update_revenue_share_config`, `update_epoch_converted_to_block_reward`, `close_revenue_share_account` |
-| V1 revenue | `initialize_revenue_share_account_v1`, `record_revenue_v1`, `record_and_transfer`, `settle_revenue`, `update_transferred_amount`, `claim_revenue_v1`, `update_deficit`, `clear_deficit_v1`, `update_revenue_share_config_v1`, `update_epoch_converted_to_block_reward_v1`, `close_revenue_share_account_v1` |
+| V1 revenue | `initialize_revenue_share_account_v1`, `record_revenue_v1`, `record_revenue_v1_with_epoch`, `record_and_transfer`, `settle_revenue`, `update_transferred_amount`, `claim_revenue_v1`, `update_deficit`, `clear_deficit_v1`, `update_revenue_share_config_v1`, `update_epoch_converted_to_block_reward_v1`, `close_revenue_share_account_v1` |
 | P2C / PSA | `initialize_p2c_subscription_account` (any payer; defaults from P2C config), `fund_*`, `record_*`, `claim_*`, `clear_p2c_deficit`, … |
 
 ---

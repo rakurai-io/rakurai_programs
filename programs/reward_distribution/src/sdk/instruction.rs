@@ -959,7 +959,36 @@ pub fn record_revenue_v1_ix(
     }
 }
 
+pub struct RecordRevenueWithEpochArgs {
+    pub epoch: u64,
+    pub amount: u64,
+}
+
+/// Record amount for an explicit epoch on a V1 vault (rejects future epochs on-chain).
+pub fn record_revenue_v1_with_epoch_ix(
+    program_id: Pubkey,
+    args: RecordRevenueWithEpochArgs,
+    accounts: RecordRevenueShareAccounts,
+) -> Instruction {
+    let RecordRevenueWithEpochArgs { epoch, amount } = args;
+    let RecordRevenueShareAccounts {
+        revenue_share_account,
+        record_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::RecordRevenueV1WithEpoch { epoch, amount }.data(),
+        accounts: crate::accounts::RecordRevenueV1 {
+            revenue_share_account,
+            record_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
 pub struct RecordAndTransferArgs {
+    pub epoch: u64,
     pub amount: u64,
 }
 
@@ -970,13 +999,13 @@ pub struct RecordAndTransferAccounts {
     pub system_program: Pubkey,
 }
 
-/// Record amount for the current epoch and settle SOL in one instruction (V1 vaults).
+/// Record + settle for an explicit epoch on a V1 vault (rejects future epochs on-chain).
 pub fn record_and_transfer_ix(
     program_id: Pubkey,
     args: RecordAndTransferArgs,
     accounts: RecordAndTransferAccounts,
 ) -> Instruction {
-    let RecordAndTransferArgs { amount } = args;
+    let RecordAndTransferArgs { epoch, amount } = args;
     let RecordAndTransferAccounts {
         revenue_share_account,
         record_authority,
@@ -986,7 +1015,7 @@ pub fn record_and_transfer_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::RecordAndTransfer { amount }.data(),
+        data: crate::instruction::RecordAndTransfer { epoch, amount }.data(),
         accounts: crate::accounts::RecordAndTransfer {
             revenue_share_account,
             record_authority,

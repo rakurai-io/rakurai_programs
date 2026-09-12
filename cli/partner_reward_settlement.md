@@ -13,7 +13,7 @@ Partners can keep custody of collected SOL in their own accounts (custom tips an
 This CLI is how you do that:
 
 - **Read** TCA / MCA vaults (`get-account`, `get-all-accounts`, pending-record commands)
-- **Record** MCA MevShare for the current epoch (`record-revenue`)
+- **Record** MCA MevShare for a chosen epoch (`record-revenue`)
 - **Settle** by transferring SOL into the vault (`transfer`, `transfer-all`)
 
 Claim/distribution of settled funds is the **manager** flow, not this CLI. Partner MCA / TCA vaults are created by Rakurai / ops before you settle.
@@ -81,7 +81,7 @@ Inspect one epoch or every unsettled epoch on one vault.
 
 ### 3.4. `record-revenue` (MCA only)
 
-Requires `--revenue-kind Mev-share` and the MCA `record_authority`. Ledger only — **no SOL moves**. `--epoch` must be the current cluster epoch (on-chain uses `Clock`).
+Requires `--revenue-kind Mev-share` and the MCA `record_authority`. Ledger only — **no SOL moves**. `--epoch` is written on-chain (must not be in the future; tip_manager still uses the clock-based `record_revenue_v1`).
 
 ```sh
 rakurai-revshare \

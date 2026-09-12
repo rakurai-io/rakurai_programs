@@ -11,10 +11,10 @@ use {
         sdk::{
             derive_revenue_share_account_v1_address, derive_tips_and_mev_share_config_address,
             instruction::{
-                initialize_revenue_share_account_v1_ix, record_revenue_v1_ix, settle_revenue_ix,
-                InitializeRevenueShareAccountV1Accounts, InitializeRevenueShareAccountV1Args,
-                RecordRevenueArgs, RecordRevenueShareAccounts, SettleRevenueAccounts,
-                SettleRevenueArgs,
+                initialize_revenue_share_account_v1_ix, record_revenue_v1_with_epoch_ix,
+                settle_revenue_ix, InitializeRevenueShareAccountV1Accounts,
+                InitializeRevenueShareAccountV1Args, RecordRevenueShareAccounts,
+                RecordRevenueWithEpochArgs, SettleRevenueAccounts, SettleRevenueArgs,
             },
         },
         state::{EpochAmountEntryV1, RevenueKind, RevenueShareAccountV1, RAKURAI_REVENUE_NAME},
@@ -188,7 +188,7 @@ struct RecordRevenueCliArgs {
     #[command(flatten)]
     target: TargetArgs,
 
-    /// Epoch to record against.
+    /// Epoch ledger entry to attribute (must not be in the future).
     #[arg(short, long, required = true)]
     epoch: u64,
 
@@ -1090,9 +1090,19 @@ fn process_record_revenue(
         revenue_share_account: vault.address(),
         record_authority: authority.pubkey(),
     };
-    let instruction = record_revenue_v1_ix(
+    let clock_epoch = rpc_client.get_epoch_info()?.epoch;
+    if args.epoch > clock_epoch {
+        return Err(format!(
+            "epoch {} is in the future (current cluster epoch is {}); refusing record-revenue",
+            args.epoch, clock_epoch
+        )
+        .into());
+    }
+
+    let instruction = record_revenue_v1_with_epoch_ix(
         program_id,
-        RecordRevenueArgs {
+        RecordRevenueWithEpochArgs {
+            epoch: args.epoch,
             amount: args.amount,
         },
         accounts,

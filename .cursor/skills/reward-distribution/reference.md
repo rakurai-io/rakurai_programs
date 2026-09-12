@@ -26,8 +26,8 @@ Source: `programs/reward_distribution/src/` (v0.3.0).
 | Type | `RevenueShareAccount` | `RevenueShareAccountV1` |
 | Layout | No transferred/deficit | `transferred_amount` + `deficit` |
 | Claim | Pays `amount` if vault funded | Pays `transferred_amount`; underfund → deficit |
-| Record | `record_revenue` | `record_revenue_v1` (Rakurai tip auto-credits transferred) |
-| Record+transfer | N/A | `record_and_transfer` (record + settle current epoch; not Rakurai tip) |
+| Record | `record_revenue` | `record_revenue_v1` (Clock epoch; tip_manager) / `record_revenue_v1_with_epoch` (explicit epoch) |
+| Record+transfer | N/A | `record_and_transfer(epoch, amount)` (not Rakurai tip; rejects future epoch) |
 | Settle | N/A (lamports >= amount on claim) | `settle_revenue` / `update_transferred_amount` |
 
 ---
@@ -38,8 +38,9 @@ Source: `programs/reward_distribution/src/` (v0.3.0).
 |-------------|--------|-------|
 | initialize_revenue_share_account | any payer | legacy; RD config + RAA |
 | initialize_revenue_share_account_v1 | any payer | V1; tips/mev config + RAA |
-| record_revenue / record_revenue_v1 | record_authority | |
-| record_and_transfer | record_authority + payer | V1 only; current epoch; non-Rakurai tip |
+| record_revenue / record_revenue_v1 | record_authority | Clock epoch |
+| record_revenue_v1_with_epoch | record_authority | Explicit epoch; rejects future |
+| record_and_transfer | record_authority + payer | V1 only; explicit epoch; rejects future; non-Rakurai tip |
 | claim_revenue / claim_revenue_v1 | manager_authority | V1: Rakurai name → commission 0 |
 | settle_revenue | any payer | V1 only; non-Rakurai |
 | update_deficit | manager_authority | V1 only |
