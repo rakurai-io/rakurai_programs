@@ -81,7 +81,7 @@ Inspect one epoch or every unsettled epoch on one vault.
 
 ### 3.4. `record-revenue` (MCA only)
 
-Requires `--revenue-kind Mev-share` and the MCA `record_authority`. Ledger only — **no SOL moves**. Current cluster epoch.
+Requires `--revenue-kind Mev-share` and the MCA `record_authority`. Ledger only — **no SOL moves**. `--epoch` must be the current cluster epoch (on-chain uses `Clock`).
 
 ```sh
 rakurai-revshare \
@@ -92,6 +92,7 @@ rakurai-revshare \
   --revenue-kind Mev-share \
   --revenue-name <REVENUE_NAME> \
   --vote-pubkey <VALIDATOR_VOTE_PUBKEY> \
+  --epoch <EPOCH> \
   --amount <LAMPORTS>
 ```
 

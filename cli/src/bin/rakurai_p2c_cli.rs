@@ -84,21 +84,21 @@ enum Commands {
     /// Create a P2C subscription escrow (PSA). Reserved name `rakurai` is blocked.
     #[command(hide = true)]
     CreateAccount(CreateAccountArgs),
-    /// Fetch and display one P2C subscription escrow.
+    /// Show one PSA: balance, owed, status, and deficit (pass `--vote-pubkey`).
     GetAccount(AccountArgs),
-    /// List every P2C account for a service name.
+    /// List all PSAs for a service as a vote × epoch owed table.
     GetAllAccounts(GetAllAccountsArgs),
-    /// Fund prepaid balance (does not clear deficit).
+    /// Top up prepaid balance on one PSA (does not clear deficit).
     Fund(FundArgs),
-    /// Fund shortfalls for every PSA under this service name (past epochs only).
+    /// Top up shortfalls for every underfunded PSA under this service name.
     FundAll(FundAllArgs),
-    /// Record stake + amount due for an epoch (manager).
+    /// Record stake + amount due for an epoch (manager; `--epoch` + `--stake` + `--amount-due`).
     #[command(hide = true)]
     Record(RecordArgs),
-    /// Claim epoch fee from prepaid (manager; partial OK; optional force-close with deficit).
+    /// Claim one epoch’s fee from prepaid into commission + validator (manager).
     #[command(hide = true)]
     Claim(ClaimArgs),
-    /// Clear open deficit (funder transfers; pays commission + identity).
+    /// Pay down open deficit (funder transfers; splits to commission + identity).
     #[command(hide = true)]
     ClearDeficit(ClearDeficitArgs),
 }

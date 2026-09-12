@@ -82,19 +82,19 @@ enum Commands {
     /// Create a partner MCA (Mev-share) vault. TCA init and reserved `rakurai` name are blocked.
     #[command(hide = true)]
     CreateAccount(CreateAccountArgs),
-    /// Fetch and display one TCA or MCA (requires vote pubkey).
+    /// Show one MCA/TCA: balance, owed, and deficit (pass `--vote-pubkey`).
     GetAccount(AccountArgs),
-    /// List every TCA or MCA for a service (`--revenue-kind` + `--revenue-name`).
+    /// List all MCA/TCA for a service as a vote × epoch pending table.
     GetAllAccounts(GetAllAccountsArgs),
-    /// Show the unclaimed/unsettled record for one epoch.
+    /// Show pending amount for one epoch on one MCA/TCA.
     GetPendingRecord(PendingRecordArgs),
-    /// Show every epoch record that still has an amount pending settlement.
+    /// List every unsettled epoch on one MCA/TCA.
     GetAllPendingRecords(AccountArgs),
-    /// Record MCA MevShare revenue for the current epoch (post-pack partners).
+    /// Record RevShare amount on an MCA ledger (no SOL moves; `--epoch` + `--amount`).
     RecordRevenue(RecordRevenueCliArgs),
-    /// Transfer SOL into a vault for one recorded epoch.
+    /// Settle MevShare for one recorded epoch by transferring SOL into the MCA/TCA.
     Transfer(TransferArgs),
-    /// Settle all pending epochs for every vault matching this service.
+    /// Settle every pending epoch across all MCA/TCA for this service.
     TransferAll(TransferAllArgs),
 }
 
@@ -188,7 +188,11 @@ struct RecordRevenueCliArgs {
     #[command(flatten)]
     target: TargetArgs,
 
-    /// Lamports to add to the current-epoch recorded amount on the MCA.
+    /// Epoch to record against.
+    #[arg(short, long, required = true)]
+    epoch: u64,
+
+    /// Lamports to add to the epoch's recorded amount on the MCA.
     #[arg(short = 'x', long, required = true)]
     amount: u64,
 }
@@ -1094,19 +1098,13 @@ fn process_record_revenue(
         accounts,
     );
 
-    let clock_epoch = rpc_client.get_epoch_info()?.epoch;
-
     print_heading("Partner MevShare Record Revenue");
     print_field(
         "🔗".cyan(),
         "Vault:",
         vault.address().to_string().bold().green(),
     );
-    print_field(
-        "🕒".cyan(),
-        "Epoch:",
-        format!("{clock_epoch} (current cluster epoch)").blue(),
-    );
+    print_field("🕒".cyan(), "Epoch:", args.epoch.to_string().blue());
     print_field(
         "💰".green(),
         "Amount:",
