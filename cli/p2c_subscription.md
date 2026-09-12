@@ -1,96 +1,52 @@
 # P2C Subscription CLI (`rakurai-p2c`)
 
-Inspect, fund, record, and claim Pack-to-Chain (**P2C**) prepaid subscription escrows used with **post-pack confirmations**.
+**Audience:** P2C User/Consumer (searchers / traders / services that consume Rakurai post-pack confirmations).
 
-**Audience:** P2C User/Consumer (searchers / traders / services that consume Rakurai post-pack confirmations).  
-**Program:** Reward Distribution (`P2CSubscriptionAccount`).  
-**Install:** see [CLI overview](./README.md#2-installation). On-chain detail: [P2C section](../programs/reward_distribution/README.md#7-p2c-subscription-escrow).
+**Program:** Reward Distribution **PSA** (`P2CSubscriptionAccount`).
 
----
-
-## 1. What is P2C / post-pack?
-
-**Post-pack confirmations** are how the Rakurai scheduler streams transaction updates to external consumers over **gRPC** (Jito packet protocol). Updates are sent from the *point of no return*—just before transactions become part of the block—so consumers can react (e.g. backrun / arbitrage bundles) without front-running earlier in the pipeline.
-
-From the official guide ([Post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations)):
-
-- The validator forwards scheduled transactions to configured post-pack endpoints.
-- Consumers receive `Packet` / `PacketBatch` messages (`StartExpiringPacketStream`).
-- Consumers send back a **bundle** that includes the original post-pack packet(s) unchanged, plus any additional txs.
-- Endpoint registration is coordinated with the Rakurai team (on-chain config + Admin RPC for operators).
-
-**This CLI (`rakurai-p2c`)** manages the on-chain **prepaid subscription escrow** for that Pack-to-Chain / post-pack confirmation **user** (per service name + validator vote).
+Install: [CLI overview](./README.md#2-installation). How billing works on-chain: [PSA](../programs/reward_distribution/README.md#4-psa--prepaid-fee-to-use-post-pack).
 
 ---
 
-## 2. How the subscription works
+## 1. What this CLI is about
 
-Every user who wants to use **P2C / post-pack confirmations** pays a **subscription fee** priced from **SOL stake**. Billing is prepaid: you fund an on-chain escrow; after each epoch the fee is calculated from the uploaded stake and deducted from that balance. If fees are not paid, P2C access is stopped (after a short grace period).
+Post-pack confirmations need a **prepaid subscription escrow** (PSA) per service name + validator vote. You keep that escrow funded; each epoch a stake-based fee is deducted from it. If the escrow runs dry and a deficit builds up, P2C access can move to grace and then stop until the shortfall is cleared.
 
-### 2.1 Prepaid fund (User/Consumer)
+This CLI is how **you** manage funding for that escrow:
 
-1. Rakurai (manager) creates a P2C subscription account for your service name + validator vote.
-2. **You fund** the escrow with SOL (`fund`, or a plain `solana transfer` to the PDA).
-3. Keep a healthy prepaid balance so epoch claims can succeed without going into deficit.
+- **Read** balance, total owed, status, and deficit (`get-account`, `get-all-accounts`)
+- **Fund** prepaid SOL (`fund`, `fund-all`, or a plain `solana transfer` to the PDA)
 
-Any wallet can top up the escrow; the free balance (lamports above rent) is what claims draw from.
+This is **not** MevShare revenue sharing. Sharing post-pack backrun profit uses an **MCA** and [`rakurai-revshare`](./partner_reward_settlement.md). Post-pack product overview: [official guide](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations).
 
-### 2.2 Epoch stake → amount due → deduct
+PSA accounts are created by Rakurai / ops before you fund them.
 
-At (or after) epoch end:
+---
 
-1. **Manager records** that epoch once: uploads a **stake snapshot** and the computed **`amount_due`** (subscription fee for that epoch).
-2. Stake is an **off-chain verifiable** figure — it can be checked against any public source (validator vote stake via RPC, explorers, stake accounts, etc.). The on-chain row stores the snapshot used for pricing so anyone can audit it later.
-3. **Manager claims** the epoch: the program deducts `min(remaining due, free prepaid)` from the escrow and pays commission + validator identity.
-4. If the escrow has enough SOL, the epoch is fully paid and marked claimed.
-5. If underfunded, you can top up and claim again (partial payments accumulate), or the manager can **`force-claim`** to close the epoch and book the shortfall as **deficit**.
+## 2. What you do each epoch
 
-### 2.3 Unpaid → grace → P2C stopped
+1. Keep the prepaid account funded **before** the epoch ends (`fund` / `fund-all`, or `solana transfer` to the PDA).
+2. After the epoch, run `get-account` and check:
+   - balance after rent-exempt
+   - total owed (excludes the current in-progress epoch)
+   - status (`Active` / `InGrace` / `Suspended`)
+   - deficit (shown only when greater than zero)
+   - underfunded alert (only when balance < owed for past epochs)
+3. If balance is low, `fund` or `fund-all`.
 
-Subscription status is stored on the account (`Active` → `InGrace` → `Suspended`):
+`get-all-accounts` lists every subscription for the same `--name` as a vote × epoch table with **Deficit** (before TOTAL). `--detail` adds manager/auth and per-epoch owed rows.
+
+### Status meanings
 
 | Status | Meaning |
 |--------|---------|
 | `Active` | Fees current; P2C eligible |
-| `InGrace` | One or more underfunded forced closes within the grace window (default **2** epochs) |
-| `Suspended` | Unpaid streak exceeded grace — **P2C access is stopped** until the deficit is cleared |
-
-Clearing the open deficit (`clear-deficit`) restores `Active` when the deficit reaches zero. Ops / the scheduler use this status to gate post-pack for the user.
-
-### 2.4 Close anytime → remaining funds returned
-
-You can stop using P2C and **close** the subscription when you no longer need it:
-
-- All recorded epochs must be **claimed** first (no open ledger rows).
-- Closing returns **remaining prepaid SOL + rent** to the account **initializer** (who paid rent at create).
-- On-chain close is performed by the **manager**; coordinate with Rakurai if you want the escrow closed and residual returned.
+| `InGrace` | Recent underfunded periods within the grace window (default **2** epochs) |
+| `Suspended` | Unpaid streak exceeded grace — **P2C access is stopped** until the shortfall is cleared |
 
 ---
 
-## 3. Lifecycle (summary)
-
-```text
-  create (manager)
-       │
-       ▼
-  fund prepaid (user)  ◄── top up anytime
-       │
-       ▼
-  epoch ends → record(stake, amount_due)  [stake verifiable off-chain]
-       │
-       ▼
-  claim → deduct from prepaid
-       │
-       ├─ fully paid     → Active
-       ├─ underfunded    → top up / claim again, or force-claim → deficit + InGrace/Suspended
-       └─ clear-deficit  → back to Active when deficit = 0
-
-  close (manager, after all epochs claimed) → residual SOL + rent → initializer
-```
-
----
-
-## 4. CLI overview
+## 3. Commands
 
 ```sh
 rakurai-p2c \
@@ -100,49 +56,75 @@ rakurai-p2c \
   <COMMAND>
 ```
 
-Global flags match other Rakurai CLIs: `-k` / `--keypair`, `-u` / `--url`, `-p` / `--program-id`.
+Global flags: `-k` / `--keypair`, `-u` / `--url`, `-p` / `--program-id`.
 
-| Command | Who | Purpose |
-|---------|-----|---------|
-| `get-account` | anyone | Show one escrow (balance, status, deficit, ledger) |
-| `get-all-accounts` | anyone | List escrows for a service name |
-| `fund` | any funder (User/Consumer) | Top up prepaid SOL |
-| `record` | **manager** | Upload epoch stake + `amount-due` |
-| `claim` | **manager** | Deduct fee from prepaid; optional `--force-claim` |
-| `clear-deficit` | any funder | Fund + clear open deficit (restores Active when fully cleared) |
+| Command | Purpose |
+|---------|---------|
+| `get-account` | Show one escrow (balance after rent-exempt, total owed, status, deficit if any) |
+| `get-all-accounts` | List escrows for a service `--name` |
+| `fund` | Top up prepaid SOL |
+| `fund-all` | Fund shortfalls for every underfunded PSA under `--name` (excludes current epoch) |
 
-Account **create** / **config** / **close** are manager program instructions (not yet exposed as `rakurai-p2c` subcommands). Use the program SDK / scripts, or ask Rakurai ops.
+### 3.1. `get-account`
 
----
-
-## 5. Examples
+One escrow for one validator. Summary: pubkey, name, vote, status, balance after rent-exempt, **total owed** (past epochs only — current cluster epoch excluded), and **deficit only if greater than zero**. An underfunded alert appears only when balance is below owed. `--detail` adds manager/auth, commission, and per-epoch rows (`due` / `deducted` / `owed` / `claimed`).
 
 ```sh
-# Inspect balance, status, deficit, and epoch ledger
-rakurai-p2c -u t -p <RD_PID> get-account --name mysvc -v <VOTE>
+rakurai-p2c \
+  --url <RPC_URL> \
+  --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
+  get-account \
+  --name <SERVICE_NAME> \
+  --vote-pubkey <VALIDATOR_VOTE_PUBKEY>
+```
 
-# Fund prepaid (User/Consumer) — keep this funded so claims succeed
-rakurai-p2c -u t -p <RD_PID> -k <FUNDER> fund --name mysvc -v <VOTE> -x 1000000000
+### 3.2. `get-all-accounts`
 
-# After epoch: manager uploads verifiable stake + calculated fee
-rakurai-p2c -u t -p <RD_PID> -k <MANAGER> record \
-  --name mysvc -v <VOTE> --epoch 750 --stake 1000000 --amount-due 50000000
+Lists every subscription for `--name` as a vote × epoch owed table with a **Deficit** column (after epochs, before TOTAL). Past epochs only (current cluster epoch excluded). `--detail` adds per-account pubkey, status, balance, and epoch breakdown.
 
-# Deduct from prepaid (partial OK if underfunded)
-rakurai-p2c -u t -p <RD_PID> -k <MANAGER> claim \
-  --name mysvc -v <VOTE> --epoch 750 \
-  --validator-identity <IDENTITY>
+```sh
+rakurai-p2c \
+  --url <RPC_URL> \
+  --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
+  get-all-accounts \
+  --name <SERVICE_NAME>
+```
 
-# Force-close underfunded epoch → books deficit (can move toward Suspended / P2C stopped)
-rakurai-p2c -u t -p <RD_PID> -k <MANAGER> claim \
-  --name mysvc -v <VOTE> --epoch 750 \
-  --validator-identity <IDENTITY> \
-  --force-claim
+### 3.3. `fund`
 
-# Pay down deficit to restore Active
-rakurai-p2c -u t -p <RD_PID> -k <FUNDER> clear-deficit \
-  --name mysvc -v <VOTE> \
-  --validator-identity <IDENTITY>
+```sh
+rakurai-p2c \
+  --url <RPC_URL> \
+  --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
+  --keypair <FUNDER_KEYPAIR> \
+  fund \
+  --name <SERVICE_NAME> \
+  --vote-pubkey <VALIDATOR_VOTE_PUBKEY> \
+  --amount <LAMPORTS>
 ```
 
 Anyone may also fund the PDA with a plain `solana transfer` into the escrow address.
+
+### 3.4. `fund-all`
+
+Funds the shortfall (`owed − balance`) for every underfunded PSA with the same `--name`. Owed excludes the current cluster epoch. Skips accounts that already cover past-epoch due. Prints the owed/deficit pivot table; **open deficit is not cleared by fund-all** (use `clear-deficit`).
+
+```sh
+rakurai-p2c \
+  --url <RPC_URL> \
+  --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
+  --keypair <FUNDER_KEYPAIR> \
+  fund-all \
+  --name <SERVICE_NAME>
+```
+
+`--batch-size` (default **5** ix/txn) controls fund instructions per transaction to stay under Solana size limits. Pass `--dry-run` to preview.
+
+---
+
+## Appendix: Program IDs
+
+| Cluster | Reward Distribution program |
+| ------- | --------------------------- |
+| Mainnet | `RAkd1EJg45QQHeuXy7JEWBhdNvsd64Z5PbZJWQT96iB` |
+| Testnet | `A37zgM34Q43gKAxBWQ9zSbQRRhjPqGK8jM49H7aWqNVB` |

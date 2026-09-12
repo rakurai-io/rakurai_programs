@@ -25,3 +25,4 @@ Cargo.lock
 node_modules
 test-ledger
 .yarn
+*.json

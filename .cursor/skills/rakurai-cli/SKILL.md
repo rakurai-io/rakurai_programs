@@ -94,9 +94,9 @@ cargo run --bin rakurai-activation -- -p pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM
 3. Subcommands → operator workflows, not every on-chain ix
 4. Reuse `lib.rs`; add `get_*`/`display_*` as needed
 
-**Suggested v1 — Partner Tip and MevShare Revenue Settlement CLI** (`rakurai-revshare`): `get-account`, `get-all-accounts`, `get-pending-record`, `get-all-pending-records`, `record-revenue` (MCA), `transfer`, `transfer-all`.
+**Suggested v1 — Partner Tip and MevShare Revenue Settlement CLI** (`rakurai-revshare`): `create-account` (MCA only; block Tip + reserved `rakurai` name), `get-account`, `get-all-accounts`, `get-pending-record`, `get-all-pending-records`, `record-revenue` (MCA), `transfer`, `transfer-all`.
 
-**P2C / post-pack confirmation prepaid** (`rakurai-p2c`): `get-account`, `get-all-accounts`, `fund`, `record`, `claim`, `clear-deficit`. Docs: [post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations).
+**P2C / post-pack confirmation prepaid** (`rakurai-p2c`): `create-account` (block reserved `rakurai` name), `get-account`, `get-all-accounts`, `fund`, `record`, `claim`, `clear-deficit`. Post-pack order: create+fund PSA → create MCA → then use post-pack. Docs: [post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations).
 
 **Suggested v1 — tip_manager**: `show-config`, `claim-tips`, `change-tip-receiver`, `change-client`. Optional `--reward-distribution-program-id` only if CLI also credits RCA off-chain.
 
