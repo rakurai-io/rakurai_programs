@@ -1530,20 +1530,20 @@
       ]
     },
     {
-      "name": "migrate_global_to_v2",
+      "name": "migrate_global_to_v3",
       "docs": [
-        "Manager-only: rewrite a V1 global payload as V2 (`enable_tpu_p2c_update = false`).",
-        "No-op if already V2. Reallocs to fit the extra byte."
+        "Manager-only: rewrite a V2 global payload as V3 (global TPU flag → per P2C URL).",
+        "No-op if already V3. Reallocs to fit."
       ],
       "discriminator": [
-        164,
-        197,
-        79,
-        98,
-        129,
-        111,
-        182,
-        133
+        35,
+        84,
+        248,
+        205,
+        32,
+        33,
+        240,
+        42
       ],
       "accounts": [
         {
@@ -1598,20 +1598,20 @@
       "args": []
     },
     {
-      "name": "migrate_proposal_to_v2",
+      "name": "migrate_proposal_to_v3",
       "docs": [
-        "Operator-only: rewrite a V1 proposal payload as V2 (`enable_tpu_p2c_update = false`).",
-        "No-op if already V2. Reallocs to fit the extra byte."
+        "Operator-only: rewrite a V2 proposal payload as V3 (global TPU flag → per P2C URL).",
+        "No-op if already V3. Reallocs to fit."
       ],
       "discriminator": [
-        35,
-        178,
-        102,
-        253,
-        87,
-        180,
-        101,
-        169
+        235,
+        248,
+        185,
+        181,
+        236,
+        193,
+        103,
+        230
       ],
       "accounts": [
         {
@@ -1701,20 +1701,20 @@
       "args": []
     },
     {
-      "name": "migrate_validator_to_v2",
+      "name": "migrate_validator_to_v3",
       "docs": [
-        "Manager-only: rewrite a V1 validator payload as V2 (`enable_tpu_p2c_update = false`).",
-        "No-op if already V2. Reallocs to fit the extra byte."
+        "Manager-only: rewrite a V2 validator payload as V3 (global TPU flag → per P2C URL).",
+        "No-op if already V3. Reallocs to fit."
       ],
       "discriminator": [
-        173,
-        220,
-        187,
-        234,
-        121,
-        165,
-        249,
-        60
+        218,
+        251,
+        0,
+        157,
+        167,
+        33,
+        210,
+        218
       ],
       "accounts": [
         {
@@ -2956,20 +2956,16 @@
     {
       "name": "Config",
       "docs": [
-        "Versioned config payload shared by global and validator PDAs."
+        "Versioned config payload shared by global and validator PDAs.",
+        "",
+        "Discriminant 0 (`V1`) is reserved so existing `V2` accounts (discriminant 1)",
+        "keep decoding after ConfigV1 was removed. `V3` is discriminant 2."
       ],
       "type": {
         "kind": "enum",
         "variants": [
           {
-            "name": "V1",
-            "fields": [
-              {
-                "defined": {
-                  "name": "ConfigV1"
-                }
-              }
-            ]
+            "name": "V1"
           },
           {
             "name": "V2",
@@ -2977,6 +2973,16 @@
               {
                 "defined": {
                   "name": "ConfigV2"
+                }
+              }
+            ]
+          },
+          {
+            "name": "V3",
+            "fields": [
+              {
+                "defined": {
+                  "name": "ConfigV3"
                 }
               }
             ]
@@ -3074,48 +3080,12 @@
       }
     },
     {
-      "name": "ConfigV1",
+      "name": "ConfigV2",
       "docs": [
-        "Shared V1 payload for global and validator PDAs (no mode).",
+        "V2 payload: section lists plus global `enable_tpu_p2c_update`.",
         "",
         "`String` / `Vec` fields are dynamically sized: account bytes grow/shrink via",
         "`realloc_to_fit` on every init/update. Caps come from account `ConfigLimits`."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "block_engine",
-            "type": {
-              "defined": {
-                "name": "BlockEngineV1"
-              }
-            }
-          },
-          {
-            "name": "p2c",
-            "type": {
-              "defined": {
-                "name": "P2cV1"
-              }
-            }
-          },
-          {
-            "name": "virtual_priority",
-            "type": {
-              "defined": {
-                "name": "VirtualPriorityV1"
-              }
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "ConfigV2",
-      "docs": [
-        "V2 payload: V1 sections plus `enable_tpu_p2c_update`.",
-        "Existing V1 accounts migrate with the flag defaulting to `false`."
       ],
       "type": {
         "kind": "struct",
@@ -3147,6 +3117,41 @@
           {
             "name": "enable_tpu_p2c_update",
             "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfigV3",
+      "docs": [
+        "V3 payload: same sections as V2, but `enable_tpu_p2c_update` lives per P2C URL."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "block_engine",
+            "type": {
+              "defined": {
+                "name": "BlockEngineV1"
+              }
+            }
+          },
+          {
+            "name": "p2c",
+            "type": {
+              "defined": {
+                "name": "P2cV3"
+              }
+            }
+          },
+          {
+            "name": "virtual_priority",
+            "type": {
+              "defined": {
+                "name": "VirtualPriorityV1"
+              }
+            }
           }
         ]
       }
@@ -3185,18 +3190,51 @@
     },
     {
       "name": "P2cConfig",
+      "docs": [
+        "ConfigV3 P2C endpoint with per-URL TPU→P2C gate."
+      ],
       "type": {
         "kind": "struct",
         "fields": [
           {
             "name": "url",
             "type": "string"
+          },
+          {
+            "name": "enable_tpu_p2c_update",
+            "type": "bool"
           }
         ]
       }
     },
     {
       "name": "P2cEntryV1",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "name",
+            "type": {
+              "defined": {
+                "name": "Uuid"
+              }
+            }
+          },
+          {
+            "name": "url",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "P2cUrl"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "P2cEntryV3",
       "type": {
         "kind": "struct",
         "fields": [
@@ -3222,6 +3260,21 @@
       }
     },
     {
+      "name": "P2cUrl",
+      "docs": [
+        "ConfigV2 P2C endpoint (url only). Same Borsh layout as the former `P2cConfig`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "url",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
       "name": "P2cV1",
       "type": {
         "kind": "struct",
@@ -3235,6 +3288,24 @@
               "vec": {
                 "defined": {
                   "name": "P2cEntryV1"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "P2cV3",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sets",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "P2cEntryV3"
                 }
               }
             }
