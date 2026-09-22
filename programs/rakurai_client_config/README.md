@@ -14,7 +14,7 @@ On-chain **scheduler configuration** for Rakurai validators. This program stores
 
 ## 2. What you configure
 
-One versioned payload (`Config::V2` / `ConfigV2`) on every PDA. Three independent sections:
+One versioned payload (`Config::V2` / `ConfigV2`, or `Config::V3` / `ConfigV3`) on every PDA. Three independent sections:
 
 | Section | What it is | Entry shape |
 |---------|------------|-------------|

@@ -6,7 +6,7 @@ use {
     rakurai_client_config::{
         sdk::{
             effective_config, name_from_str, BlockEngineConfig, BlockEngineEntryV1, BlockEngineV1,
-            Config, ConfigLimits, ConfigV2, P2cConfig, P2cEntryV1, P2cV1, Uuid, ValidatorProposal,
+            Config, ConfigLimits, ConfigV2, P2cEntryV1, P2cUrl, P2cV1, Uuid, ValidatorProposal,
             VirtualPriorityConfig, VirtualPriorityEntryV1, VirtualPriorityV1,
         },
         state::{GlobalConfig, ValidatorConfig},
@@ -131,7 +131,7 @@ pub fn load_config_from_file(path: &str) -> Result<Config, Box<dyn std::error::E
                     url: e
                         .url
                         .into_iter()
-                        .map(|u| P2cConfig { url: u.url })
+                        .map(|u| P2cUrl { url: u.url })
                         .collect(),
                 })
                 .collect(),

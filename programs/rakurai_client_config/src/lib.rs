@@ -75,6 +75,18 @@ pub mod rakurai_client_config {
         Ok(())
     }
 
+    /// Manager-only: rewrite a V2 global payload as V3 (global TPU flag → per P2C URL).
+    /// No-op if already V3. Reallocs to fit.
+    pub fn migrate_global_to_v3(ctx: Context<MigrateGlobalToV3>) -> Result<()> {
+        ctx.accounts.global.config.migrate_to_v3();
+        GlobalConfig::realloc_to_fit(
+            &ctx.accounts.global,
+            &ctx.accounts.manager,
+            &ctx.accounts.system_program,
+        )?;
+        Ok(())
+    }
+
     /// Manager-only: create per-vote validator PDA, copying current global config + limits.
     /// `operator` may later propose changes via the proposal PDA.
     pub fn init_validator(ctx: Context<InitValidator>, operator: Pubkey) -> Result<()> {
@@ -116,6 +128,18 @@ pub mod rakurai_client_config {
         limits.validate()?;
         ctx.accounts.validator.config.validate(&limits)?;
         ctx.accounts.validator.limits = limits;
+        Ok(())
+    }
+
+    /// Manager-only: rewrite a V2 validator payload as V3 (global TPU flag → per P2C URL).
+    /// No-op if already V3. Reallocs to fit.
+    pub fn migrate_validator_to_v3(ctx: Context<MigrateValidatorToV3>) -> Result<()> {
+        ctx.accounts.validator.config.migrate_to_v3();
+        ValidatorConfig::realloc_to_fit(
+            &ctx.accounts.validator,
+            &ctx.accounts.manager,
+            &ctx.accounts.system_program,
+        )?;
         Ok(())
     }
 
@@ -161,6 +185,18 @@ pub mod rakurai_client_config {
         config.validate(&limits)?;
         ctx.accounts.proposal.limits = limits;
         ctx.accounts.proposal.config = config;
+        ValidatorProposal::realloc_to_fit(
+            &ctx.accounts.proposal,
+            &ctx.accounts.operator,
+            &ctx.accounts.system_program,
+        )?;
+        Ok(())
+    }
+
+    /// Operator-only: rewrite a V2 proposal payload as V3 (global TPU flag → per P2C URL).
+    /// No-op if already V3. Reallocs to fit.
+    pub fn migrate_proposal_to_v3(ctx: Context<MigrateProposalToV3>) -> Result<()> {
+        ctx.accounts.proposal.config.migrate_to_v3();
         ValidatorProposal::realloc_to_fit(
             &ctx.accounts.proposal,
             &ctx.accounts.operator,
@@ -401,6 +437,20 @@ pub struct UpdateGlobalLimits<'info> {
 }
 
 #[derive(Accounts)]
+pub struct MigrateGlobalToV3<'info> {
+    #[account(mut)]
+    pub manager: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global.bump,
+        has_one = manager @ ConfigError::Unauthorized,
+    )]
+    pub global: Account<'info, GlobalConfig>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 #[instruction(operator: Pubkey)]
 pub struct InitValidator<'info> {
     #[account(mut)]
@@ -472,6 +522,29 @@ pub struct UpdateValidatorLimits<'info> {
         constraint = validator.manager == global.manager @ ConfigError::Unauthorized,
     )]
     pub validator: Account<'info, ValidatorConfig>,
+}
+
+#[derive(Accounts)]
+pub struct MigrateValidatorToV3<'info> {
+    #[account(mut)]
+    pub manager: Signer<'info>,
+    /// CHECK: vote account used as PDA seed
+    pub vote: UncheckedAccount<'info>,
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global.bump,
+        has_one = manager @ ConfigError::Unauthorized,
+    )]
+    pub global: Account<'info, GlobalConfig>,
+    #[account(
+        mut,
+        seeds = [VALIDATOR_CONFIG_SEED, vote.key().as_ref()],
+        bump = validator.bump,
+        constraint = validator.vote == vote.key() @ ConfigError::VoteMismatch,
+        constraint = validator.manager == global.manager @ ConfigError::Unauthorized,
+    )]
+    pub validator: Account<'info, ValidatorConfig>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -559,6 +632,30 @@ pub struct InitProposal<'info> {
 
 #[derive(Accounts)]
 pub struct UpdateProposal<'info> {
+    #[account(mut)]
+    pub operator: Signer<'info>,
+    /// CHECK: vote account used as PDA seed
+    pub vote: UncheckedAccount<'info>,
+    #[account(
+        seeds = [VALIDATOR_CONFIG_SEED, vote.key().as_ref()],
+        bump = validator.bump,
+        constraint = validator.vote == vote.key() @ ConfigError::VoteMismatch,
+        has_one = operator @ ConfigError::UnauthorizedOperator,
+    )]
+    pub validator: Account<'info, ValidatorConfig>,
+    #[account(
+        mut,
+        seeds = [VALIDATOR_PROPOSAL_SEED, vote.key().as_ref()],
+        bump = proposal.bump,
+        constraint = proposal.vote == vote.key() @ ConfigError::VoteMismatch,
+        has_one = operator @ ConfigError::UnauthorizedOperator,
+    )]
+    pub proposal: Account<'info, ValidatorProposal>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct MigrateProposalToV3<'info> {
     #[account(mut)]
     pub operator: Signer<'info>,
     /// CHECK: vote account used as PDA seed

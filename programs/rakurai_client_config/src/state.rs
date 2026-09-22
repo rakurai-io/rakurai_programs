@@ -105,12 +105,13 @@ impl Uuid {
 /// Versioned config payload shared by global and validator PDAs.
 ///
 /// Discriminant 0 (`V1`) is reserved so existing `V2` accounts (discriminant 1)
-/// keep decoding after ConfigV1 was removed.
+/// keep decoding after ConfigV1 was removed. `V3` is discriminant 2.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub enum Config {
     /// Former ConfigV1 — unsupported. Writing or validating this variant fails.
     V1,
     V2(ConfigV2),
+    V3(ConfigV3),
 }
 
 impl Config {
@@ -118,18 +119,50 @@ impl Config {
         match self {
             Config::V1 => Err(error!(crate::ConfigError::UnexpectedConfigVersion)),
             Config::V2(v2) => v2.validate(limits),
+            Config::V3(v3) => v3.validate(limits),
         }
     }
 
     pub fn as_v2(&self) -> Result<&ConfigV2> {
         match self {
             Config::V2(v2) => Ok(v2),
-            Config::V1 => Err(error!(crate::ConfigError::UnexpectedConfigVersion)),
+            Config::V1 | Config::V3(_) => {
+                Err(error!(crate::ConfigError::UnexpectedConfigVersion))
+            }
+        }
+    }
+
+    pub fn as_v3(&self) -> Result<&ConfigV3> {
+        match self {
+            Config::V3(v3) => Ok(v3),
+            Config::V1 | Config::V2(_) => {
+                Err(error!(crate::ConfigError::UnexpectedConfigVersion))
+            }
         }
     }
 
     pub fn to_v2(&self) -> Result<ConfigV2> {
         Ok(self.as_v2()?.clone())
+    }
+
+    /// Prefer V3; project V2 by copying the global TPU flag onto every P2C URL.
+    pub fn to_v3(&self) -> Result<ConfigV3> {
+        match self {
+            Config::V3(v3) => Ok(v3.clone()),
+            Config::V2(v2) => Ok(ConfigV3::from_v2(v2.clone())),
+            Config::V1 => Err(error!(crate::ConfigError::UnexpectedConfigVersion)),
+        }
+    }
+
+    /// Rewrite a V2 payload as V3 in place (global flag → per-URL).
+    /// Returns `true` if the account data version changed.
+    pub fn migrate_to_v3(&mut self) -> bool {
+        let v2 = match self {
+            Config::V2(v2) => v2.clone(),
+            Config::V1 | Config::V3(_) => return false,
+        };
+        *self = Config::V3(ConfigV3::from_v2(v2));
+        true
     }
 }
 
@@ -165,6 +198,68 @@ impl ConfigV2 {
     }
 }
 
+/// V3 payload: same sections as V2, but `enable_tpu_p2c_update` lives per P2C URL.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
+pub struct ConfigV3 {
+    pub block_engine: BlockEngineV1,
+    pub p2c: P2cV3,
+    pub virtual_priority: VirtualPriorityV1,
+}
+
+impl ConfigV3 {
+    pub fn empty() -> Self {
+        Self {
+            block_engine: BlockEngineV1 { sets: vec![] },
+            p2c: P2cV3 { sets: vec![] },
+            virtual_priority: VirtualPriorityV1 { sets: vec![] },
+        }
+    }
+
+    pub fn from_v2(v2: ConfigV2) -> Self {
+        let enable = v2.enable_tpu_p2c_update;
+        Self {
+            block_engine: v2.block_engine,
+            p2c: P2cV3 {
+                sets: v2
+                    .p2c
+                    .sets
+                    .into_iter()
+                    .map(|entry| P2cEntryV3 {
+                        name: entry.name,
+                        url: entry
+                            .url
+                            .into_iter()
+                            .map(|u| P2cConfig {
+                                url: u.url,
+                                enable_tpu_p2c_update: enable,
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+            },
+            virtual_priority: v2.virtual_priority,
+        }
+    }
+
+    pub fn validate(&self, limits: &ConfigLimits) -> Result<()> {
+        validate_sections_v3(
+            &self.block_engine,
+            &self.p2c,
+            &self.virtual_priority,
+            limits,
+        )
+    }
+
+    /// True if any P2C endpoint enables TPU→P2C forwarding.
+    pub fn any_tpu_p2c_update_enabled(&self) -> bool {
+        self.p2c
+            .sets
+            .iter()
+            .flat_map(|set| set.url.iter())
+            .any(|u| u.enable_tpu_p2c_update)
+    }
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub struct BlockEngineV1 {
     /// Dynamic list of named endpoint groups; realloc when this grows/shrinks.
@@ -197,12 +292,31 @@ pub struct P2cV1 {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub struct P2cEntryV1 {
     pub name: Uuid,
-    pub url: Vec<P2cConfig>,
+    pub url: Vec<P2cUrl>,
+}
+
+/// ConfigV2 P2C endpoint (url only). Same Borsh layout as the former `P2cConfig`.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
+pub struct P2cUrl {
+    pub url: String,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
+pub struct P2cV3 {
+    pub sets: Vec<P2cEntryV3>,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
+pub struct P2cEntryV3 {
+    pub name: Uuid,
+    pub url: Vec<P2cConfig>,
+}
+
+/// ConfigV3 P2C endpoint with per-URL TPU→P2C gate.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub struct P2cConfig {
     pub url: String,
+    pub enable_tpu_p2c_update: bool,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
@@ -466,6 +580,61 @@ fn validate_sections(
     Ok(())
 }
 
+fn validate_sections_v3(
+    block_engine: &BlockEngineV1,
+    p2c: &P2cV3,
+    virtual_priority: &VirtualPriorityV1,
+    limits: &ConfigLimits,
+) -> Result<()> {
+    let limits = limits.as_v1()?;
+    require!(
+        block_engine.sets.len() <= limits.max_sets_per_section as usize,
+        crate::ConfigError::TooManySets
+    );
+    require!(
+        p2c.sets.len() <= limits.max_sets_per_section as usize,
+        crate::ConfigError::TooManySets
+    );
+    require!(
+        virtual_priority.sets.len() <= limits.max_sets_per_section as usize,
+        crate::ConfigError::TooManySets
+    );
+
+    for entry in &block_engine.sets {
+        require!(
+            entry.url.len() <= limits.max_urls_per_set as usize,
+            crate::ConfigError::TooManyUrls
+        );
+        validate_urls(
+            entry.url.iter().map(|c| c.url.as_str()),
+            limits.max_url_len as usize,
+        )?;
+    }
+    for entry in &p2c.sets {
+        require!(
+            entry.url.len() <= limits.max_urls_per_set as usize,
+            crate::ConfigError::TooManyUrls
+        );
+        validate_urls(
+            entry.url.iter().map(|c| c.url.as_str()),
+            limits.max_url_len as usize,
+        )?;
+    }
+    for entry in &virtual_priority.sets {
+        require!(
+            entry.url.len() <= limits.max_vp_entries_per_set as usize,
+            crate::ConfigError::TooManyVpEntries
+        );
+        for vp in &entry.url {
+            require!(
+                vp.value.is_finite() && (0.0..=1.0).contains(&vp.value),
+                crate::ConfigError::InvalidVpValue
+            );
+        }
+    }
+    Ok(())
+}
+
 fn validate_urls<'a>(urls: impl Iterator<Item = &'a str>, max_url_len: usize) -> Result<()> {
     for url in urls {
         require!(!url.is_empty(), crate::ConfigError::UrlEmpty);
@@ -665,5 +834,40 @@ mod tests {
             data: bytes,
         };
         assert_eq!(staging.parse_config().unwrap(), cfg);
+    }
+
+    #[test]
+    fn migrate_v2_to_v3_copies_global_flag_onto_each_url() {
+        let mut cfg = Config::V2(ConfigV2 {
+            block_engine: BlockEngineV1 { sets: vec![] },
+            p2c: P2cV1 {
+                sets: vec![P2cEntryV1 {
+                    name: Uuid::from_str_truncated("p2c"),
+                    url: vec![
+                        P2cUrl {
+                            url: "https://a".to_string(),
+                        },
+                        P2cUrl {
+                            url: "https://b".to_string(),
+                        },
+                    ],
+                }],
+            },
+            virtual_priority: VirtualPriorityV1 { sets: vec![] },
+            enable_tpu_p2c_update: true,
+        });
+        assert!(cfg.migrate_to_v3());
+        let v3 = cfg.to_v3().unwrap();
+        assert!(v3.any_tpu_p2c_update_enabled());
+        assert_eq!(v3.p2c.sets[0].url.len(), 2);
+        assert!(v3.p2c.sets[0].url.iter().all(|u| u.enable_tpu_p2c_update));
+        assert!(!cfg.migrate_to_v3());
+    }
+
+    #[test]
+    fn v3_discriminant_is_two() {
+        let cfg = Config::V3(ConfigV3::empty());
+        let bytes = cfg.try_to_vec().unwrap();
+        assert_eq!(bytes[0], 2);
     }
 }
