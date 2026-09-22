@@ -46,7 +46,7 @@ The RCA is the holding account for the **stakers’ share** for one validator, f
 
 ### 2.1.1 RewardCollectionAccount account initialization
 On the first turn of each epoch, the `RewardCollectionAccount` is automatically initialized by the Rakurai Solana client. This initialization includes:
-- Commission details (from validator-specific [`RakuraiActivationAccount`](../rakurai_activation/README.md)).
+- Commission details (from validator-specific [`RakuraiActivationAccount`](../rakurai_activation/README.md#4-rakurai-activation-account-creation)).
 - Authority to update the reward Merkle root (only this authority can upload the Merkle root to the `RewardCollectionAccount` account).
 > Account initialization logic is part of the Rakurai Solana client.
 
@@ -74,7 +74,7 @@ At the final slot of each epoch, the following process takes place:
 
 ## 2.2. Reward Distribution — Free and Automated by Rakurai
 
-- Set the Merkle root authority to `--rewards-merkle-root-authority` to `H21wFgN53ghjDq5N9QhraAiPn1tRVYkobySj55unXLEj` for fully automated reward distribution.
+- Set the Merkle root authority to [Rakurai](../../../validators/setup_and_build.md#5-add-additional-cli-args) for fully automated reward distribution.
 - Keep it yourself if you want to run distribution manually.
 
 When set to **Rakurai**, Rakurai will automatically:
@@ -123,7 +123,7 @@ The TCA is where the **validator’s tip remainder** is collected for the epoch,
 
 ### Working model — Rakurai tip accounts (usual case)
 
-Rakurai publishes [eight tip accounts](../rakurai_tip_manager/README.md) so many people can tip at once.
+By default, services tip Rakurai's [eight tip accounts](../rakurai_tip_manager/README.md), and `rakurai_tip_manager` drains them automatically. But an external transaction-landing service can [register their own custom tip account](../../../transaction_inclusion/rakurai_tip_manager_faqs.md#4-can-i-use-my-own-tip-account-instead-of-rakurais-eight-accounts) and agree to share a commission (e.g. 30%) with Rakurai.
 
 1. A trader tips **any of the eight accounts**
 2. Each time this validator is leader, those tip accounts are emptied
@@ -137,7 +137,7 @@ Rakurai is not paid a second time at step 5 — the commission already happened 
 
 Some landing services want tips in **their own** account. Rakurai cannot empty that account.
 
-1. You register the account and an agreed share with Rakurai ([FAQ](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/rakurai_tip_manager_faqs#4.-can-i-use-my-own-tip-account-instead-of-rakurais-eight-accounts))
+1. You register the account and an agreed share with Rakurai ([FAQ](../../../transaction_inclusion/rakurai_tip_manager_faqs.md#4-can-i-use-my-own-tip-account-instead-of-rakurais-eight-accounts))
 2. During the epoch, the validator **writes down** what is owed (no SOL moves yet)
 3. After the epoch, **you send** the owed SOL into the TCA
 4. Then Rakurai’s commission is taken from what you sent, and the rest goes to the validator identity (same **block-reward conversion** as above)
@@ -158,7 +158,7 @@ From each epoch’s fee: **commission to Rakurai**, **remainder to the validator
 
 Which servers receive the stream is configured separately in [Client Config](../rakurai_client_config/README.md) (always submit the **full** current list plus any new endpoint). The PSA only holds the **prepaid SOL**.
 
-Full product guide: [Post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations).
+Full product guide: [Post-pack confirmations](../../../transaction_inclusion/post_pack_confirmations.md).
 
 ### Working model
 
@@ -188,7 +188,7 @@ User / consumer steps: [rakurai-p2c](../../cli/p2c_subscription.md). On-chain la
 
 ### Why it exists
 
-After you fund the **PSA**, [post-pack](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations) sends you transactions at the **point of no return** (too late for anyone to front-run). You can **backrun** (trade after them). That extra profit sits in **your** wallet.
+After you fund the **PSA**, [post-pack](../../../transaction_inclusion/post_pack_confirmations.md) sends you transactions at the **point of no return** (too late for anyone to front-run). You can **backrun** (trade after them). That extra profit sits in **your** wallet.
 
 The deal is: you **share that profit** with the validator. The MCA is the account that receives the shared amount so Rakurai can take commission and pay the validator.
 

@@ -23,6 +23,7 @@ pub mod state;
 
 declare_id!("pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt");
 
+#[allow(deprecated)]
 #[program]
 pub mod rakurai_activation {
     use rakurai_vote_state::VoteState;
