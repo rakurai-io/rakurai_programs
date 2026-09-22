@@ -6,7 +6,7 @@ use {
     rakurai_client_config::{
         sdk::{
             effective_config, name_from_str, BlockEngineConfig, BlockEngineEntryV1, BlockEngineV1,
-            Config, ConfigLimits, ConfigV2, P2cEntryV1, P2cUrl, P2cV1, Uuid, ValidatorProposal,
+            Config, ConfigLimits, ConfigV3, P2cConfig, P2cEntryV3, P2cV3, Uuid, ValidatorProposal,
             VirtualPriorityConfig, VirtualPriorityEntryV1, VirtualPriorityV1,
         },
         state::{GlobalConfig, ValidatorConfig},
@@ -26,8 +26,6 @@ struct ConfigFile {
     p2c: SetsFileP2c,
     #[serde(default)]
     virtual_priority: SetsFileVp,
-    #[serde(default)]
-    enable_tpu_p2c_update: bool,
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -70,6 +68,8 @@ struct P2cEntryFile {
 #[derive(serde::Deserialize)]
 struct P2cUrlFile {
     url: String,
+    #[serde(default)]
+    enable_tpu_p2c_update: bool,
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -100,7 +100,7 @@ pub fn uuid_to_string(uuid: &Uuid) -> String {
 pub fn load_config_from_file(path: &str) -> Result<Config, Box<dyn std::error::Error>> {
     let text = fs::read_to_string(Path::new(path))?;
     let file: ConfigFile = serde_json::from_str(&text)?;
-    Ok(Config::V2(ConfigV2 {
+    Ok(Config::V3(ConfigV3 {
         block_engine: BlockEngineV1 {
             sets: file
                 .block_engine
@@ -121,17 +121,20 @@ pub fn load_config_from_file(path: &str) -> Result<Config, Box<dyn std::error::E
                 })
                 .collect(),
         },
-        p2c: P2cV1 {
+        p2c: P2cV3 {
             sets: file
                 .p2c
                 .sets
                 .into_iter()
-                .map(|e| P2cEntryV1 {
+                .map(|e| P2cEntryV3 {
                     name: name_from_str(&e.name),
                     url: e
                         .url
                         .into_iter()
-                        .map(|u| P2cUrl { url: u.url })
+                        .map(|u| P2cConfig {
+                            url: u.url,
+                            enable_tpu_p2c_update: u.enable_tpu_p2c_update,
+                        })
                         .collect(),
                 })
                 .collect(),
@@ -159,7 +162,6 @@ pub fn load_config_from_file(path: &str) -> Result<Config, Box<dyn std::error::E
                 )
                 .collect::<Result<Vec<_>, _>>()?,
         },
-        enable_tpu_p2c_update: file.enable_tpu_p2c_update,
     }))
 }
 
@@ -192,14 +194,18 @@ pub fn proposal_exists(rpc: &RpcClient, pda: &Pubkey) -> bool {
 }
 
 fn display_config_payload(cfg: &Config) {
-    let Ok(v2) = cfg.to_v2() else {
+    let Ok(v3) = cfg.to_v3() else {
         println!("   schema: unsupported (reserved v1)");
         return;
     };
-    println!("   schema: v2");
-    println!("   enable_tpu_p2c_update: {}", v2.enable_tpu_p2c_update);
+    let schema = match cfg {
+        Config::V1 => "unsupported-v1",
+        Config::V2(_) => "v2→v3",
+        Config::V3(_) => "v3",
+    };
+    println!("   schema: {schema}");
     println!("   {}", "block_engine".yellow());
-    for entry in &v2.block_engine.sets {
+    for entry in &v3.block_engine.sets {
         println!("     [{}]", uuid_to_string(&entry.name));
         for u in &entry.url {
             println!(
@@ -209,14 +215,17 @@ fn display_config_payload(cfg: &Config) {
         }
     }
     println!("   {}", "p2c".yellow());
-    for entry in &v2.p2c.sets {
+    for entry in &v3.p2c.sets {
         println!("     [{}]", uuid_to_string(&entry.name));
         for u in &entry.url {
-            println!("       {}", u.url);
+            println!(
+                "       {} (enable_tpu_p2c_update={})",
+                u.url, u.enable_tpu_p2c_update
+            );
         }
     }
     println!("   {}", "virtual_priority".yellow());
-    for entry in &v2.virtual_priority.sets {
+    for entry in &v3.virtual_priority.sets {
         println!("     [{}]", uuid_to_string(&entry.name));
         for u in &entry.url {
             println!("       {} -> {}", u.key, u.value);

@@ -19,7 +19,8 @@ use {
             approve_proposal_ix, close_global_ix, close_validator_ix, commit_global_staging_ix,
             commit_proposal_staging_ix, commit_validator_staging_ix, init_global_ix,
             init_global_staging_ix, init_proposal_ix, init_proposal_staging_ix, init_validator_ix,
-            init_validator_staging_ix, reject_proposal_ix, set_operator_ix, update_global_ix,
+            init_validator_staging_ix, migrate_global_to_v3_ix, migrate_proposal_to_v3_ix,
+            migrate_validator_to_v3_ix, reject_proposal_ix, set_operator_ix, update_global_ix,
             update_global_limits_ix, update_proposal_ix, update_validator_ix,
             update_validator_limits_ix, write_global_staging_ix, write_proposal_staging_ix,
             write_validator_staging_ix, AbortGlobalStagingAccounts, AbortProposalStagingAccounts,
@@ -32,7 +33,7 @@ use {
             UpdateProposalArgs, UpdateValidatorAccounts, UpdateValidatorArgs,
             UpdateValidatorLimitsAccounts, UpdateValidatorLimitsArgs, ValidatorStagingAccounts,
         },
-        Config, ConfigLimits, ConfigLimitsV1, ConfigV2,
+        Config, ConfigLimits, ConfigLimitsV1, ConfigV3,
     },
     solana_rpc_client::rpc_client::RpcClient,
     solana_sdk::{
@@ -118,6 +119,8 @@ enum GlobalCmd {
     Update(ConfigFileArgs),
     /// Update global size caps (manager-only)
     SetLimits(LimitsArgs),
+    /// Rewrite V2 global payload to V3 (global TPU flag → per P2C URL)
+    MigrateToV3,
     /// Fetch and print global config
     Show,
     /// Close global config PDA and reclaim rent (manager-only)
@@ -134,6 +137,8 @@ enum ValidatorCmd {
     SetLimits(ValidatorLimitsArgs),
     /// Set operator who may propose (manager-only)
     SetOperator(SetOperatorCliArgs),
+    /// Rewrite V2 validator payload to V3 (global TPU flag → per P2C URL)
+    MigrateToV3(VoteArgs),
     /// Fetch and print validator config
     Show(VoteArgs),
     /// Close validator config PDA and reclaim rent (manager-only)
@@ -144,6 +149,8 @@ enum ValidatorCmd {
 enum ProposalCmd {
     /// Create or update proposal (operator keypair). Init if missing, else update.
     Submit(ProposalSubmitArgs),
+    /// Rewrite V2 proposal payload to V3 (global TPU flag → per P2C URL)
+    MigrateToV3(VoteArgs),
     /// Fetch and print pending proposal
     Show(VoteArgs),
     /// Copy proposal → live validator config and close proposal (manager)
@@ -154,14 +161,14 @@ enum ProposalCmd {
 
 #[derive(Args)]
 struct ConfigFileArgs {
-    /// Path to JSON config (ConfigV2). Omit for empty sets. Missing `enable_tpu_p2c_update` defaults to false.
+    /// Path to JSON config (ConfigV3). Omit for empty sets. Per-URL `enable_tpu_p2c_update` defaults to false.
     #[arg(long)]
     config_file: Option<String>,
 }
 
 #[derive(Args)]
 struct InitGlobalCliArgs {
-    /// Path to JSON config (ConfigV2). Omit for empty sets. Missing `enable_tpu_p2c_update` defaults to false.
+    /// Path to JSON config (ConfigV3). Omit for empty sets. Per-URL `enable_tpu_p2c_update` defaults to false.
     #[arg(long)]
     config_file: Option<String>,
     #[arg(long, default_value_t = 256)]
@@ -278,7 +285,7 @@ fn limits_from_cli(
 fn load_or_empty(path: Option<String>) -> Result<Config, Box<dyn std::error::Error>> {
     match path {
         Some(p) => load_config_from_file(&p),
-        None => Ok(Config::V2(ConfigV2::empty())),
+        None => Ok(Config::V3(ConfigV3::empty())),
     }
 }
 
@@ -606,6 +613,18 @@ fn run_global(
             sign_and_send_transaction(rpc.clone(), ix, &kp)?;
             display_global_config(&get_global_config(rpc, global)?, global);
         }
+        GlobalCmd::MigrateToV3 => {
+            let ix = migrate_global_to_v3_ix(
+                program_id,
+                UpdateGlobalAccounts {
+                    manager,
+                    global,
+                    system_program: system_program::ID,
+                },
+            );
+            sign_and_send_transaction(rpc.clone(), ix, &kp)?;
+            display_global_config(&get_global_config(rpc, global)?, global);
+        }
         GlobalCmd::Show => {
             display_global_config(&get_global_config(rpc, global)?, global);
         }
@@ -713,6 +732,21 @@ fn run_validator(
             sign_and_send_transaction(rpc.clone(), ix, &kp)?;
             display_validator_config(&get_validator_config(rpc, validator)?, validator);
         }
+        ValidatorCmd::MigrateToV3(a) => {
+            let (validator, _) = derive_validator_config_address(&program_id, &a.vote);
+            let ix = migrate_validator_to_v3_ix(
+                program_id,
+                UpdateValidatorAccounts {
+                    manager,
+                    vote: a.vote,
+                    global,
+                    validator,
+                    system_program: system_program::ID,
+                },
+            );
+            sign_and_send_transaction(rpc.clone(), ix, &kp)?;
+            display_validator_config(&get_validator_config(rpc, validator)?, validator);
+        }
         ValidatorCmd::Show(a) => {
             let (validator, _) = derive_validator_config_address(&program_id, &a.vote);
             display_validator_config(&get_validator_config(rpc, validator)?, validator);
@@ -754,7 +788,7 @@ fn run_proposal(
                     let ix = init_proposal_ix(
                         program_id,
                         InitProposalArgs {
-                            config: Config::V2(ConfigV2::empty()),
+                            config: Config::V3(ConfigV3::empty()),
                         },
                         InitProposalAccounts {
                             operator,
@@ -803,6 +837,23 @@ fn run_proposal(
                 );
                 sign_and_send_transaction(rpc.clone(), ix, &kp)?;
             }
+            display_proposal(&get_proposal(rpc, proposal)?, proposal);
+        }
+        ProposalCmd::MigrateToV3(a) => {
+            let operator = kp.pubkey();
+            let (validator, _) = derive_validator_config_address(&program_id, &a.vote);
+            let (proposal, _) = derive_validator_proposal_address(&program_id, &a.vote);
+            let ix = migrate_proposal_to_v3_ix(
+                program_id,
+                UpdateProposalAccounts {
+                    operator,
+                    vote: a.vote,
+                    validator,
+                    proposal,
+                    system_program: system_program::ID,
+                },
+            );
+            sign_and_send_transaction(rpc.clone(), ix, &kp)?;
             display_proposal(&get_proposal(rpc, proposal)?, proposal);
         }
         ProposalCmd::Show(a) => {
