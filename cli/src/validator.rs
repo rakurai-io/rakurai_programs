@@ -192,12 +192,11 @@ pub fn proposal_exists(rpc: &RpcClient, pda: &Pubkey) -> bool {
 }
 
 fn display_config_payload(cfg: &Config) {
-    let version = match cfg {
-        Config::V1(_) => "v1",
-        Config::V2(_) => "v2",
+    let Ok(v2) = cfg.to_v2() else {
+        println!("   schema: unsupported (reserved v1)");
+        return;
     };
-    let v2 = cfg.to_v2();
-    println!("   schema: {version}");
+    println!("   schema: v2");
     println!("   enable_tpu_p2c_update: {}", v2.enable_tpu_p2c_update);
     println!("   {}", "block_engine".yellow());
     for entry in &v2.block_engine.sets {

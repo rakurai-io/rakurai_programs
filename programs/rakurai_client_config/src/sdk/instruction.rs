@@ -75,25 +75,6 @@ pub fn update_global_ix(
     }
 }
 
-pub fn migrate_global_to_v2_ix(program_id: Pubkey, accounts: UpdateGlobalAccounts) -> Instruction {
-    let UpdateGlobalAccounts {
-        manager,
-        global,
-        system_program,
-    } = accounts;
-
-    Instruction {
-        program_id,
-        data: crate::instruction::MigrateGlobalToV2 {}.data(),
-        accounts: crate::accounts::MigrateGlobalToV2 {
-            manager,
-            global,
-            system_program,
-        }
-        .to_account_metas(None),
-    }
-}
-
 pub struct UpdateGlobalLimitsArgs {
     pub limits: ConfigLimits,
 }
@@ -188,32 +169,6 @@ pub fn update_validator_ix(
         program_id,
         data: crate::instruction::UpdateValidator { config }.data(),
         accounts: crate::accounts::UpdateValidator {
-            manager,
-            vote,
-            global,
-            validator,
-            system_program,
-        }
-        .to_account_metas(None),
-    }
-}
-
-pub fn migrate_validator_to_v2_ix(
-    program_id: Pubkey,
-    accounts: UpdateValidatorAccounts,
-) -> Instruction {
-    let UpdateValidatorAccounts {
-        manager,
-        vote,
-        global,
-        validator,
-        system_program,
-    } = accounts;
-
-    Instruction {
-        program_id,
-        data: crate::instruction::MigrateValidatorToV2 {}.data(),
-        accounts: crate::accounts::MigrateValidatorToV2 {
             manager,
             vote,
             global,
@@ -411,32 +366,6 @@ pub fn update_proposal_ix(
         program_id,
         data: crate::instruction::UpdateProposal { config }.data(),
         accounts: crate::accounts::UpdateProposal {
-            operator,
-            vote,
-            validator,
-            proposal,
-            system_program,
-        }
-        .to_account_metas(None),
-    }
-}
-
-pub fn migrate_proposal_to_v2_ix(
-    program_id: Pubkey,
-    accounts: UpdateProposalAccounts,
-) -> Instruction {
-    let UpdateProposalAccounts {
-        operator,
-        vote,
-        validator,
-        proposal,
-        system_program,
-    } = accounts;
-
-    Instruction {
-        program_id,
-        data: crate::instruction::MigrateProposalToV2 {}.data(),
-        accounts: crate::accounts::MigrateProposalToV2 {
             operator,
             vote,
             validator,

@@ -9,7 +9,7 @@ use crate::state::{
 
 pub use crate::state::{
     effective_config, BlockEngineConfig, BlockEngineEntryV1, BlockEngineV1, Config, ConfigLimits,
-    ConfigLimitsV1, ConfigStaging, ConfigV1, ConfigV2, GlobalConfig, P2cConfig, P2cEntryV1, P2cV1,
+    ConfigLimitsV1, ConfigStaging, ConfigV2, GlobalConfig, P2cConfig, P2cEntryV1, P2cV1,
     Uuid, ValidatorConfig, ValidatorProposal, VirtualPriorityConfig, VirtualPriorityEntryV1,
     VirtualPriorityV1, ABSOLUTE_MAX_SETS_PER_SECTION, ABSOLUTE_MAX_URLS_PER_SET,
     ABSOLUTE_MAX_URL_LEN, ABSOLUTE_MAX_VP_ENTRIES_PER_SET, CONFIG_STAGING_SEED as STAGING_SEED,

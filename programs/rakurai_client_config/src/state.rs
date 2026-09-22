@@ -103,93 +103,40 @@ impl Uuid {
 }
 
 /// Versioned config payload shared by global and validator PDAs.
+///
+/// Discriminant 0 (`V1`) is reserved so existing `V2` accounts (discriminant 1)
+/// keep decoding after ConfigV1 was removed.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub enum Config {
-    V1(ConfigV1),
+    /// Former ConfigV1 — unsupported. Writing or validating this variant fails.
+    V1,
     V2(ConfigV2),
 }
 
 impl Config {
     pub fn validate(&self, limits: &ConfigLimits) -> Result<()> {
         match self {
-            Config::V1(v1) => v1.validate(limits),
+            Config::V1 => Err(error!(crate::ConfigError::UnexpectedConfigVersion)),
             Config::V2(v2) => v2.validate(limits),
-        }
-    }
-
-    pub fn as_v1(&self) -> Result<&ConfigV1> {
-        match self {
-            Config::V1(v1) => Ok(v1),
-            Config::V2(_) => Err(error!(crate::ConfigError::UnexpectedConfigVersion)),
-        }
-    }
-
-    pub fn into_v1(self) -> Result<ConfigV1> {
-        match self {
-            Config::V1(v1) => Ok(v1),
-            Config::V2(_) => Err(error!(crate::ConfigError::UnexpectedConfigVersion)),
         }
     }
 
     pub fn as_v2(&self) -> Result<&ConfigV2> {
         match self {
             Config::V2(v2) => Ok(v2),
-            Config::V1(_) => Err(error!(crate::ConfigError::UnexpectedConfigVersion)),
+            Config::V1 => Err(error!(crate::ConfigError::UnexpectedConfigVersion)),
         }
     }
 
-    /// V1 payloads become V2 with `enable_tpu_p2c_update = false`.
-    pub fn to_v2(&self) -> ConfigV2 {
-        match self {
-            Config::V1(v1) => ConfigV2::from_v1(v1.clone()),
-            Config::V2(v2) => v2.clone(),
-        }
-    }
-
-    /// Rewrite a V1 payload as V2 in place (`enable_tpu_p2c_update = false`).
-    /// Returns `true` if the account data version changed.
-    pub fn migrate_to_v2(&mut self) -> bool {
-        let v1 = match self {
-            Config::V1(v1) => v1.clone(),
-            Config::V2(_) => return false,
-        };
-        *self = Config::V2(ConfigV2::from_v1(v1));
-        true
+    pub fn to_v2(&self) -> Result<ConfigV2> {
+        Ok(self.as_v2()?.clone())
     }
 }
 
-/// Shared V1 payload for global and validator PDAs (no mode).
+/// V2 payload: section lists plus global `enable_tpu_p2c_update`.
 ///
 /// `String` / `Vec` fields are dynamically sized: account bytes grow/shrink via
 /// `realloc_to_fit` on every init/update. Caps come from account `ConfigLimits`.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
-pub struct ConfigV1 {
-    pub block_engine: BlockEngineV1,
-    pub p2c: P2cV1,
-    pub virtual_priority: VirtualPriorityV1,
-}
-
-impl ConfigV1 {
-    pub fn empty() -> Self {
-        Self {
-            block_engine: BlockEngineV1 { sets: vec![] },
-            p2c: P2cV1 { sets: vec![] },
-            virtual_priority: VirtualPriorityV1 { sets: vec![] },
-        }
-    }
-
-    pub fn validate(&self, limits: &ConfigLimits) -> Result<()> {
-        validate_sections(
-            &self.block_engine,
-            &self.p2c,
-            &self.virtual_priority,
-            limits,
-        )
-    }
-}
-
-/// V2 payload: V1 sections plus `enable_tpu_p2c_update`.
-/// Existing V1 accounts migrate with the flag defaulting to `false`.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub struct ConfigV2 {
     pub block_engine: BlockEngineV1,
@@ -200,11 +147,12 @@ pub struct ConfigV2 {
 
 impl ConfigV2 {
     pub fn empty() -> Self {
-        ConfigV1::empty().into()
-    }
-
-    pub fn from_v1(v1: ConfigV1) -> Self {
-        v1.into()
+        Self {
+            block_engine: BlockEngineV1 { sets: vec![] },
+            p2c: P2cV1 { sets: vec![] },
+            virtual_priority: VirtualPriorityV1 { sets: vec![] },
+            enable_tpu_p2c_update: false,
+        }
     }
 
     pub fn validate(&self, limits: &ConfigLimits) -> Result<()> {
@@ -214,17 +162,6 @@ impl ConfigV2 {
             &self.virtual_priority,
             limits,
         )
-    }
-}
-
-impl From<ConfigV1> for ConfigV2 {
-    fn from(v1: ConfigV1) -> Self {
-        Self {
-            block_engine: v1.block_engine,
-            p2c: v1.p2c,
-            virtual_priority: v1.virtual_priority,
-            enable_tpu_p2c_update: false,
-        }
     }
 }
 
@@ -598,11 +535,7 @@ mod tests {
     }
 
     fn config_with_be(entries: Vec<BlockEngineEntryV1>) -> Config {
-        Config::V1(ConfigV1 {
-            block_engine: BlockEngineV1 { sets: entries },
-            p2c: P2cV1 { sets: vec![] },
-            virtual_priority: VirtualPriorityV1 { sets: vec![] },
-        })
+        config_v2_with_be(entries, false)
     }
 
     fn config_v2_with_be(entries: Vec<BlockEngineEntryV1>, enable_tpu_p2c_update: bool) -> Config {
@@ -630,26 +563,22 @@ mod tests {
         let validator = config_with_be(vec![be_entry("a", "https://validator.example")]);
         let chosen = effective_config(&global, Some(&validator));
         assert_eq!(chosen, &validator);
-        assert_eq!(chosen.to_v2().block_engine.sets.len(), 1);
+        assert_eq!(chosen.to_v2().unwrap().block_engine.sets.len(), 1);
     }
 
     #[test]
-    fn v1_borsh_still_deserializes_after_v2_variant() {
-        let v1 = config_with_be(vec![be_entry("a", "https://a")]);
-        let bytes = v1.try_to_vec().unwrap();
+    fn v2_keeps_discriminant_one_after_v1_removal() {
+        let v2 = config_v2_with_be(vec![be_entry("a", "https://a")], true);
+        let bytes = v2.try_to_vec().unwrap();
+        assert_eq!(bytes[0], 1);
         let decoded = Config::try_from_slice(&bytes).unwrap();
-        assert!(matches!(decoded, Config::V1(_)));
+        assert!(matches!(decoded, Config::V2(_)));
     }
 
     #[test]
-    fn migrate_v1_to_v2_defaults_flag_false() {
-        let mut cfg = config_with_be(vec![be_entry("a", "https://a")]);
-        assert!(cfg.migrate_to_v2());
-        let v2 = cfg.to_v2();
-        assert!(!v2.enable_tpu_p2c_update);
-        assert_eq!(v2.block_engine.sets.len(), 1);
-        assert_eq!(v2.block_engine.sets[0].url[0].url, "https://a");
-        assert!(!cfg.migrate_to_v2());
+    fn reserved_v1_variant_rejects_validate() {
+        let limits = ConfigLimits::default();
+        assert!(Config::V1.validate(&limits).is_err());
     }
 
     #[test]
@@ -691,7 +620,7 @@ mod tests {
     #[test]
     fn validate_rejects_vp_value_outside_unit_interval() {
         let limits = ConfigLimits::default();
-        let cfg = Config::V1(ConfigV1 {
+        let cfg = Config::V2(ConfigV2 {
             block_engine: BlockEngineV1 { sets: vec![] },
             p2c: P2cV1 { sets: vec![] },
             virtual_priority: VirtualPriorityV1 {
@@ -703,6 +632,7 @@ mod tests {
                     }],
                 }],
             },
+            enable_tpu_p2c_update: false,
         });
         assert!(cfg.validate(&limits).is_err());
     }
