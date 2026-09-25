@@ -1305,6 +1305,7 @@ pub const P2C_SUBSCRIPTION_FIXED_PREFIX_LEN: usize = 32 // name
 
 /// Service eligibility for P2C (clients/ops read this; program does not call out).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
+#[borsh(use_discriminant = true)]
 pub enum P2CSubscriptionStatus {
     #[default]
     Active = 0,

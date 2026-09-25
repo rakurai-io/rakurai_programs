@@ -76,7 +76,7 @@ pub mod rakurai_activation {
         block_reward_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
-        if ctx.accounts.validator_vote_account.owner != &solana_program::vote::program::id() {
+        if ctx.accounts.validator_vote_account.owner != &solana_sdk_ids::vote::ID {
             return Err(Unauthorized.into());
         }
 
@@ -305,10 +305,10 @@ pub struct InitializeRakuraiActivationAccount<'info> {
     pub activation_account: Account<'info, RakuraiActivationAccount>,
 
     /// CHECK: The validator's vote account (used for metadata and on-chain validation).
-    pub validator_vote_account: AccountInfo<'info>,
+    pub validator_vote_account: UncheckedAccount<'info>,
 
     /// CHECK: The validator's identity account (used to derive the PDA and verify authority).
-    pub validator_identity_account: AccountInfo<'info>,
+    pub validator_identity_account: UncheckedAccount<'info>,
 
     /// Payer for account creation; must sign the transaction. In current context validator's identity account.
     #[account(mut)]
@@ -336,7 +336,7 @@ pub struct UpdateRakuraiActivationApproval<'info> {
     pub activation_account: Account<'info, RakuraiActivationAccount>,
 
     /// CHECK: Validator identity associated with the activation account
-    pub validator_identity_account: AccountInfo<'info>,
+    pub validator_identity_account: UncheckedAccount<'info>,
 
     /// Signer must match either validator authority or client authority
     #[account(mut)]
@@ -376,7 +376,7 @@ pub struct UpdateRakuraiActivationCommission<'info> {
 
     /// CHECK: Validator identity associated with the activation account.
     #[account(mut)]
-    pub validator_identity_account: AccountInfo<'info>,
+    pub validator_identity_account: UncheckedAccount<'info>,
 
     /// Signer who must be either validator authority or client authority.
     #[account(mut)]
@@ -416,7 +416,7 @@ pub struct CloseRakuraiActivationAccount<'info> {
 
     /// CHECK: Validator's identity account that receives the closed account's lamports.
     #[account(mut)]
-    pub validator_identity_account: AccountInfo<'info>,
+    pub validator_identity_account: UncheckedAccount<'info>,
 
     /// Signer authorized to close activation accounts (must match client_authority).
     #[account(mut)]

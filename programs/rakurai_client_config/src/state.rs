@@ -389,7 +389,7 @@ pub struct ConfigStaging {
 
 impl GlobalConfig {
     pub fn serialized_len(account: &Self) -> Result<usize> {
-        Ok(8 + account.try_to_vec()?.len())
+        Ok(8 + borsh::to_vec(account)?.len())
     }
 
     pub fn init_space(manager: Pubkey, limits: ConfigLimits, config: &Config) -> Result<usize> {
@@ -413,7 +413,7 @@ impl GlobalConfig {
 
 impl ValidatorConfig {
     pub fn serialized_len(account: &Self) -> Result<usize> {
-        Ok(8 + account.try_to_vec()?.len())
+        Ok(8 + borsh::to_vec(account)?.len())
     }
 
     pub fn init_space(
@@ -445,7 +445,7 @@ impl ValidatorConfig {
 
 impl ConfigStaging {
     pub fn serialized_len(account: &Self) -> Result<usize> {
-        Ok(8 + account.try_to_vec()?.len())
+        Ok(8 + borsh::to_vec(account)?.len())
     }
 
     pub fn init_space(
@@ -497,7 +497,7 @@ impl ConfigStaging {
 
 impl ValidatorProposal {
     pub fn serialized_len(account: &Self) -> Result<usize> {
-        Ok(8 + account.try_to_vec()?.len())
+        Ok(8 + borsh::to_vec(account)?.len())
     }
 
     pub fn init_space(
@@ -665,12 +665,12 @@ pub fn realloc_account_to_fit<'info>(
                 from: payer.to_account_info(),
                 to: account.clone(),
             };
-            let cpi_ctx = CpiContext::new(system_program.to_account_info(), cpi_accounts);
+            let cpi_ctx = CpiContext::new(system_program.key(), cpi_accounts);
             anchor_lang::system_program::transfer(cpi_ctx, required)?;
         }
-        account.realloc(new_len, false)?;
+        account.resize(new_len)?;
     } else {
-        account.realloc(new_len, false)?;
+        account.resize(new_len)?;
         let excess = lamports.saturating_sub(new_minimum_balance);
         if excess > 0 {
             **account.try_borrow_mut_lamports()? = account
@@ -738,7 +738,7 @@ mod tests {
     #[test]
     fn v2_keeps_discriminant_one_after_v1_removal() {
         let v2 = config_v2_with_be(vec![be_entry("a", "https://a")], true);
-        let bytes = v2.try_to_vec().unwrap();
+        let bytes = borsh::to_vec(&v2).unwrap();
         assert_eq!(bytes[0], 1);
         let decoded = Config::try_from_slice(&bytes).unwrap();
         assert!(matches!(decoded, Config::V2(_)));
@@ -809,7 +809,7 @@ mod tests {
     #[test]
     fn staging_parse_round_trip() {
         let cfg = config_with_be(vec![be_entry("a", "https://a.example")]);
-        let bytes = cfg.try_to_vec().unwrap();
+        let bytes = borsh::to_vec(&cfg).unwrap();
         let staging = ConfigStaging {
             authority: Pubkey::default(),
             bump: 255,
@@ -824,7 +824,7 @@ mod tests {
     #[test]
     fn staging_parse_round_trip_v2() {
         let cfg = config_v2_with_be(vec![be_entry("a", "https://a.example")], true);
-        let bytes = cfg.try_to_vec().unwrap();
+        let bytes = borsh::to_vec(&cfg).unwrap();
         let staging = ConfigStaging {
             authority: Pubkey::default(),
             bump: 255,
@@ -867,7 +867,7 @@ mod tests {
     #[test]
     fn v3_discriminant_is_two() {
         let cfg = Config::V3(ConfigV3::empty());
-        let bytes = cfg.try_to_vec().unwrap();
+        let bytes = borsh::to_vec(&cfg).unwrap();
         assert_eq!(bytes[0], 2);
     }
 }

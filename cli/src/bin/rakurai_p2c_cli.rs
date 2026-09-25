@@ -29,10 +29,9 @@ use {
         config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
         filter::{Memcmp, RpcFilterType},
     },
-    solana_sdk::{
-        commitment_config::CommitmentConfig, instruction::Instruction, pubkey::Pubkey, rent::Rent,
-        signature::Signer, system_program,
-    },
+    solana_commitment_config::CommitmentConfig,
+    solana_sdk::{instruction::Instruction, pubkey::Pubkey, rent::Rent, signature::Signer},
+    solana_sdk_ids::system_program,
     std::{error::Error, sync::Arc},
 };
 

@@ -36,10 +36,8 @@ use {
         Config, ConfigLimits, ConfigLimitsV1, ConfigV3,
     },
     solana_rpc_client::rpc_client::RpcClient,
-    solana_sdk::{
-        commitment_config::CommitmentConfig, instruction::Instruction, pubkey::Pubkey,
-        signature::Signer,
-    },
+    solana_commitment_config::CommitmentConfig,
+    solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Signer},
     std::sync::Arc,
 };
 

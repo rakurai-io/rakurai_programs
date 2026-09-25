@@ -1,4 +1,5 @@
 [toolchain]
+anchor_version = "1.2.0"
 
 [features]
 resolution = true
@@ -21,9 +22,6 @@ rakurai_activation = "CuvTfdaxcDbvvtACkXrW2j69YeQbWuNnwg9FefYDrSug"
 rakurai_tip_manager = "6z4rnNKVzSYBxqfshk1QZFgJv17KjZoirFhpWSjqQMfu"
 rakurai_client_config = "FcTL7Mnq1RcstcYUk39ph2DzdVPNFyWh1EnrqCocXhhh"
 reward_distribution = "CtVB7ze4Kz2iUHGrWLWY9EG5Au1erbRCMvKTWFuKv8wq"
-
-[registry]
-url = "https://api.apr.dev"
 
 [provider]
 cluster = "Localnet"

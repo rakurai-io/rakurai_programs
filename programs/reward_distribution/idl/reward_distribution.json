@@ -3084,19 +3084,6 @@
       ]
     },
     {
-      "name": "RakuraiActivationAccount",
-      "discriminator": [
-        23,
-        29,
-        221,
-        229,
-        148,
-        135,
-        217,
-        153
-      ]
-    },
-    {
       "name": "RevenueShareAccount",
       "discriminator": [
         208,
