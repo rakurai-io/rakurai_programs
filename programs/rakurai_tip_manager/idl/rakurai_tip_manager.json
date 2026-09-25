@@ -2183,32 +2183,6 @@
       ]
     },
     {
-      "name": "RevenueShareAccount",
-      "discriminator": [
-        208,
-        67,
-        189,
-        177,
-        228,
-        142,
-        105,
-        231
-      ]
-    },
-    {
-      "name": "RevenueShareAccountV1",
-      "discriminator": [
-        142,
-        160,
-        147,
-        202,
-        54,
-        166,
-        29,
-        200
-      ]
-    },
-    {
       "name": "TipManagerConfigAccount",
       "discriminator": [
         66,

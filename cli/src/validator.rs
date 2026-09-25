@@ -243,7 +243,7 @@ fn display_limits(limits: &ConfigLimits) {
 }
 
 pub fn display_global_config(cfg: &GlobalConfig, pda: Pubkey) {
-    let used = cfg.try_to_vec().map(|v| v.len()).unwrap_or(0);
+    let used = borsh::to_vec(&cfg).map(|v| v.len()).unwrap_or(0);
     println!("{}", "Global Validator Config".bold().underline().blue());
     println!("   PDA: {pda}");
     println!("   Manager: {}", cfg.manager);
@@ -253,7 +253,7 @@ pub fn display_global_config(cfg: &GlobalConfig, pda: Pubkey) {
 }
 
 pub fn display_validator_config(cfg: &ValidatorConfig, pda: Pubkey) {
-    let used = cfg.try_to_vec().map(|v| v.len()).unwrap_or(0);
+    let used = borsh::to_vec(&cfg).map(|v| v.len()).unwrap_or(0);
     println!("{}", "Validator Config".bold().underline().blue());
     println!("   PDA: {pda}");
     println!("   Manager: {}", cfg.manager);
@@ -265,7 +265,7 @@ pub fn display_validator_config(cfg: &ValidatorConfig, pda: Pubkey) {
 }
 
 pub fn display_proposal(cfg: &ValidatorProposal, pda: Pubkey) {
-    let used = cfg.try_to_vec().map(|v| v.len()).unwrap_or(0);
+    let used = borsh::to_vec(&cfg).map(|v| v.len()).unwrap_or(0);
     println!(
         "{}",
         "Validator Proposal (pending)".bold().underline().yellow()

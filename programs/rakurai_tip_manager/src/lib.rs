@@ -543,15 +543,15 @@ pub struct ChangeTipReceiver<'info> {
 
     /// CHECK: old_tip_receiver receives the funds in the RakuraiTipAccount accounts
     #[account(mut, constraint = old_tip_receiver.key() == tip_manager_config.validator_tip_receiver_account)]
-    pub old_tip_receiver: AccountInfo<'info>,
+    pub old_tip_receiver: UncheckedAccount<'info>,
 
     /// CHECK: any new, writable account is allowed as a tip receiver.
     #[account(mut)]
-    pub new_tip_receiver: AccountInfo<'info>,
+    pub new_tip_receiver: UncheckedAccount<'info>,
 
     /// CHECK: old_client receives a % of funds in the RakuraiTipAccount accounts
     #[account(mut, constraint = client_commission_account.key() == tip_manager_config.client_commission_account)]
-    pub client_commission_account: AccountInfo<'info>,
+    pub client_commission_account: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -649,7 +649,7 @@ pub struct ChangeTipReceiverV1<'info> {
 
     /// CHECK: old_tip_receiver receives the funds in the RakuraiTipAccount accounts
     #[account(mut, constraint = old_tip_receiver.key() == tip_manager_config.validator_tip_receiver_account)]
-    pub old_tip_receiver: AccountInfo<'info>,
+    pub old_tip_receiver: UncheckedAccount<'info>,
 
     /// Rakurai tip revenue share PDA (`TipsCollectionAccount` / TCA) for this validator vote.
     #[account(mut, owner = reward_distribution::ID)]
@@ -657,7 +657,7 @@ pub struct ChangeTipReceiverV1<'info> {
 
     /// CHECK: receives commission; must match tip-manager global `client_commission_account`.
     #[account(mut, constraint = client_commission_account.key() == tip_manager_config.client_commission_account)]
-    pub client_commission_account: AccountInfo<'info>,
+    pub client_commission_account: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -822,7 +822,7 @@ pub struct ChangeTipReceiverV2<'info> {
 
     /// CHECK: old_tip_receiver receives the funds in the RakuraiTipAccount accounts
     #[account(mut, constraint = old_tip_receiver.key() == tip_manager_config.validator_tip_receiver_account)]
-    pub old_tip_receiver: AccountInfo<'info>,
+    pub old_tip_receiver: UncheckedAccount<'info>,
 
     /// Rakurai tip TCAV1 PDA for this validator vote.
     #[account(mut, owner = reward_distribution::ID)]
@@ -830,7 +830,7 @@ pub struct ChangeTipReceiverV2<'info> {
 
     /// CHECK: receives commission; must match tip-manager global `client_commission_account`.
     #[account(mut, constraint = client_commission_account.key() == tip_manager_config.client_commission_account)]
-    pub client_commission_account: AccountInfo<'info>,
+    pub client_commission_account: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -987,15 +987,15 @@ pub struct ChangeClient<'info> {
 
     /// CHECK: old_tip_receiver receives the funds in the RakuraiTipAccount accounts
     #[account(mut, constraint = validator_tip_receiver_account.key() == tip_manager_config.validator_tip_receiver_account)]
-    pub validator_tip_receiver_account: AccountInfo<'info>,
+    pub validator_tip_receiver_account: UncheckedAccount<'info>,
 
     /// CHECK: old_client receives a % of funds in the RakuraiTipAccount accounts
     #[account(mut, constraint = old_client.key() == tip_manager_config.client_commission_account)]
-    pub old_client: AccountInfo<'info>,
+    pub old_client: UncheckedAccount<'info>,
 
     /// CHECK: any new, writable account is allowed as client
     #[account(mut)]
-    pub new_client: AccountInfo<'info>,
+    pub new_client: UncheckedAccount<'info>,
 
     #[account(
         mut,
