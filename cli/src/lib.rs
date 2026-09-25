@@ -22,6 +22,8 @@ use {
 
 pub const MAX_COMMISSION_BPS: u16 = 10_000;
 
+pub mod validator;
+
 /// Parses and validates a Solana `Pubkey` from a string
 pub fn parse_pubkey(s: &str) -> Result<Pubkey, String> {
     Pubkey::from_str(s).map_err(|_| format!("Invalid Solana public key: {}", s))
@@ -176,7 +178,7 @@ pub fn display_activation_config_account(
         "💰".green(),
         "Commission:",
         activation_config_account
-            .block_builder_commission_bps
+            .client_commission_bps
             .to_string()
             .magenta()
     );
@@ -185,7 +187,7 @@ pub fn display_activation_config_account(
         "🏦".cyan(),
         "Commission Account:",
         activation_config_account
-            .block_builder_commission_account
+            .client_commission_account
             .to_string()
     );
     println!(
@@ -193,7 +195,7 @@ pub fn display_activation_config_account(
         "🔑".red(),
         "Authority:",
         activation_config_account
-            .block_builder_authority
+            .client_authority
             .to_string()
             .magenta()
     );
@@ -213,11 +215,23 @@ pub fn sign_and_send_transaction(
     instruction: Instruction,
     signer: &Keypair,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    sign_and_send_instructions(rpc_client, std::slice::from_ref(&instruction), signer)
+}
+
+/// Signs and confirms a transaction with one or more instructions.
+pub fn sign_and_send_instructions(
+    rpc_client: Arc<RpcClient>,
+    instructions: &[Instruction],
+    signer: &Keypair,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if instructions.is_empty() {
+        return Err("no instructions to send".into());
+    }
     match rpc_client.get_latest_blockhash() {
         Ok(hash) => {
             let transaction = Transaction::new(
                 &[&signer],
-                Message::new(&[instruction], Some(&signer.pubkey())),
+                Message::new(instructions, Some(&signer.pubkey())),
                 hash,
             );
             match rpc_client.send_and_confirm_transaction(&transaction) {
@@ -228,8 +242,6 @@ pub fn sign_and_send_transaction(
                 Err(err) => Err(err.into()),
             }
         }
-        Err(err) => {
-            return Err(err.into());
-        }
+        Err(err) => Err(err.into()),
     }
 }

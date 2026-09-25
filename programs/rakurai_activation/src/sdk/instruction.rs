@@ -7,9 +7,9 @@ use crate::RakuraiActivationConfigAccount;
 /// Arguments for initializing the global config account.
 pub struct InitializeArgs {
     pub authority: Pubkey,
-    pub block_builder_authority: Pubkey,
-    pub block_builder_commission_account: Pubkey,
-    pub block_builder_commission_bps: u16,
+    pub client_authority: Pubkey,
+    pub client_commission_account: Pubkey,
+    pub client_commission_bps: u16,
     pub bump: u8,
 }
 
@@ -28,9 +28,9 @@ pub fn initialize_ix(
 ) -> Instruction {
     let InitializeArgs {
         authority,
-        block_builder_authority,
-        block_builder_commission_account,
-        block_builder_commission_bps,
+        client_authority,
+        client_commission_account,
+        client_commission_bps,
         bump,
     } = args;
 
@@ -44,9 +44,9 @@ pub fn initialize_ix(
         program_id,
         data: crate::instruction::Initialize {
             authority,
-            block_builder_authority,
-            block_builder_commission_account,
-            block_builder_commission_bps,
+            client_authority,
+            client_commission_account,
+            client_commission_bps,
             bump,
         }
         .data(),
@@ -191,7 +191,7 @@ pub fn update_rakurai_activation_approval_ix(
     }
 }
 
-/// Arguments to update commission rate for validator/block builder.
+/// Arguments to update commission rate for validator/client.
 pub struct UpdateRakuraiActivationCommissionArgs {
     pub commission_bps: u16,
 }
