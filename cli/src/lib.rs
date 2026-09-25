@@ -22,6 +22,8 @@ use {
 
 pub const MAX_COMMISSION_BPS: u16 = 10_000;
 
+pub mod validator;
+
 /// Parses and validates a Solana `Pubkey` from a string
 pub fn parse_pubkey(s: &str) -> Result<Pubkey, String> {
     Pubkey::from_str(s).map_err(|_| format!("Invalid Solana public key: {}", s))
