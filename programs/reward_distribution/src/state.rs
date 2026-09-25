@@ -2,7 +2,7 @@ use crate::ErrorCode::{
     AccountValidationFailure, ArithmeticError, EpochAlreadyClaimed,
     EpochAlreadyConvertedToBlockReward, EpochEntryNotFound, EpochNotClaimed,
     InvalidRevenueEpochCapacity, InvalidRevenueName, MaxCommissionFeeBpsExceeded,
-    RevenueManagerNotConfigured, RevenueLedgerFull,
+    RevenueLedgerFull, RevenueManagerNotConfigured,
 };
 use anchor_lang::prelude::*;
 use std::mem::size_of;
@@ -202,6 +202,18 @@ impl DeficitUpdate {
     }
 }
 
+/// Info when a full ledger evicts an unclaimed epoch and books unpaid into `deficit`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EvictedUnclaimedEpoch {
+    pub epoch: u64,
+    /// Booked into account `deficit` (`amount - settled`).
+    pub unpaid: u64,
+    /// Recorded / due amount on the evicted row.
+    pub amount: u64,
+    /// Already settled / deducted on the evicted row.
+    pub settled: u64,
+}
+
 /// Legacy tip/mev-share revenue share vault (no `transferred_amount` / `deficit`).
 /// PDA: `[REVENUE_SHARE, TIP|MEV_SHARE, name, vote]`.
 #[account]
@@ -399,6 +411,75 @@ impl TipsAndMevShareConfigAccount {
     }
 }
 
+/// Singleton defaults for P2C subscription account initialization (`initialize_p2c_subscription_account`).
+/// Same idea as [`TipsAndMevShareConfigAccount`]: anyone may create a PSA, but manager / record /
+/// commission / grace / ledger capacity come from this config.
+#[account]
+#[derive(Default)]
+pub struct P2CConfigAccount {
+    /// Authorized updater of this config.
+    pub authority: Pubkey,
+    /// PDA bump.
+    pub bump: u8,
+
+    /// Copied onto each PSA at init (claim / record / config / close).
+    pub manager_authority: Pubkey,
+    /// Copied onto each PSA at init (block-reward convert signer).
+    pub record_authority: Pubkey,
+    /// Ledger capacity written to `max_epoch_entries` (1..=32).
+    pub max_epoch_entries: u8,
+    /// Commission on claim (basis points).
+    pub commission_bps: u16,
+    /// Receives the commission portion on claim / deficit clear.
+    pub commission_account: Pubkey,
+    /// Consecutive unpaid finished epochs allowed before Suspended (0 → PSA default 2).
+    pub grace_epochs: u8,
+}
+
+impl P2CConfigAccount {
+    /// PDA seed for the P2C config singleton.
+    pub const SEED: &'static [u8] = b"P2C_CONFIG";
+    /// Account size for rent-exemption.
+    pub const SIZE: usize = HEADER_SIZE + size_of::<Self>();
+
+    /// Defaults copied onto a new PSA: `(manager, record, max_epoch, commission_bps, commission_account, grace)`.
+    pub fn defaults_for_psa(&self) -> (Pubkey, Pubkey, u8, u16, Pubkey, u8) {
+        (
+            self.manager_authority,
+            self.record_authority,
+            self.max_epoch_entries,
+            self.commission_bps,
+            self.commission_account,
+            self.grace_epochs,
+        )
+    }
+
+    /// Rent space for a PSA initialized from this config.
+    pub fn space_for_psa(&self) -> usize {
+        P2CSubscriptionAccount::space_for(self.max_epoch_entries as usize)
+    }
+
+    /// Validates authorities, commission, and epoch capacity.
+    pub fn validate(&self) -> Result<()> {
+        if self.authority == Pubkey::default()
+            || self.manager_authority == Pubkey::default()
+            || self.record_authority == Pubkey::default()
+        {
+            return Err(AccountValidationFailure.into());
+        }
+        if self.max_epoch_entries == 0
+            || self.max_epoch_entries as usize > MAX_REVENUE_EPOCH_ENTRIES_CAP
+        {
+            return Err(InvalidRevenueEpochCapacity.into());
+        }
+        validate_commission(
+            self.commission_bps,
+            self.commission_account,
+            MAX_COMMISSION_BPS,
+        )
+    }
+}
+
 impl RewardCollectionAccount {
     /// PDA seed for collection accounts.
     pub const SEED: &'static [u8] = b"REWARD_COLLECTION_ACCOUNT";
@@ -536,15 +617,15 @@ impl RevenueLedgerV1 {
         amount: u64,
         capacity: usize,
         block_reward_converted: bool,
-    ) -> Result<()> {
+    ) -> Result<Option<EvictedUnclaimedEpoch>> {
         if amount == 0 {
-            return Ok(());
+            return Ok(None);
         }
 
         for entry in &mut self.entries {
             if entry.epoch == epoch {
                 entry.amount = entry.amount.checked_add(amount).ok_or(ArithmeticError)?;
-                return Ok(());
+                return Ok(None);
             }
         }
 
@@ -558,21 +639,40 @@ impl RevenueLedgerV1 {
 
         if self.entries.len() < capacity {
             self.entries.push(new_entry);
-            return Ok(());
+            return Ok(None);
         }
 
+        // One pass: prefer oldest claimed (no deficit); else oldest epoch → deficit.
         let mut oldest_claimed_idx: Option<usize> = None;
         let mut oldest_claimed_epoch = u64::MAX;
+        let mut oldest_idx: Option<usize> = None;
+        let mut oldest_epoch = u64::MAX;
         for (i, entry) in self.entries.iter().enumerate() {
+            if entry.epoch < oldest_epoch {
+                oldest_epoch = entry.epoch;
+                oldest_idx = Some(i);
+            }
             if entry.claimed && entry.epoch < oldest_claimed_epoch {
                 oldest_claimed_epoch = entry.epoch;
                 oldest_claimed_idx = Some(i);
             }
         }
 
-        let evict_idx = oldest_claimed_idx.ok_or(RevenueLedgerFull)?;
+        if let Some(evict_idx) = oldest_claimed_idx {
+            self.entries[evict_idx] = new_entry;
+            return Ok(None);
+        }
+
+        let evict_idx = oldest_idx.ok_or(RevenueLedgerFull)?;
+        let victim = self.entries[evict_idx];
+        let eviction = EvictedUnclaimedEpoch {
+            epoch: victim.epoch,
+            unpaid: victim.amount.saturating_sub(victim.transferred_amount),
+            amount: victim.amount,
+            settled: victim.transferred_amount,
+        };
         self.entries[evict_idx] = new_entry;
-        Ok(())
+        Ok(Some(eviction))
     }
 
     pub fn mark_claimed(&mut self, epoch: u64) -> Result<()> {
@@ -632,7 +732,7 @@ impl RevenueShareAccount {
         self.max_epoch_entries = max_epoch_entries;
         self.commission_bps = commission_bps;
         self.commission_account = commission_account;
-        self.block_reward_conversion_enabled = false;
+        self.block_reward_conversion_enabled = true;
         self.ledger = RevenueLedger::default();
         self.bump = bump;
         self.validate()
@@ -641,8 +741,12 @@ impl RevenueShareAccount {
     /// Records attributed revenue for an epoch (amount only; legacy semantics).
     pub fn record_revenue(&mut self, epoch: u64, amount: u64) -> Result<()> {
         let capacity = self.max_epoch_entries as usize;
-        self.ledger
-            .add(epoch, amount, capacity, !self.block_reward_conversion_enabled)
+        self.ledger.add(
+            epoch,
+            amount,
+            capacity,
+            !self.block_reward_conversion_enabled,
+        )
     }
 
     /// Marks a claimed epoch entry as converted to block rewards.
@@ -874,7 +978,7 @@ impl RevenueShareAccountV1 {
         self.max_epoch_entries = max_epoch_entries;
         self.commission_bps = commission_bps;
         self.commission_account = commission_account;
-        self.block_reward_conversion_enabled = false;
+        self.block_reward_conversion_enabled = true;
         self.ledger = RevenueLedgerV1::default();
         self.deficit = 0;
         self.bump = bump;
@@ -885,16 +989,33 @@ impl RevenueShareAccountV1 {
     /// Rakurai tip TCA (`Tip` + `RAKURAI_REVENUE_NAME`): also `saturating_add`s `transferred_amount`
     /// (tip-manager deposits SOL in the same drain tx).
     /// Non-Rakurai: only updates `amount`; callers must use `settle_revenue` (CPI transfer + credit).
-    pub fn record_revenue(&mut self, epoch: u64, amount: u64) -> Result<()> {
+    ///
+    /// When the ledger is full and every row is still unclaimed, evicts the oldest unclaimed
+    /// epoch (smallest epoch number), books unpaid (`amount - transferred_amount`) into `deficit`,
+    /// and returns [`EvictedUnclaimedEpoch`] for the caller to emit an event.
+    pub fn record_revenue(&mut self, epoch: u64, amount: u64) -> Result<Option<EvictedUnclaimedEpoch>> {
         let capacity = self.max_epoch_entries as usize;
-        self.ledger
-            .add(epoch, amount, capacity, !self.block_reward_conversion_enabled)?;
+        let eviction = self.ledger.add(
+            epoch,
+            amount,
+            capacity,
+            !self.block_reward_conversion_enabled,
+        )?;
+
+        if let Some(evicted) = eviction {
+            if evicted.unpaid > 0 {
+                self.deficit = self
+                    .deficit
+                    .checked_add(evicted.unpaid)
+                    .ok_or(ArithmeticError)?;
+            }
+        }
 
         if self.share_kind == RevenueKind::Tip && self.name == RAKURAI_REVENUE_NAME {
             let entry = self.ledger.get_mut(epoch)?;
             entry.transferred_amount = entry.transferred_amount.saturating_add(amount);
         }
-        Ok(())
+        Ok(eviction)
     }
 
     /// Credits `transferred_amount` after a settle CPI transfer (non-Rakurai path).
@@ -1101,6 +1222,649 @@ impl RevenueShareAccountV1 {
 
         Ok((commission_amount, validator_amount, claimable, shortfall))
     }
+
+    /// Clear open account-level deficit: balance already on vault is split to commission +
+    /// validator (same as claim), then deficit reduced. Partial clear OK.
+    /// Returns `(applied, commission, validator)`.
+    pub fn clear_deficit(
+        deficit: &mut u64,
+        vault: AccountInfo,
+        commission_account: AccountInfo,
+        validator_identity: AccountInfo,
+        commission_bps: u16,
+        amount: u64,
+    ) -> Result<(u64, u64, u64)> {
+        use crate::ErrorCode::*;
+
+        if amount == 0 {
+            return Err(RewardsTooLow.into());
+        }
+        if *deficit == 0 {
+            return Err(NoDeficit.into());
+        }
+
+        let applied = amount.min(*deficit);
+        let commission_amount = if commission_bps == 0 {
+            0
+        } else {
+            applied
+                .checked_mul(commission_bps as u64)
+                .ok_or(ArithmeticError)?
+                .checked_div(10_000)
+                .ok_or(ArithmeticError)?
+        };
+        let validator_amount = applied
+            .checked_sub(commission_amount)
+            .ok_or(ArithmeticError)?;
+
+        let rent = Rent::get()?;
+        let min_rent = rent.minimum_balance(vault.data_len());
+        let available = vault.lamports().saturating_sub(min_rent);
+        if available < applied {
+            return Err(RewardsTooLow.into());
+        }
+
+        if commission_amount > 0 {
+            RewardCollectionAccount::transfer_lamports(
+                vault.clone(),
+                commission_account,
+                commission_amount,
+            )?;
+        }
+        if validator_amount > 0 {
+            RewardCollectionAccount::transfer_lamports(
+                vault,
+                validator_identity,
+                validator_amount,
+            )?;
+        }
+
+        *deficit = deficit.saturating_sub(applied);
+        Ok((applied, commission_amount, validator_amount))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// P2C prepaid subscription escrow
+// ---------------------------------------------------------------------------
+
+/// Fixed header bytes after the 8-byte Anchor discriminator, before the ledger vec.
+pub const P2C_SUBSCRIPTION_FIXED_PREFIX_LEN: usize = 32 // name
+    + 32 // validator_vote
+    + 32 // initializer
+    + 32 // manager_authority
+    + 32 // record_authority
+    + 1  // max_epoch_entries
+    + 2  // commission_bps
+    + 32 // commission_account
+    + 1  // grace_epochs
+    + 1  // block_reward_conversion_enabled
+    + 1  // unpaid_streak
+    + 1  // status
+    + 8; // deficit
+
+/// Service eligibility for P2C (clients/ops read this; program does not call out).
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub enum P2CSubscriptionStatus {
+    #[default]
+    Active = 0,
+    /// unpaid_streak in 1..=grace_epochs
+    InGrace = 1,
+    /// unpaid_streak > grace_epochs
+    Suspended = 2,
+}
+
+/// Per-epoch prepaid fee row for a P2C subscription escrow.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct P2CEpochEntry {
+    pub epoch: u64,
+    /// Off-chain stake snapshot used to price this epoch.
+    pub stake: u64,
+    /// Fee due for the epoch.
+    pub amount_due: u64,
+    /// Lamports paid out on claim for this epoch (`min(due, free prepaid)`).
+    pub amount_deducted: u64,
+    /// Whether this epoch has been claimed (payout attempted).
+    pub claimed: bool,
+    /// Same lifecycle flag as revenue share after claim.
+    pub block_reward_converted: bool,
+}
+
+/// Epoch fee ledger for a P2C subscription escrow.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default, Debug, PartialEq, Eq)]
+pub struct P2CSubscriptionLedger {
+    pub entries: Vec<P2CEpochEntry>,
+}
+
+/// Prepaid P2C subscription escrow per `(name, validator_vote)`.
+/// PDA: `[P2C_SUBSCRIPTION, name, vote]`. Manager-only create.
+#[account]
+pub struct P2CSubscriptionAccount {
+    pub name: [u8; 32],
+    pub validator_vote: Pubkey,
+    /// Who paid rent; receives residual on close.
+    pub initializer: Pubkey,
+    /// Creates PDA (pays rent), records epoch charges, claims, config, close.
+    pub manager_authority: Pubkey,
+    /// Optional extra signer for convert-to-block (with manager / validator identity).
+    /// Not used for `record_p2c_subscription` (manager-only).
+    pub record_authority: Pubkey,
+    pub max_epoch_entries: u8,
+    /// e.g. 2000 = 20% to `commission_account` on claim.
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
+    /// Consecutive unpaid finished epochs allowed before Suspended (default 2).
+    pub grace_epochs: u8,
+    pub block_reward_conversion_enabled: bool,
+    pub unpaid_streak: u8,
+    pub status: P2CSubscriptionStatus,
+    /// Cumulative shortfall closed on underfunded claims.
+    pub deficit: u64,
+    pub ledger: P2CSubscriptionLedger,
+    pub bump: u8,
+}
+
+impl P2CSubscriptionLedger {
+    pub fn get_mut(&mut self, epoch: u64) -> Result<&mut P2CEpochEntry> {
+        self.entries
+            .iter_mut()
+            .find(|e| e.epoch == epoch)
+            .ok_or(EpochEntryNotFound.into())
+    }
+
+    pub fn get(&self, epoch: u64) -> Result<&P2CEpochEntry> {
+        self.entries
+            .iter()
+            .find(|e| e.epoch == epoch)
+            .ok_or(EpochEntryNotFound.into())
+    }
+
+    /// Insert a new epoch row.
+    /// Prefer reclaiming the oldest claimed slot; if all unclaimed, evict the oldest epoch
+    /// (smallest epoch number) and return it for deficit booking.
+    pub fn insert(
+        &mut self,
+        entry: P2CEpochEntry,
+        capacity: usize,
+    ) -> Result<Option<EvictedUnclaimedEpoch>> {
+        if self.entries.iter().any(|e| e.epoch == entry.epoch) {
+            return Err(crate::ErrorCode::P2CEpochAlreadyRecorded.into());
+        }
+
+        if self.entries.len() < capacity {
+            self.entries.push(entry);
+            return Ok(None);
+        }
+
+        // One pass: prefer oldest claimed (no deficit); else oldest epoch → deficit.
+        let mut oldest_claimed_idx: Option<usize> = None;
+        let mut oldest_claimed_epoch = u64::MAX;
+        let mut oldest_idx: Option<usize> = None;
+        let mut oldest_epoch = u64::MAX;
+        for (i, e) in self.entries.iter().enumerate() {
+            if e.epoch < oldest_epoch {
+                oldest_epoch = e.epoch;
+                oldest_idx = Some(i);
+            }
+            if e.claimed && e.epoch < oldest_claimed_epoch {
+                oldest_claimed_epoch = e.epoch;
+                oldest_claimed_idx = Some(i);
+            }
+        }
+
+        if let Some(evict_idx) = oldest_claimed_idx {
+            self.entries[evict_idx] = entry;
+            return Ok(None);
+        }
+
+        let evict_idx = oldest_idx.ok_or(RevenueLedgerFull)?;
+        let victim = self.entries[evict_idx];
+        let eviction = EvictedUnclaimedEpoch {
+            epoch: victim.epoch,
+            unpaid: victim.amount_due.saturating_sub(victim.amount_deducted),
+            amount: victim.amount_due,
+            settled: victim.amount_deducted,
+        };
+        self.entries[evict_idx] = entry;
+        Ok(Some(eviction))
+    }
+
+    pub fn mark_claimed(&mut self, epoch: u64) -> Result<()> {
+        let entry = self.get_mut(epoch)?;
+        if entry.claimed {
+            return Err(EpochAlreadyClaimed.into());
+        }
+        entry.claimed = true;
+        Ok(())
+    }
+
+    /// Sum of unclaimed `amount_deducted` (normally 0 — reserved only mid-claim).
+    pub fn reserved_unclaimed(&self) -> Result<u64> {
+        let mut total = 0u64;
+        for e in &self.entries {
+            if !e.claimed {
+                total = total
+                    .checked_add(e.amount_deducted)
+                    .ok_or(ArithmeticError)?;
+            }
+        }
+        Ok(total)
+    }
+}
+
+impl P2CSubscriptionAccount {
+    pub const SEED: &'static [u8] = b"P2C_SUBSCRIPTION";
+    pub const DEFAULT_GRACE_EPOCHS: u8 = 2;
+
+    pub fn pda_seeds<'a>(name: &'a [u8; 32], validator_vote: &'a Pubkey) -> [&'a [u8]; 3] {
+        [Self::SEED, name.as_ref(), validator_vote.as_ref()]
+    }
+
+    pub fn space_for(max_epoch_entries: usize) -> usize {
+        HEADER_SIZE
+            + P2C_SUBSCRIPTION_FIXED_PREFIX_LEN
+            + 4 // vec length
+            + max_epoch_entries * size_of::<P2CEpochEntry>()
+            + 1 // bump
+    }
+
+    /// Free prepaid above rent, less unclaimed reservations (pure; no sysvar).
+    pub fn free_balance_from_parts(lamports: u64, min_rent: u64, reserved_unclaimed: u64) -> u64 {
+        lamports
+            .saturating_sub(min_rent)
+            .saturating_sub(reserved_unclaimed)
+    }
+
+    /// Free prepaid balance: lamports above rent, less unclaimed deductions.
+    pub fn free_balance(lamports: u64, data_len: usize, reserved_unclaimed: u64) -> Result<u64> {
+        let rent = Rent::get()?;
+        let min_rent = rent.minimum_balance(data_len);
+        Ok(Self::free_balance_from_parts(
+            lamports,
+            min_rent,
+            reserved_unclaimed,
+        ))
+    }
+
+    /// Commission / validator identity split of a claimable amount.
+    pub fn split_claim_amount(claimable: u64, commission_bps: u16) -> Result<(u64, u64)> {
+        let commission_amount = if commission_bps == 0 {
+            0
+        } else {
+            claimable
+                .checked_mul(commission_bps as u64)
+                .ok_or(ArithmeticError)?
+                .checked_div(10_000)
+                .ok_or(ArithmeticError)?
+        };
+        let validator_amount = claimable
+            .checked_sub(commission_amount)
+            .ok_or(ArithmeticError)?;
+        Ok((commission_amount, validator_amount))
+    }
+
+    /// Updates deficit, unpaid_streak, and status after a claim (or simulated shortfall).
+    pub fn apply_claim_shortfall(
+        deficit: &mut u64,
+        unpaid_streak: &mut u8,
+        status: &mut P2CSubscriptionStatus,
+        grace_epochs: u8,
+        shortfall: u64,
+    ) -> Result<()> {
+        if shortfall > 0 {
+            *deficit = deficit.checked_add(shortfall).ok_or(ArithmeticError)?;
+            *unpaid_streak = unpaid_streak.saturating_add(1);
+            if *unpaid_streak > grace_epochs {
+                *status = P2CSubscriptionStatus::Suspended;
+            } else {
+                *status = P2CSubscriptionStatus::InGrace;
+            }
+        } else {
+            *unpaid_streak = 0;
+            *status = P2CSubscriptionStatus::Active;
+        }
+        Ok(())
+    }
+
+    /// True if any ledger epoch is still unclaimed (blocks close).
+    pub fn has_unclaimed_epochs(&self) -> bool {
+        self.ledger.entries.iter().any(|e| !e.claimed)
+    }
+
+    /// After SOL is deposited and applied against open deficit (partial OK).
+    /// Fully clearing deficit resets grace streak to Active.
+    pub fn apply_deficit_cleared(
+        deficit: &mut u64,
+        unpaid_streak: &mut u8,
+        status: &mut P2CSubscriptionStatus,
+        paid: u64,
+    ) -> Result<u64> {
+        if paid == 0 {
+            return Err(crate::ErrorCode::RewardsTooLow.into());
+        }
+        if *deficit == 0 {
+            return Err(crate::ErrorCode::NoDeficit.into());
+        }
+        let applied = paid.min(*deficit);
+        *deficit = deficit.saturating_sub(applied);
+        if *deficit == 0 {
+            *unpaid_streak = 0;
+            *status = P2CSubscriptionStatus::Active;
+        }
+        Ok(applied)
+    }
+
+    /// Clear open deficit: balance already on PDA is split to commission + validator,
+    /// then deficit reduced. Returns `(applied, commission, validator)`.
+    pub fn clear_deficit(
+        deficit: &mut u64,
+        unpaid_streak: &mut u8,
+        status: &mut P2CSubscriptionStatus,
+        p2c_account: AccountInfo,
+        commission_account: AccountInfo,
+        validator_identity: AccountInfo,
+        commission_bps: u16,
+        amount: u64,
+    ) -> Result<(u64, u64, u64)> {
+        use crate::ErrorCode::*;
+
+        if amount == 0 {
+            return Err(RewardsTooLow.into());
+        }
+        if *deficit == 0 {
+            return Err(NoDeficit.into());
+        }
+
+        let applied = amount.min(*deficit);
+        let (commission_amount, validator_amount) =
+            Self::split_claim_amount(applied, commission_bps)?;
+
+        let rent = Rent::get()?;
+        let min_rent = rent.minimum_balance(p2c_account.data_len());
+        let available = p2c_account.lamports().saturating_sub(min_rent);
+        if available < applied {
+            return Err(RewardsTooLow.into());
+        }
+
+        if commission_amount > 0 {
+            RewardCollectionAccount::transfer_lamports(
+                p2c_account.clone(),
+                commission_account,
+                commission_amount,
+            )?;
+        }
+        if validator_amount > 0 {
+            RewardCollectionAccount::transfer_lamports(
+                p2c_account,
+                validator_identity,
+                validator_amount,
+            )?;
+        }
+
+        Self::apply_deficit_cleared(deficit, unpaid_streak, status, applied)?;
+
+        Ok((applied, commission_amount, validator_amount))
+    }
+
+    pub fn populate_on_init(
+        &mut self,
+        name: [u8; 32],
+        validator_vote: Pubkey,
+        initializer: Pubkey,
+        manager_authority: Pubkey,
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        grace_epochs: u8,
+        bump: u8,
+    ) -> Result<()> {
+        self.name = name;
+        self.validator_vote = validator_vote;
+        self.initializer = initializer;
+        self.manager_authority = manager_authority;
+        self.record_authority = record_authority;
+        self.max_epoch_entries = max_epoch_entries;
+        self.commission_bps = commission_bps;
+        self.commission_account = commission_account;
+        self.grace_epochs = if grace_epochs == 0 {
+            Self::DEFAULT_GRACE_EPOCHS
+        } else {
+            grace_epochs
+        };
+        self.block_reward_conversion_enabled = true;
+        self.unpaid_streak = 0;
+        self.status = P2CSubscriptionStatus::Active;
+        self.deficit = 0;
+        self.ledger = P2CSubscriptionLedger::default();
+        self.bump = bump;
+        self.validate()
+    }
+
+    pub fn validate_init_params(
+        name: [u8; 32],
+        manager_authority: Pubkey,
+        record_authority: Pubkey,
+        max_epoch_entries: u8,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        max_commission_bps: u16,
+    ) -> Result<()> {
+        if name == [0u8; 32] {
+            return Err(InvalidRevenueName.into());
+        }
+        if manager_authority == Pubkey::default() || record_authority == Pubkey::default() {
+            return Err(AccountValidationFailure.into());
+        }
+        if max_epoch_entries == 0 || max_epoch_entries as usize > MAX_REVENUE_EPOCH_ENTRIES_CAP {
+            return Err(InvalidRevenueEpochCapacity.into());
+        }
+        validate_commission(commission_bps, commission_account, max_commission_bps)?;
+        Ok(())
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        Self::validate_init_params(
+            self.name,
+            self.manager_authority,
+            self.record_authority,
+            self.max_epoch_entries,
+            self.commission_bps,
+            self.commission_account,
+            MAX_COMMISSION_BPS,
+        )?;
+        if self.validator_vote == Pubkey::default() || self.initializer == Pubkey::default() {
+            return Err(AccountValidationFailure.into());
+        }
+        Ok(())
+    }
+
+    pub fn auth_manager_signer(&self, signer: Pubkey) -> Result<()> {
+        if signer != self.manager_authority {
+            return Err(crate::ErrorCode::Unauthorized.into());
+        }
+        Ok(())
+    }
+
+    pub fn auth_record_signer(&self, signer: Pubkey) -> Result<()> {
+        if signer != self.record_authority {
+            return Err(crate::ErrorCode::Unauthorized.into());
+        }
+        Ok(())
+    }
+
+    /// Record a new epoch charge once.
+    ///
+    /// When the ledger is full and every row is still unclaimed, evicts the oldest unclaimed
+    /// epoch (smallest epoch number), books unpaid (`amount_due - amount_deducted`) into `deficit`,
+    /// and returns [`EvictedUnclaimedEpoch`] for the caller to emit an event.
+    pub fn record(
+        &mut self,
+        epoch: u64,
+        stake: u64,
+        amount_due: u64,
+    ) -> Result<Option<EvictedUnclaimedEpoch>> {
+        if amount_due == 0 {
+            return Err(crate::ErrorCode::RewardsTooLow.into());
+        }
+        let entry = P2CEpochEntry {
+            epoch,
+            stake,
+            amount_due,
+            amount_deducted: 0,
+            claimed: false,
+            block_reward_converted: !self.block_reward_conversion_enabled,
+        };
+        let eviction = self.ledger.insert(entry, self.max_epoch_entries as usize)?;
+        if let Some(evicted) = eviction {
+            if evicted.unpaid > 0 {
+                self.deficit = self
+                    .deficit
+                    .checked_add(evicted.unpaid)
+                    .ok_or(ArithmeticError)?;
+            }
+        }
+        Ok(eviction)
+    }
+
+    /// How much more can be paid this call, given free prepaid.
+    pub fn resolve_claimable(remaining_due: u64, free_balance: u64) -> (u64, u64) {
+        let paid = remaining_due.min(free_balance);
+        let still_short = remaining_due.saturating_sub(paid);
+        (paid, still_short)
+    }
+
+    pub fn mark_epoch_converted_to_block_reward(&mut self, epoch: u64) -> Result<()> {
+        let entry = self.ledger.get_mut(epoch)?;
+        if !entry.claimed {
+            return Err(EpochNotClaimed.into());
+        }
+        if entry.block_reward_converted {
+            return Err(EpochAlreadyConvertedToBlockReward.into());
+        }
+        entry.block_reward_converted = true;
+        Ok(())
+    }
+
+    pub fn update_config(
+        &mut self,
+        commission_bps: u16,
+        commission_account: Pubkey,
+        block_reward_conversion_enabled: bool,
+        grace_epochs: Option<u8>,
+        record_authority: Option<Pubkey>,
+    ) -> Result<()> {
+        self.commission_bps = commission_bps;
+        self.commission_account = commission_account;
+        self.block_reward_conversion_enabled = block_reward_conversion_enabled;
+        if let Some(g) = grace_epochs {
+            self.grace_epochs = if g == 0 {
+                Self::DEFAULT_GRACE_EPOCHS
+            } else {
+                g
+            };
+        }
+        if let Some(ra) = record_authority {
+            self.record_authority = ra;
+        }
+        self.validate()
+    }
+
+    /// Pay from free prepaid against this epoch.
+    ///
+    /// - Always notes and transfers `min(remaining_due, free)`.
+    /// - Marks `claimed` when fully paid (`amount_deducted >= amount_due`).
+    /// - Or, if `force_claim`, marks claimed with any leftover as `deficit` (+ grace).
+    /// - Without `force_claim` and still underfunded: leaves epoch open (partial noted).
+    ///
+    /// Returns `(commission, validator, paid_this_ix, amount_deducted, shortfall, closed)`.
+    pub fn claim_epoch(
+        ledger: &mut P2CSubscriptionLedger,
+        deficit: &mut u64,
+        unpaid_streak: &mut u8,
+        status: &mut P2CSubscriptionStatus,
+        grace_epochs: u8,
+        p2c_account: AccountInfo,
+        commission_account: AccountInfo,
+        validator_identity: AccountInfo,
+        commission_bps: u16,
+        epoch: u64,
+        force_claim: bool,
+    ) -> Result<(u64, u64, u64, u64, u64, bool)> {
+        use crate::ErrorCode::*;
+
+        let current_epoch = Clock::get()?.epoch;
+        if current_epoch <= epoch {
+            return Err(PrematureRevenueClaim.into());
+        }
+
+        let (amount_due, prior_deducted) = {
+            let entry = ledger
+                .entries
+                .iter()
+                .find(|e| e.epoch == epoch)
+                .ok_or(EpochEntryNotFound)?;
+            if entry.claimed {
+                return Err(EpochAlreadyClaimed.into());
+            }
+            (entry.amount_due, entry.amount_deducted)
+        };
+
+        let remaining = amount_due.saturating_sub(prior_deducted);
+        let rent = Rent::get()?;
+        let min_rent = rent.minimum_balance(p2c_account.data_len());
+        // Prior partial payments already left the PDA; free is just spendable lamports.
+        let free = Self::free_balance_from_parts(p2c_account.lamports(), min_rent, 0);
+        let (paid, _) = Self::resolve_claimable(remaining, free);
+
+        if paid == 0 && !force_claim && remaining > 0 {
+            return Err(RewardsTooLow.into());
+        }
+
+        let (commission_amount, validator_amount) = Self::split_claim_amount(paid, commission_bps)?;
+
+        if commission_amount > 0 {
+            RewardCollectionAccount::transfer_lamports(
+                p2c_account.clone(),
+                commission_account.clone(),
+                commission_amount,
+            )?;
+        }
+        if validator_amount > 0 {
+            RewardCollectionAccount::transfer_lamports(
+                p2c_account.clone(),
+                validator_identity,
+                validator_amount,
+            )?;
+        }
+
+        let amount_deducted = {
+            let entry = ledger.get_mut(epoch)?;
+            entry.amount_deducted = entry
+                .amount_deducted
+                .checked_add(paid)
+                .ok_or(ArithmeticError)?;
+            entry.amount_deducted
+        };
+
+        let remaining_after = amount_due.saturating_sub(amount_deducted);
+        let close = remaining_after == 0 || force_claim;
+        let shortfall = if close { remaining_after } else { 0 };
+
+        if close {
+            Self::apply_claim_shortfall(deficit, unpaid_streak, status, grace_epochs, shortfall)?;
+            ledger.mark_claimed(epoch)?;
+        }
+
+        Ok((
+            commission_amount,
+            validator_amount,
+            paid,
+            amount_deducted,
+            shortfall,
+            close,
+        ))
+    }
 }
 
 /// Stores claim status for a given leaf in the Merkle tree.
@@ -1195,6 +1959,78 @@ mod tests {
             ledger.add(epoch, 10, 4, false).unwrap();
         }
         assert!(ledger.add(5, 99, 4, false).is_err());
+    }
+
+    #[test]
+    fn revenue_ledger_v1_evicts_oldest_unclaimed_when_all_unclaimed() {
+        let mut ledger = RevenueLedgerV1::default();
+        for (epoch, amount) in [(1u64, 50), (2, 10), (3, 40), (4, 30)] {
+            assert!(ledger.add(epoch, amount, 4, false).unwrap().is_none());
+        }
+        // Epoch 1 is oldest; remove it even though amount is not the smallest.
+        let eviction = ledger.add(5, 99, 4, false).unwrap().unwrap();
+        assert_eq!(eviction.epoch, 1);
+        assert_eq!(eviction.unpaid, 50);
+        assert_eq!(eviction.amount, 50);
+        assert_eq!(eviction.settled, 0);
+        assert!(!ledger.entries.iter().any(|e| e.epoch == 1));
+        assert!(ledger
+            .entries
+            .iter()
+            .any(|e| e.epoch == 5 && e.amount == 99));
+    }
+
+    #[test]
+    fn revenue_share_v1_books_eviction_unpaid_into_deficit() {
+        let mut acc = test_revenue_share_account_v1(true);
+        acc.max_epoch_entries = 2;
+        assert!(acc.record_revenue(1, 100).unwrap().is_none());
+        assert!(acc.record_revenue(2, 25).unwrap().is_none());
+        let eviction = acc.record_revenue(3, 50).unwrap().unwrap();
+        assert_eq!(eviction.epoch, 1);
+        assert_eq!(eviction.unpaid, 100);
+        assert_eq!(acc.deficit, 100);
+        assert!(!acc.ledger.entries.iter().any(|e| e.epoch == 1));
+        assert!(acc.ledger.entries.iter().any(|e| e.epoch == 3));
+    }
+
+    #[test]
+    fn revenue_ledger_v1_prefers_claimed_slot_over_deficit_eviction() {
+        let mut ledger = RevenueLedgerV1::default();
+        for epoch in [1u64, 2, 3, 4] {
+            ledger.add(epoch, 10, 4, false).unwrap();
+        }
+        ledger.mark_claimed(1).unwrap();
+        assert!(ledger.add(5, 99, 4, false).unwrap().is_none());
+        assert!(!ledger.entries.iter().any(|e| e.epoch == 1));
+        assert!(ledger.entries.iter().any(|e| e.epoch == 2 && !e.claimed));
+    }
+
+    #[test]
+    fn p2c_ledger_evicts_oldest_unclaimed_when_all_unclaimed() {
+        let mut acc = test_p2c_account(true);
+        acc.max_epoch_entries = 2;
+        assert!(acc.record(1, 1, 100).unwrap().is_none());
+        assert!(acc.record(2, 1, 20).unwrap().is_none());
+        let eviction = acc.record(3, 1, 50).unwrap().unwrap();
+        assert_eq!(eviction.epoch, 1);
+        assert_eq!(eviction.unpaid, 100);
+        assert_eq!(acc.deficit, 100);
+        assert!(!acc.ledger.entries.iter().any(|e| e.epoch == 1));
+        assert!(acc.ledger.entries.iter().any(|e| e.epoch == 3));
+    }
+
+    #[test]
+    fn p2c_ledger_prefers_claimed_slot_over_deficit_eviction() {
+        let mut acc = test_p2c_account(true);
+        acc.max_epoch_entries = 2;
+        acc.record(1, 1, 100).unwrap();
+        acc.record(2, 1, 20).unwrap();
+        acc.ledger.mark_claimed(1).unwrap();
+        assert!(acc.record(3, 1, 50).unwrap().is_none());
+        assert_eq!(acc.deficit, 0);
+        assert!(!acc.ledger.entries.iter().any(|e| e.epoch == 1));
+        assert!(acc.ledger.entries.iter().any(|e| e.epoch == 2));
     }
 
     #[test]
@@ -1305,6 +2141,47 @@ mod tests {
         assert_eq!(mev_ep, cfg.mev_share_epoch);
     }
 
+    fn valid_p2c_config() -> P2CConfigAccount {
+        P2CConfigAccount {
+            authority: Pubkey::new_unique(),
+            bump: 255,
+            manager_authority: Pubkey::new_unique(),
+            record_authority: Pubkey::new_unique(),
+            max_epoch_entries: 8,
+            commission_bps: 2_000,
+            commission_account: Pubkey::new_unique(),
+            grace_epochs: 2,
+        }
+    }
+
+    #[test]
+    fn p2c_config_validate_ok() {
+        assert!(valid_p2c_config().validate().is_ok());
+    }
+
+    #[test]
+    fn p2c_config_rejects_bad_epoch_or_authority() {
+        let mut cfg = valid_p2c_config();
+        cfg.max_epoch_entries = 0;
+        assert!(cfg.validate().is_err());
+        cfg.max_epoch_entries = 8;
+        cfg.manager_authority = Pubkey::default();
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn p2c_config_defaults_for_psa() {
+        let cfg = valid_p2c_config();
+        let (mgr, rec, max_e, bps, comm, grace) = cfg.defaults_for_psa();
+        assert_eq!(mgr, cfg.manager_authority);
+        assert_eq!(rec, cfg.record_authority);
+        assert_eq!(max_e, cfg.max_epoch_entries);
+        assert_eq!(bps, cfg.commission_bps);
+        assert_eq!(comm, cfg.commission_account);
+        assert_eq!(grace, cfg.grace_epochs);
+        assert_eq!(cfg.space_for_psa(), P2CSubscriptionAccount::space_for(8));
+    }
+
     #[test]
     fn revenue_share_layout_sizes_differ() {
         assert_ne!(
@@ -1318,18 +2195,9 @@ mod tests {
     fn deficit_update_apply_variants() {
         assert_eq!(DeficitUpdate::Set { value: 42 }.apply(7).unwrap(), 42);
         assert_eq!(DeficitUpdate::Clear.apply(100).unwrap(), 0);
-        assert_eq!(
-            DeficitUpdate::Increase { amount: 5 }.apply(10).unwrap(),
-            15
-        );
-        assert_eq!(
-            DeficitUpdate::Decrease { amount: 3 }.apply(10).unwrap(),
-            7
-        );
-        assert_eq!(
-            DeficitUpdate::Decrease { amount: 99 }.apply(10).unwrap(),
-            0
-        );
+        assert_eq!(DeficitUpdate::Increase { amount: 5 }.apply(10).unwrap(), 15);
+        assert_eq!(DeficitUpdate::Decrease { amount: 3 }.apply(10).unwrap(), 7);
+        assert_eq!(DeficitUpdate::Decrease { amount: 99 }.apply(10).unwrap(), 0);
     }
 
     #[test]
@@ -1467,5 +2335,304 @@ mod tests {
         acc.ledger.mark_claimed(10).unwrap();
         acc.mark_epoch_converted_to_block_reward(10).unwrap();
         assert!(acc.mark_epoch_converted_to_block_reward(10).is_err());
+    }
+
+    fn test_p2c_account(convert: bool) -> P2CSubscriptionAccount {
+        P2CSubscriptionAccount {
+            name: {
+                let mut n = [0u8; 32];
+                n[..3].copy_from_slice(b"p2c");
+                n
+            },
+            validator_vote: Pubkey::new_unique(),
+            initializer: Pubkey::new_unique(),
+            manager_authority: Pubkey::new_unique(),
+            record_authority: Pubkey::new_unique(),
+            max_epoch_entries: 4,
+            commission_bps: 2000,
+            commission_account: Pubkey::new_unique(),
+            grace_epochs: 2,
+            block_reward_conversion_enabled: convert,
+            unpaid_streak: 0,
+            status: P2CSubscriptionStatus::Active,
+            deficit: 0,
+            ledger: P2CSubscriptionLedger::default(),
+            bump: 0,
+        }
+    }
+
+    #[test]
+    fn p2c_resolve_claimable_partial_and_zero() {
+        assert_eq!(P2CSubscriptionAccount::resolve_claimable(100, 40), (40, 60));
+        assert_eq!(
+            P2CSubscriptionAccount::resolve_claimable(100, 100),
+            (100, 0)
+        );
+        assert_eq!(P2CSubscriptionAccount::resolve_claimable(50, 0), (0, 50));
+        assert_eq!(P2CSubscriptionAccount::resolve_claimable(50, 200), (50, 0));
+    }
+
+    #[test]
+    fn p2c_record_once_and_sets_due() {
+        let mut acc = test_p2c_account(true);
+        acc.record(10, 1_000_000, 100).unwrap();
+        assert_eq!(acc.ledger.entries[0].amount_due, 100);
+        assert_eq!(acc.ledger.entries[0].amount_deducted, 0);
+        assert!(!acc.ledger.entries[0].claimed);
+        assert!(!acc.ledger.entries[0].block_reward_converted);
+    }
+
+    #[test]
+    fn p2c_record_rejects_duplicate_epoch() {
+        let mut acc = test_p2c_account(false);
+        acc.record(1, 1, 10).unwrap();
+        assert!(acc.record(1, 1, 10).is_err());
+    }
+
+    #[test]
+    fn p2c_ledger_reserved_unclaimed() {
+        let mut acc = test_p2c_account(false);
+        acc.record(1, 1, 100).unwrap();
+        acc.record(2, 1, 50).unwrap();
+        acc.ledger.entries[0].amount_deducted = 30;
+        acc.ledger.entries[1].amount_deducted = 20;
+        assert_eq!(acc.ledger.reserved_unclaimed().unwrap(), 50);
+        acc.ledger.mark_claimed(1).unwrap();
+        assert_eq!(acc.ledger.reserved_unclaimed().unwrap(), 20);
+    }
+
+    #[test]
+    fn p2c_convert_requires_claimed() {
+        let mut acc = test_p2c_account(true);
+        acc.record(7, 1, 10).unwrap();
+        assert!(acc.mark_epoch_converted_to_block_reward(7).is_err());
+        acc.ledger.mark_claimed(7).unwrap();
+        acc.mark_epoch_converted_to_block_reward(7).unwrap();
+        assert!(acc.ledger.entries[0].block_reward_converted);
+    }
+
+    #[test]
+    fn p2c_pda_seeds_include_name_and_vote() {
+        let mut name = [0u8; 32];
+        name[..3].copy_from_slice(b"abc");
+        let vote = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let (a, _) = Pubkey::find_program_address(
+            &P2CSubscriptionAccount::pda_seeds(&name, &vote),
+            &program,
+        );
+        let mut name2 = name;
+        name2[0] = b'z';
+        let (b, _) = Pubkey::find_program_address(
+            &P2CSubscriptionAccount::pda_seeds(&name2, &vote),
+            &program,
+        );
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn p2c_free_balance_excludes_rent_and_reserved() {
+        assert_eq!(
+            P2CSubscriptionAccount::free_balance_from_parts(1_000, 200, 300),
+            500
+        );
+        assert_eq!(
+            P2CSubscriptionAccount::free_balance_from_parts(100, 200, 0),
+            0
+        );
+    }
+
+    #[test]
+    fn p2c_split_claim_twenty_percent() {
+        let (c, v) = P2CSubscriptionAccount::split_claim_amount(100, 2000).unwrap();
+        assert_eq!(c, 20);
+        assert_eq!(v, 80);
+        let (c0, v0) = P2CSubscriptionAccount::split_claim_amount(100, 0).unwrap();
+        assert_eq!(c0, 0);
+        assert_eq!(v0, 100);
+    }
+
+    #[test]
+    fn p2c_grace_streak_active_ingrace_suspended() {
+        let mut deficit = 0u64;
+        let mut streak = 0u8;
+        let mut status = P2CSubscriptionStatus::Active;
+        let grace = 2u8;
+
+        P2CSubscriptionAccount::apply_claim_shortfall(
+            &mut deficit,
+            &mut streak,
+            &mut status,
+            grace,
+            0,
+        )
+        .unwrap();
+        assert_eq!(streak, 0);
+        assert_eq!(status, P2CSubscriptionStatus::Active);
+
+        P2CSubscriptionAccount::apply_claim_shortfall(
+            &mut deficit,
+            &mut streak,
+            &mut status,
+            grace,
+            10,
+        )
+        .unwrap();
+        assert_eq!(deficit, 10);
+        assert_eq!(streak, 1);
+        assert_eq!(status, P2CSubscriptionStatus::InGrace);
+
+        P2CSubscriptionAccount::apply_claim_shortfall(
+            &mut deficit,
+            &mut streak,
+            &mut status,
+            grace,
+            5,
+        )
+        .unwrap();
+        assert_eq!(deficit, 15);
+        assert_eq!(streak, 2);
+        assert_eq!(status, P2CSubscriptionStatus::InGrace);
+
+        P2CSubscriptionAccount::apply_claim_shortfall(
+            &mut deficit,
+            &mut streak,
+            &mut status,
+            grace,
+            1,
+        )
+        .unwrap();
+        assert_eq!(streak, 3);
+        assert_eq!(status, P2CSubscriptionStatus::Suspended);
+
+        // full pay resets
+        P2CSubscriptionAccount::apply_claim_shortfall(
+            &mut deficit,
+            &mut streak,
+            &mut status,
+            grace,
+            0,
+        )
+        .unwrap();
+        assert_eq!(streak, 0);
+        assert_eq!(status, P2CSubscriptionStatus::Active);
+        assert_eq!(deficit, 16); // 10 + 5 + 1; full pay does not write off deficit
+    }
+
+    #[test]
+    fn p2c_clear_deficit_partial_and_full_resets_grace() {
+        let mut deficit = 100u64;
+        let mut streak = 3u8;
+        let mut status = P2CSubscriptionStatus::Suspended;
+
+        let applied = P2CSubscriptionAccount::apply_deficit_cleared(
+            &mut deficit,
+            &mut streak,
+            &mut status,
+            40,
+        )
+        .unwrap();
+        assert_eq!(applied, 40);
+        assert_eq!(deficit, 60);
+        assert_eq!(status, P2CSubscriptionStatus::Suspended);
+
+        let applied2 = P2CSubscriptionAccount::apply_deficit_cleared(
+            &mut deficit,
+            &mut streak,
+            &mut status,
+            1000,
+        )
+        .unwrap();
+        assert_eq!(applied2, 60);
+        assert_eq!(deficit, 0);
+        assert_eq!(streak, 0);
+        assert_eq!(status, P2CSubscriptionStatus::Active);
+    }
+
+    #[test]
+    fn p2c_clear_deficit_rejects_zero_open() {
+        let mut deficit = 0u64;
+        let mut streak = 0u8;
+        let mut status = P2CSubscriptionStatus::Active;
+        assert!(P2CSubscriptionAccount::apply_deficit_cleared(
+            &mut deficit,
+            &mut streak,
+            &mut status,
+            10,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn p2c_has_unclaimed_blocks_close_signal() {
+        let mut acc = test_p2c_account(false);
+        assert!(!acc.has_unclaimed_epochs());
+        acc.record(1, 10, 50).unwrap();
+        assert!(acc.has_unclaimed_epochs());
+        acc.ledger.mark_claimed(1).unwrap();
+        assert!(!acc.has_unclaimed_epochs());
+    }
+
+    #[test]
+    fn p2c_init_params_require_manager_and_name() {
+        assert!(P2CSubscriptionAccount::validate_init_params(
+            [0u8; 32],
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+            4,
+            2000,
+            Pubkey::new_unique(),
+            10_000,
+        )
+        .is_err());
+        assert!(P2CSubscriptionAccount::validate_init_params(
+            {
+                let mut n = [0u8; 32];
+                n[0] = b'x';
+                n
+            },
+            Pubkey::default(),
+            Pubkey::new_unique(),
+            4,
+            2000,
+            Pubkey::new_unique(),
+            10_000,
+        )
+        .is_err());
+        assert!(P2CSubscriptionAccount::validate_init_params(
+            {
+                let mut n = [0u8; 32];
+                n[0] = b'x';
+                n
+            },
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+            4,
+            2000,
+            Pubkey::new_unique(),
+            10_000,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn p2c_default_grace_epochs_is_two() {
+        assert_eq!(P2CSubscriptionAccount::DEFAULT_GRACE_EPOCHS, 2);
+        let mut acc = test_p2c_account(false);
+        acc.populate_on_init(
+            acc.name,
+            acc.validator_vote,
+            acc.initializer,
+            acc.manager_authority,
+            acc.record_authority,
+            4,
+            2000,
+            acc.commission_account,
+            0, // zero → default 2
+            0,
+        )
+        .unwrap();
+        assert_eq!(acc.grace_epochs, 2);
+        assert_eq!(acc.status, P2CSubscriptionStatus::Active);
     }
 }

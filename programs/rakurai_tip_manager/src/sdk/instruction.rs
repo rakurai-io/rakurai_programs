@@ -142,6 +142,7 @@ pub struct ChangeTipReceiverAccounts {
 }
 
 /// Builds the legacy instruction to drain pending tips and rotate the tip receiver.
+#[deprecated(note = "use change_tip_receiver_v2_ix")]
 pub fn change_tip_receiver_ix(
     program_id: Pubkey,
     _args: ChangeTipReceiverArgs,
@@ -210,6 +211,7 @@ pub struct ChangeTipReceiverV1Accounts {
 }
 
 /// Drains pending tips and rotates config to the TCA PDA (RAA + vote + TCA validation).
+#[deprecated(note = "use change_tip_receiver_v2_ix")]
 pub fn change_tip_receiver_v1_ix(
     program_id: Pubkey,
     _args: ChangeTipReceiverV1Args,

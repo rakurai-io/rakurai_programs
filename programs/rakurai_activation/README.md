@@ -2,7 +2,7 @@
 
 A multisig-based Solana smart contract for enabling or disabling the Rakurai scheduler. It also governs the commission on block rewards for both the client (Rakurai), which is currently set to 0, and the validator.
 
-**Note:** The remaining block rewards after commission deduction are distributed to stakers via the [`RewardDistributionProgram`](../reward_distribution/README.md).
+**Note:** After commission, the remaining block rewards are shared with stakers through the [RCA](../reward_distribution/README.md#2-rca--block-rewards-for-stakers) in [Reward Distribution](../reward_distribution/README.md).
 
 ➤ For more details, refer to the [IDL file](./idl/rakurai_activation.json).
 
@@ -56,9 +56,9 @@ Once created, this account:
 
 ## 5. Commission updates
 
-- The validator may update their [**commission percentage**](../../cli/README.md#34-update-commission) at any time.
+- The validator may update their [**commission percentage**](../../cli/activation.md#33-update-commission) at any time.
 - The updated commission applies either:
-  - From the **current epoch**, if no [`RewardCollectionAccount`](../reward_distribution/README.md#31-rewardcollectionaccount-account-initialization) has been initialized yet.
+  - From the **current epoch**, if no [RCA](../reward_distribution/README.md#2-rca--block-rewards-for-stakers) has been opened yet.
   - Or from the **next epoch**, if one already exists.
 
 ---
@@ -66,7 +66,7 @@ Once created, this account:
 ## 6. Activation flow
 
 1. **Enabling Rakurai:**
-   - The validator submits an [`update_rakurai_activation_approval`](../../cli/README.md#33-scheduler-control) transaction.
+   - The validator submits an [`update_rakurai_activation_approval`](../../cli/activation.md#32-scheduler-control) transaction.
    - In response, Rakurai submits a transaction to approve and activate the Rakurai scheduler.
 
 2. **Disabling Rakurai:**
@@ -81,10 +81,12 @@ Once created, this account:
 
 ## 7. CLI tool
 
-See the [CLI tool guide](../../cli/README.md) for operator commands to:
+See the [Rakurai Activation CLI](../../cli/activation.md) for operator commands to:
 
 - Initialize a Rakurai Activation Account.
 - Update commission settings.
 - Enable or disable the Rakurai scheduler.
+
+Install steps are in the [CLI overview](../../cli/README.md#2-installation).
 
 ---

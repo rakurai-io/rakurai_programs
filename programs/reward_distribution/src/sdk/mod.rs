@@ -3,8 +3,9 @@ pub mod instruction;
 use anchor_lang::{prelude::Pubkey, solana_program::clock::Epoch};
 
 use crate::{
-    RevenueKind, RevenueShareAccount, RevenueShareAccountV1, RewardCollectionAccount,
-    RewardDistributionConfigAccount, TipsAndMevShareConfigAccount,
+    P2CConfigAccount, P2CSubscriptionAccount, RevenueKind, RevenueShareAccount,
+    RevenueShareAccountV1, RewardCollectionAccount, RewardDistributionConfigAccount,
+    TipsAndMevShareConfigAccount,
 };
 
 /// Derives the PDA for a reward collection account using vote pubkey and epoch.
@@ -39,6 +40,14 @@ pub fn derive_tips_and_mev_share_config_address(
 ) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[TipsAndMevShareConfigAccount::SEED],
+        reward_distribution_program_id,
+    )
+}
+
+/// Derives the PDA for the P2C config singleton.
+pub fn derive_p2c_config_address(reward_distribution_program_id: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &[P2CConfigAccount::SEED],
         reward_distribution_program_id,
     )
 }
@@ -126,5 +135,18 @@ pub fn derive_mev_share_collection_account_v1_address(
         RevenueKind::MevShare,
         name,
         validator_vote,
+    )
+}
+
+/// Derives a P2C subscription escrow PDA: `[P2C_SUBSCRIPTION, name, vote]`.
+/// Anyone may create; manager / record / commission / grace / capacity come from [`P2CConfigAccount`].
+pub fn derive_p2c_subscription_address(
+    reward_distribution_program_id: &Pubkey,
+    name: &[u8; 32],
+    validator_vote: &Pubkey,
+) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &P2CSubscriptionAccount::pda_seeds(name, validator_vote),
+        reward_distribution_program_id,
     )
 }

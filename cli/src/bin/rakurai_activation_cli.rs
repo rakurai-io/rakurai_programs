@@ -194,9 +194,7 @@ fn process_init_config(
     let config_authority = args.config_authority.unwrap_or(signer_pubkey);
     let client_authority = args.client_authority.unwrap_or(signer_pubkey);
     let client_commission_bps = args.client_commission_bps.unwrap_or(1000);
-    let client_commission_account = args
-        .client_commission_account
-        .unwrap_or(signer_pubkey);
+    let client_commission_account = args.client_commission_account.unwrap_or(signer_pubkey);
 
     let (activation_config_pubkey, bump) = derive_config_account_address(&program_id);
     println!(
