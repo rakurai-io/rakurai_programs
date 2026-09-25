@@ -1,6 +1,7 @@
 //! This module contains functions that build instructions to interact with the block-reward-distribution program.
 use anchor_lang::{
-    prelude::Pubkey, solana_program::instruction::Instruction, InstructionData, ToAccountMetas,
+    prelude::Pubkey, solana_program::instruction::AccountMeta,
+    solana_program::instruction::Instruction, InstructionData, ToAccountMetas,
 };
 
 use crate::RakuraiTipManagerBumps;
@@ -121,72 +122,14 @@ pub fn close_rakurai_tip_manager_ix(
     }
 }
 
-pub struct ClaimTipsArgs;
-
-pub struct ClaimTipsAccounts {
-    pub tip_manager_config: Pubkey,
-    pub rakurai_tip_account_0: Pubkey,
-    pub rakurai_tip_account_1: Pubkey,
-    pub rakurai_tip_account_2: Pubkey,
-    pub rakurai_tip_account_3: Pubkey,
-    pub rakurai_tip_account_4: Pubkey,
-    pub rakurai_tip_account_5: Pubkey,
-    pub rakurai_tip_account_6: Pubkey,
-    pub rakurai_tip_account_7: Pubkey,
-    pub validator_tip_receiver_account: Pubkey,
-    pub block_builder_commission_account: Pubkey,
-    pub signer: Pubkey,
-}
-
-/// Builds the instruction to initialize tip manager program.
-pub fn claim_tips_ix(
-    program_id: Pubkey,
-    _args: ClaimTipsArgs,
-    accounts: ClaimTipsAccounts,
-) -> Instruction {
-    let ClaimTipsAccounts {
-        tip_manager_config,
-        rakurai_tip_account_0,
-        rakurai_tip_account_1,
-        rakurai_tip_account_2,
-        rakurai_tip_account_3,
-        rakurai_tip_account_4,
-        rakurai_tip_account_5,
-        rakurai_tip_account_6,
-        rakurai_tip_account_7,
-        validator_tip_receiver_account,
-        block_builder_commission_account,
-        signer,
-    } = accounts;
-
-    Instruction {
-        program_id,
-        data: crate::instruction::ClaimTips {}.data(),
-        accounts: crate::accounts::ClaimTips {
-            tip_manager_config,
-            rakurai_tip_account_0,
-            rakurai_tip_account_1,
-            rakurai_tip_account_2,
-            rakurai_tip_account_3,
-            rakurai_tip_account_4,
-            rakurai_tip_account_5,
-            rakurai_tip_account_6,
-            rakurai_tip_account_7,
-            validator_tip_receiver_account,
-            block_builder_commission_account,
-            signer,
-        }
-        .to_account_metas(None),
-    }
-}
-
 pub struct ChangeTipReceiverArgs;
 
+/// Legacy account list (unchanged for existing clients).
 pub struct ChangeTipReceiverAccounts {
     pub tip_manager_config: Pubkey,
     pub old_tip_receiver: Pubkey,
     pub new_tip_receiver: Pubkey,
-    pub block_builder_commission_account: Pubkey,
+    pub client_commission_account: Pubkey,
     pub rakurai_tip_account_0: Pubkey,
     pub rakurai_tip_account_1: Pubkey,
     pub rakurai_tip_account_2: Pubkey,
@@ -198,7 +141,8 @@ pub struct ChangeTipReceiverAccounts {
     pub signer: Pubkey,
 }
 
-/// Builds the instruction to initialize tip manager program.
+/// Builds the legacy instruction to drain pending tips and rotate the tip receiver.
+#[deprecated(note = "use change_tip_receiver_v2_ix")]
 pub fn change_tip_receiver_ix(
     program_id: Pubkey,
     _args: ChangeTipReceiverArgs,
@@ -208,7 +152,7 @@ pub fn change_tip_receiver_ix(
         tip_manager_config,
         old_tip_receiver,
         new_tip_receiver,
-        block_builder_commission_account,
+        client_commission_account,
         rakurai_tip_account_0,
         rakurai_tip_account_1,
         rakurai_tip_account_2,
@@ -227,7 +171,7 @@ pub fn change_tip_receiver_ix(
             tip_manager_config,
             old_tip_receiver,
             new_tip_receiver,
-            block_builder_commission_account,
+            client_commission_account,
             rakurai_tip_account_0,
             rakurai_tip_account_1,
             rakurai_tip_account_2,
@@ -242,15 +186,173 @@ pub fn change_tip_receiver_ix(
     }
 }
 
-pub struct ChangeBlockBuilderArgs {
-    pub block_builder_commission_bps: u64,
+pub struct ChangeTipReceiverV1Args;
+
+pub struct ChangeTipReceiverV1Accounts {
+    pub tip_manager_config: Pubkey,
+    pub old_tip_receiver: Pubkey,
+    pub new_tip_receiver: Pubkey,
+    pub client_commission_account: Pubkey,
+    pub rakurai_tip_account_0: Pubkey,
+    pub rakurai_tip_account_1: Pubkey,
+    pub rakurai_tip_account_2: Pubkey,
+    pub rakurai_tip_account_3: Pubkey,
+    pub rakurai_tip_account_4: Pubkey,
+    pub rakurai_tip_account_5: Pubkey,
+    pub rakurai_tip_account_6: Pubkey,
+    pub rakurai_tip_account_7: Pubkey,
+    pub signer: Pubkey,
+    /// PDA (`[RECORD_AUTHORITY_SEED]`) that signs the reward_distribution record_revenue CPI.
+    pub record_authority: Pubkey,
+    /// Appended as `remaining_accounts[0]` (enabled RAA PDA for signer).
+    pub rakurai_activation_account: Pubkey,
+    /// Appended as `remaining_accounts[1]` (reward distribution program id).
+    pub reward_distribution_program: Pubkey,
 }
 
-pub struct ChangeBlockBuilderAccounts {
+/// Drains pending tips and rotates config to the TCA PDA (RAA + vote + TCA validation).
+#[deprecated(note = "use change_tip_receiver_v2_ix")]
+pub fn change_tip_receiver_v1_ix(
+    program_id: Pubkey,
+    _args: ChangeTipReceiverV1Args,
+    accounts: ChangeTipReceiverV1Accounts,
+) -> Instruction {
+    let ChangeTipReceiverV1Accounts {
+        tip_manager_config,
+        old_tip_receiver,
+        new_tip_receiver,
+        client_commission_account,
+        rakurai_tip_account_0,
+        rakurai_tip_account_1,
+        rakurai_tip_account_2,
+        rakurai_tip_account_3,
+        rakurai_tip_account_4,
+        rakurai_tip_account_5,
+        rakurai_tip_account_6,
+        rakurai_tip_account_7,
+        signer,
+        record_authority,
+        rakurai_activation_account,
+        reward_distribution_program,
+    } = accounts;
+
+    let mut account_metas = crate::accounts::ChangeTipReceiverV1 {
+        tip_manager_config,
+        old_tip_receiver,
+        new_tip_receiver,
+        client_commission_account,
+        rakurai_tip_account_0,
+        rakurai_tip_account_1,
+        rakurai_tip_account_2,
+        rakurai_tip_account_3,
+        rakurai_tip_account_4,
+        rakurai_tip_account_5,
+        rakurai_tip_account_6,
+        rakurai_tip_account_7,
+        signer,
+        record_authority,
+    }
+    .to_account_metas(None);
+    account_metas.push(AccountMeta::new_readonly(rakurai_activation_account, false));
+    account_metas.push(AccountMeta::new_readonly(
+        reward_distribution_program,
+        false,
+    ));
+    Instruction {
+        program_id,
+        data: crate::instruction::ChangeTipReceiverV1 {}.data(),
+        accounts: account_metas,
+    }
+}
+
+pub struct ChangeTipReceiverV2Args;
+
+pub struct ChangeTipReceiverV2Accounts {
+    pub tip_manager_config: Pubkey,
+    pub old_tip_receiver: Pubkey,
+    pub new_tip_receiver: Pubkey,
+    pub client_commission_account: Pubkey,
+    pub rakurai_tip_account_0: Pubkey,
+    pub rakurai_tip_account_1: Pubkey,
+    pub rakurai_tip_account_2: Pubkey,
+    pub rakurai_tip_account_3: Pubkey,
+    pub rakurai_tip_account_4: Pubkey,
+    pub rakurai_tip_account_5: Pubkey,
+    pub rakurai_tip_account_6: Pubkey,
+    pub rakurai_tip_account_7: Pubkey,
+    pub signer: Pubkey,
+    /// PDA (`[RECORD_AUTHORITY_SEED]`) that signs the reward_distribution record_revenue_v1 CPI.
+    pub record_authority: Pubkey,
+    /// Appended as `remaining_accounts[0]` (enabled RAA PDA for signer).
+    pub rakurai_activation_account: Pubkey,
+    /// Appended as `remaining_accounts[1]` (reward distribution program id).
+    pub reward_distribution_program: Pubkey,
+}
+
+/// Mirror of v1 for TCAV1: drains tips using **new** TCAV1 commission, syncs tip-manager
+/// global commission to that TCAV1, and rotates config to the TCAV1 PDA.
+pub fn change_tip_receiver_v2_ix(
+    program_id: Pubkey,
+    _args: ChangeTipReceiverV2Args,
+    accounts: ChangeTipReceiverV2Accounts,
+) -> Instruction {
+    let ChangeTipReceiverV2Accounts {
+        tip_manager_config,
+        old_tip_receiver,
+        new_tip_receiver,
+        client_commission_account,
+        rakurai_tip_account_0,
+        rakurai_tip_account_1,
+        rakurai_tip_account_2,
+        rakurai_tip_account_3,
+        rakurai_tip_account_4,
+        rakurai_tip_account_5,
+        rakurai_tip_account_6,
+        rakurai_tip_account_7,
+        signer,
+        record_authority,
+        rakurai_activation_account,
+        reward_distribution_program,
+    } = accounts;
+
+    let mut account_metas = crate::accounts::ChangeTipReceiverV2 {
+        tip_manager_config,
+        old_tip_receiver,
+        new_tip_receiver,
+        client_commission_account,
+        rakurai_tip_account_0,
+        rakurai_tip_account_1,
+        rakurai_tip_account_2,
+        rakurai_tip_account_3,
+        rakurai_tip_account_4,
+        rakurai_tip_account_5,
+        rakurai_tip_account_6,
+        rakurai_tip_account_7,
+        signer,
+        record_authority,
+    }
+    .to_account_metas(None);
+    account_metas.push(AccountMeta::new_readonly(rakurai_activation_account, false));
+    account_metas.push(AccountMeta::new_readonly(
+        reward_distribution_program,
+        false,
+    ));
+    Instruction {
+        program_id,
+        data: crate::instruction::ChangeTipReceiverV2 {}.data(),
+        accounts: account_metas,
+    }
+}
+
+pub struct ChangeClientArgs {
+    pub client_commission_bps: u64,
+}
+
+pub struct ChangeClientAccounts {
     pub tip_manager_config: Pubkey,
     pub validator_tip_receiver_account: Pubkey,
-    pub old_block_builder: Pubkey,
-    pub new_block_builder: Pubkey,
+    pub old_client: Pubkey,
+    pub new_client: Pubkey,
     pub rakurai_tip_account_0: Pubkey,
     pub rakurai_tip_account_1: Pubkey,
     pub rakurai_tip_account_2: Pubkey,
@@ -263,20 +365,20 @@ pub struct ChangeBlockBuilderAccounts {
 }
 
 /// Builds the instruction to initialize tip manager program.
-pub fn change_block_builder_ix(
+pub fn change_client_ix(
     program_id: Pubkey,
-    args: ChangeBlockBuilderArgs,
-    accounts: ChangeBlockBuilderAccounts,
+    args: ChangeClientArgs,
+    accounts: ChangeClientAccounts,
 ) -> Instruction {
-    let ChangeBlockBuilderArgs {
-        block_builder_commission_bps,
+    let ChangeClientArgs {
+        client_commission_bps,
     } = args;
 
-    let ChangeBlockBuilderAccounts {
+    let ChangeClientAccounts {
         tip_manager_config,
         validator_tip_receiver_account,
-        old_block_builder,
-        new_block_builder,
+        old_client,
+        new_client,
         rakurai_tip_account_0,
         rakurai_tip_account_1,
         rakurai_tip_account_2,
@@ -290,15 +392,15 @@ pub fn change_block_builder_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::ChangeBlockBuilder {
-            block_builder_commission_bps,
+        data: crate::instruction::ChangeClient {
+            client_commission_bps,
         }
         .data(),
-        accounts: crate::accounts::ChangeBlockBuilder {
+        accounts: crate::accounts::ChangeClient {
             tip_manager_config,
             validator_tip_receiver_account,
-            old_block_builder,
-            new_block_builder,
+            old_client,
+            new_client,
             rakurai_tip_account_0,
             rakurai_tip_account_1,
             rakurai_tip_account_2,

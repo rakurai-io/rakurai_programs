@@ -1,7 +1,12 @@
 [workspace]
 members = [
     "cli",
-    "programs/*"]
+    "programs/rakurai_activation",
+    "programs/rakurai_tip_manager",
+    "programs/reward_distribution",
+    "programs/rakurai_client_config",
+    "programs/vote_state",
+]
 resolver = "2"
 
 [profile.release]
