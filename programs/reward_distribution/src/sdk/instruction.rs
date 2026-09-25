@@ -82,6 +82,7 @@ pub struct InitializeRewardCollectionAccountAccounts {
 }
 
 /// Builds the instruction to initialize the reward collection account (legacy).
+#[deprecated(note = "use initialize_reward_collection_account_v1_ix")]
 pub fn initialize_reward_collection_account_ix(
     program_id: Pubkey,
     args: InitializeRewardCollectionAccountArgs,
@@ -265,6 +266,296 @@ pub fn close_config_ix(
     }
 }
 
+pub struct InitializeTipsAndMevShareConfigArgs {
+    pub authority: Pubkey,
+    pub tip_manager_authority: Pubkey,
+    pub tip_commission_account: Pubkey,
+    pub tip_commission_bps: u16,
+    pub tip_epoch: u8,
+    pub mev_share_manager_authority: Pubkey,
+    pub mev_share_commission_account: Pubkey,
+    pub mev_share_commission_bps: u16,
+    pub mev_share_epoch: u8,
+    pub bump: u8,
+}
+
+pub struct InitializeTipsAndMevShareConfigAccounts {
+    pub tips_and_mev_share_config: Pubkey,
+    pub system_program: Pubkey,
+    pub initializer: Pubkey,
+}
+
+pub fn initialize_tips_and_mev_share_config_ix(
+    program_id: Pubkey,
+    args: InitializeTipsAndMevShareConfigArgs,
+    accounts: InitializeTipsAndMevShareConfigAccounts,
+) -> Instruction {
+    let InitializeTipsAndMevShareConfigArgs {
+        authority,
+        tip_manager_authority,
+        tip_commission_account,
+        tip_commission_bps,
+        tip_epoch,
+        mev_share_manager_authority,
+        mev_share_commission_account,
+        mev_share_commission_bps,
+        mev_share_epoch,
+        bump,
+    } = args;
+    let InitializeTipsAndMevShareConfigAccounts {
+        tips_and_mev_share_config,
+        system_program,
+        initializer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::InitializeTipsAndMevShareConfig {
+            authority,
+            tip_manager_authority,
+            tip_commission_account,
+            tip_commission_bps,
+            tip_epoch,
+            mev_share_manager_authority,
+            mev_share_commission_account,
+            mev_share_commission_bps,
+            mev_share_epoch,
+            bump,
+        }
+        .data(),
+        accounts: crate::accounts::InitializeTipsAndMevShareConfig {
+            tips_and_mev_share_config,
+            system_program,
+            initializer,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateTipsAndMevShareConfigArgs {
+    pub tip_manager_authority: Pubkey,
+    pub tip_commission_account: Pubkey,
+    pub tip_commission_bps: u16,
+    pub tip_epoch: u8,
+    pub mev_share_manager_authority: Pubkey,
+    pub mev_share_commission_account: Pubkey,
+    pub mev_share_commission_bps: u16,
+    pub mev_share_epoch: u8,
+}
+
+pub struct UpdateTipsAndMevShareConfigAccounts {
+    pub tips_and_mev_share_config: Pubkey,
+    pub authority: Pubkey,
+}
+
+pub fn update_tips_and_mev_share_config_ix(
+    program_id: Pubkey,
+    args: UpdateTipsAndMevShareConfigArgs,
+    accounts: UpdateTipsAndMevShareConfigAccounts,
+) -> Instruction {
+    let UpdateTipsAndMevShareConfigArgs {
+        tip_manager_authority,
+        tip_commission_account,
+        tip_commission_bps,
+        tip_epoch,
+        mev_share_manager_authority,
+        mev_share_commission_account,
+        mev_share_commission_bps,
+        mev_share_epoch,
+    } = args;
+    let UpdateTipsAndMevShareConfigAccounts {
+        tips_and_mev_share_config,
+        authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateTipsAndMevShareConfig {
+            tip_manager_authority,
+            tip_commission_account,
+            tip_commission_bps,
+            tip_epoch,
+            mev_share_manager_authority,
+            mev_share_commission_account,
+            mev_share_commission_bps,
+            mev_share_epoch,
+        }
+        .data(),
+        accounts: crate::accounts::UpdateTipsAndMevShareConfig {
+            tips_and_mev_share_config,
+            authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct CloseTipsAndMevShareConfigArgs;
+
+pub struct CloseTipsAndMevShareConfigAccounts {
+    pub tips_and_mev_share_config: Pubkey,
+    pub signer: Pubkey,
+}
+
+pub fn close_tips_and_mev_share_config_ix(
+    program_id: Pubkey,
+    _args: CloseTipsAndMevShareConfigArgs,
+    accounts: CloseTipsAndMevShareConfigAccounts,
+) -> Instruction {
+    let CloseTipsAndMevShareConfigAccounts {
+        tips_and_mev_share_config,
+        signer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::CloseTipsAndMevShareConfig {}.data(),
+        accounts: crate::accounts::CloseTipsAndMevShareConfig {
+            tips_and_mev_share_config,
+            signer,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct InitializeP2CConfigArgs {
+    pub authority: Pubkey,
+    pub manager_authority: Pubkey,
+    pub record_authority: Pubkey,
+    pub max_epoch_entries: u8,
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
+    pub grace_epochs: u8,
+    pub bump: u8,
+}
+
+pub struct InitializeP2CConfigAccounts {
+    pub p2c_config: Pubkey,
+    pub system_program: Pubkey,
+    pub initializer: Pubkey,
+}
+
+pub fn initialize_p2c_config_ix(
+    program_id: Pubkey,
+    args: InitializeP2CConfigArgs,
+    accounts: InitializeP2CConfigAccounts,
+) -> Instruction {
+    let InitializeP2CConfigArgs {
+        authority,
+        manager_authority,
+        record_authority,
+        max_epoch_entries,
+        commission_bps,
+        commission_account,
+        grace_epochs,
+        bump,
+    } = args;
+    let InitializeP2CConfigAccounts {
+        p2c_config,
+        system_program,
+        initializer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::InitializeP2cConfig {
+            authority,
+            manager_authority,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+            grace_epochs,
+            bump,
+        }
+        .data(),
+        accounts: crate::accounts::InitializeP2CConfig {
+            p2c_config,
+            system_program,
+            initializer,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateP2CConfigArgs {
+    pub manager_authority: Pubkey,
+    pub record_authority: Pubkey,
+    pub max_epoch_entries: u8,
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
+    pub grace_epochs: u8,
+}
+
+pub struct UpdateP2CConfigAccounts {
+    pub p2c_config: Pubkey,
+    pub authority: Pubkey,
+}
+
+pub fn update_p2c_config_ix(
+    program_id: Pubkey,
+    args: UpdateP2CConfigArgs,
+    accounts: UpdateP2CConfigAccounts,
+) -> Instruction {
+    let UpdateP2CConfigArgs {
+        manager_authority,
+        record_authority,
+        max_epoch_entries,
+        commission_bps,
+        commission_account,
+        grace_epochs,
+    } = args;
+    let UpdateP2CConfigAccounts {
+        p2c_config,
+        authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateP2cConfig {
+            manager_authority,
+            record_authority,
+            max_epoch_entries,
+            commission_bps,
+            commission_account,
+            grace_epochs,
+        }
+        .data(),
+        accounts: crate::accounts::UpdateP2CConfig {
+            p2c_config,
+            authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct CloseP2CConfigArgs;
+
+pub struct CloseP2CConfigAccounts {
+    pub p2c_config: Pubkey,
+    pub signer: Pubkey,
+}
+
+pub fn close_p2c_config_ix(
+    program_id: Pubkey,
+    _args: CloseP2CConfigArgs,
+    accounts: CloseP2CConfigAccounts,
+) -> Instruction {
+    let CloseP2CConfigAccounts {
+        p2c_config,
+        signer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::CloseP2cConfig {}.data(),
+        accounts: crate::accounts::CloseP2CConfig {
+            p2c_config,
+            signer,
+        }
+        .to_account_metas(None),
+    }
+}
+
 /// Merkle root and claim limits for uploading new rewards.
 pub struct UploadMerkleRootArgs {
     pub root: [u8; 32],
@@ -385,8 +676,7 @@ pub fn transfer_client_commission_on_mev_commission_ix(
 
     Instruction {
         program_id,
-        data: crate::instruction::TransferClientCommissionOnMevCommission { mev_rewards }
-            .data(),
+        data: crate::instruction::TransferClientCommissionOnMevCommission { mev_rewards }.data(),
         accounts: crate::accounts::TransferClientCommissionOnMevCommission {
             client_commission_account,
             reward_collection_account,
@@ -511,6 +801,7 @@ pub struct InitializeRevenueShareAccountAccounts {
     pub system_program: Pubkey,
 }
 
+#[deprecated(note = "use initialize_revenue_share_account_v1_ix")]
 pub fn initialize_revenue_share_account_ix(
     program_id: Pubkey,
     args: InitializeRevenueShareAccountArgs,
@@ -558,6 +849,63 @@ pub fn initialize_revenue_share_account_ix(
     }
 }
 
+pub struct InitializeRevenueShareAccountV1Args {
+    pub share_kind: RevenueKind,
+    pub name: [u8; 32],
+    pub record_authority: Pubkey,
+    pub bump: u8,
+}
+
+pub struct InitializeRevenueShareAccountV1Accounts {
+    pub revenue_share_account: Pubkey,
+    pub tips_and_mev_share_config: Pubkey,
+    pub rakurai_activation_account: Pubkey,
+    pub validator_vote_account: Pubkey,
+    pub payer: Pubkey,
+    pub system_program: Pubkey,
+}
+
+pub fn initialize_revenue_share_account_v1_ix(
+    program_id: Pubkey,
+    args: InitializeRevenueShareAccountV1Args,
+    accounts: InitializeRevenueShareAccountV1Accounts,
+) -> Instruction {
+    let InitializeRevenueShareAccountV1Args {
+        share_kind,
+        name,
+        record_authority,
+        bump,
+    } = args;
+    let InitializeRevenueShareAccountV1Accounts {
+        revenue_share_account,
+        tips_and_mev_share_config,
+        rakurai_activation_account,
+        validator_vote_account,
+        payer,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::InitializeRevenueShareAccountV1 {
+            share_kind,
+            name,
+            record_authority,
+            bump,
+        }
+        .data(),
+        accounts: crate::accounts::InitializeRevenueShareAccountV1 {
+            revenue_share_account,
+            tips_and_mev_share_config,
+            rakurai_activation_account,
+            validator_vote_account,
+            payer,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
 pub struct RecordRevenueArgs {
     pub amount: u64,
 }
@@ -584,6 +932,234 @@ pub fn record_revenue_ix(
         accounts: crate::accounts::RecordRevenue {
             revenue_share_account,
             record_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub fn record_revenue_v1_ix(
+    program_id: Pubkey,
+    args: RecordRevenueArgs,
+    accounts: RecordRevenueShareAccounts,
+) -> Instruction {
+    let RecordRevenueArgs { amount } = args;
+    let RecordRevenueShareAccounts {
+        revenue_share_account,
+        record_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::RecordRevenueV1 { amount }.data(),
+        accounts: crate::accounts::RecordRevenueV1 {
+            revenue_share_account,
+            record_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct RecordRevenueWithEpochArgs {
+    pub epoch: u64,
+    pub amount: u64,
+}
+
+/// Record amount for an explicit epoch on a V1 vault (rejects future epochs on-chain).
+pub fn record_revenue_v1_with_epoch_ix(
+    program_id: Pubkey,
+    args: RecordRevenueWithEpochArgs,
+    accounts: RecordRevenueShareAccounts,
+) -> Instruction {
+    let RecordRevenueWithEpochArgs { epoch, amount } = args;
+    let RecordRevenueShareAccounts {
+        revenue_share_account,
+        record_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::RecordRevenueV1WithEpoch { epoch, amount }.data(),
+        accounts: crate::accounts::RecordRevenueV1 {
+            revenue_share_account,
+            record_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct RecordAndTransferArgs {
+    pub epoch: u64,
+    pub amount: u64,
+}
+
+pub struct RecordAndTransferAccounts {
+    pub revenue_share_account: Pubkey,
+    pub record_authority: Pubkey,
+    pub payer: Pubkey,
+    pub system_program: Pubkey,
+}
+
+/// Record + settle for an explicit epoch on a V1 vault (rejects future epochs on-chain).
+pub fn record_and_transfer_ix(
+    program_id: Pubkey,
+    args: RecordAndTransferArgs,
+    accounts: RecordAndTransferAccounts,
+) -> Instruction {
+    let RecordAndTransferArgs { epoch, amount } = args;
+    let RecordAndTransferAccounts {
+        revenue_share_account,
+        record_authority,
+        payer,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::RecordAndTransfer { epoch, amount }.data(),
+        accounts: crate::accounts::RecordAndTransfer {
+            revenue_share_account,
+            record_authority,
+            payer,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct SettleRevenueArgs {
+    pub epoch: u64,
+    pub amount: u64,
+}
+
+pub struct SettleRevenueAccounts {
+    pub revenue_share_account: Pubkey,
+    pub payer: Pubkey,
+    pub system_program: Pubkey,
+}
+
+pub fn settle_revenue_ix(
+    program_id: Pubkey,
+    args: SettleRevenueArgs,
+    accounts: SettleRevenueAccounts,
+) -> Instruction {
+    let SettleRevenueArgs { epoch, amount } = args;
+    let SettleRevenueAccounts {
+        revenue_share_account,
+        payer,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::SettleRevenue { epoch, amount }.data(),
+        accounts: crate::accounts::SettleRevenue {
+            revenue_share_account,
+            payer,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateTransferredAmountArgs {
+    pub epoch: u64,
+    pub amount: u64,
+}
+
+pub struct UpdateTransferredAmountAccounts {
+    pub revenue_share_account: Pubkey,
+    pub authority: Pubkey,
+}
+
+pub fn update_transferred_amount_ix(
+    program_id: Pubkey,
+    args: UpdateTransferredAmountArgs,
+    accounts: UpdateTransferredAmountAccounts,
+) -> Instruction {
+    let UpdateTransferredAmountArgs { epoch, amount } = args;
+    let UpdateTransferredAmountAccounts {
+        revenue_share_account,
+        authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateTransferredAmount { epoch, amount }.data(),
+        accounts: crate::accounts::UpdateTransferredAmount {
+            revenue_share_account,
+            authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateDeficitArgs {
+    pub update: crate::state::DeficitUpdate,
+}
+
+pub struct UpdateDeficitAccounts {
+    pub revenue_share_account: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+pub fn update_deficit_ix(
+    program_id: Pubkey,
+    args: UpdateDeficitArgs,
+    accounts: UpdateDeficitAccounts,
+) -> Instruction {
+    let UpdateDeficitArgs { update } = args;
+    let UpdateDeficitAccounts {
+        revenue_share_account,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateDeficit { update }.data(),
+        accounts: crate::accounts::UpdateDeficit {
+            revenue_share_account,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct ClearDeficitV1Args {
+    pub amount: u64,
+}
+
+pub struct ClearDeficitV1Accounts {
+    pub revenue_share_account: Pubkey,
+    pub commission_account: Pubkey,
+    pub validator_identity: Pubkey,
+    pub funder: Pubkey,
+    pub system_program: Pubkey,
+}
+
+/// Funder transfers; TCAV1 clears deficit and pays commission + identity.
+pub fn clear_deficit_v1_ix(
+    program_id: Pubkey,
+    args: ClearDeficitV1Args,
+    accounts: ClearDeficitV1Accounts,
+) -> Instruction {
+    let ClearDeficitV1Args { amount } = args;
+    let ClearDeficitV1Accounts {
+        revenue_share_account,
+        commission_account,
+        validator_identity,
+        funder,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::ClearDeficitV1 { amount }.data(),
+        accounts: crate::accounts::ClearDeficitV1 {
+            revenue_share_account,
+            commission_account,
+            validator_identity,
+            funder,
+            system_program,
         }
         .to_account_metas(None),
     }
@@ -617,6 +1193,32 @@ pub fn claim_revenue_ix(
         program_id,
         data: crate::instruction::ClaimRevenue { epoch }.data(),
         accounts: crate::accounts::ClaimRevenue {
+            revenue_share_account,
+            commission_account,
+            validator_identity,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub fn claim_revenue_v1_ix(
+    program_id: Pubkey,
+    args: ClaimRevenueArgs,
+    accounts: ClaimRevenueShareAccounts,
+) -> Instruction {
+    let ClaimRevenueArgs { epoch } = args;
+    let ClaimRevenueShareAccounts {
+        revenue_share_account,
+        commission_account,
+        validator_identity,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::ClaimRevenueV1 { epoch }.data(),
+        accounts: crate::accounts::ClaimRevenueV1 {
             revenue_share_account,
             commission_account,
             validator_identity,
@@ -674,6 +1276,42 @@ pub fn update_revenue_share_config_ix(
     }
 }
 
+/// Updates TCAV1 / MCAV1 config (`REVENUE_SHARE_V1`).
+pub fn update_revenue_share_config_v1_ix(
+    program_id: Pubkey,
+    args: UpdateRevenueShareConfigArgs,
+    accounts: UpdateRevenueShareConfigAccounts,
+) -> Instruction {
+    let UpdateRevenueShareConfigArgs {
+        commission_bps,
+        commission_account,
+        block_reward_conversion_enabled,
+        record_authority,
+    } = args;
+    let UpdateRevenueShareConfigAccounts {
+        revenue_share_account,
+        config,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateRevenueShareConfigV1 {
+            commission_bps,
+            commission_account,
+            block_reward_conversion_enabled,
+            record_authority,
+        }
+        .data(),
+        accounts: crate::accounts::UpdateRevenueShareConfigV1 {
+            revenue_share_account,
+            config,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
 pub struct UpdateEpochConvertedToBlockRewardArgs {
     pub epoch: u64,
 }
@@ -708,6 +1346,31 @@ pub fn update_epoch_converted_to_block_reward_ix(
     }
 }
 
+/// Marks a claimed TCAV1 / MCAV1 epoch as `block_reward_converted`.
+pub fn update_epoch_converted_to_block_reward_v1_ix(
+    program_id: Pubkey,
+    args: UpdateEpochConvertedToBlockRewardArgs,
+    accounts: UpdateEpochConvertedToBlockRewardAccounts,
+) -> Instruction {
+    let UpdateEpochConvertedToBlockRewardArgs { epoch } = args;
+    let UpdateEpochConvertedToBlockRewardAccounts {
+        revenue_share_account,
+        validator_vote_account,
+        signer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateEpochConvertedToBlockRewardV1 { epoch }.data(),
+        accounts: crate::accounts::UpdateEpochConvertedToBlockRewardV1 {
+            revenue_share_account,
+            validator_vote_account,
+            signer,
+        }
+        .to_account_metas(None),
+    }
+}
+
 pub struct CloseRevenueShareAccountAccounts {
     pub revenue_share_account: Pubkey,
     pub initializer: Pubkey,
@@ -731,6 +1394,377 @@ pub fn close_revenue_share_account_ix(
             revenue_share_account,
             initializer,
             authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct CloseRevenueShareAccountV1Accounts {
+    pub revenue_share_account: Pubkey,
+    pub initializer: Pubkey,
+    pub authority: Pubkey,
+}
+
+pub fn close_revenue_share_account_v1_ix(
+    program_id: Pubkey,
+    accounts: CloseRevenueShareAccountV1Accounts,
+) -> Instruction {
+    let CloseRevenueShareAccountV1Accounts {
+        revenue_share_account,
+        initializer,
+        authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::CloseRevenueShareAccountV1 {}.data(),
+        accounts: crate::accounts::CloseRevenueShareAccountV1 {
+            revenue_share_account,
+            initializer,
+            authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+// ---- P2C subscription ----
+
+pub struct InitializeP2CSubscriptionAccountArgs {
+    pub name: [u8; 32],
+    pub bump: u8,
+}
+
+pub struct InitializeP2CSubscriptionAccountAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub p2c_config: Pubkey,
+    pub validator_vote_account: Pubkey,
+    pub payer: Pubkey,
+    pub system_program: Pubkey,
+}
+
+pub fn initialize_p2c_subscription_account_ix(
+    program_id: Pubkey,
+    args: InitializeP2CSubscriptionAccountArgs,
+    accounts: InitializeP2CSubscriptionAccountAccounts,
+) -> Instruction {
+    let InitializeP2CSubscriptionAccountArgs { name, bump } = args;
+    let InitializeP2CSubscriptionAccountAccounts {
+        p2c_subscription_account,
+        p2c_config,
+        validator_vote_account,
+        payer,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::InitializeP2cSubscriptionAccount { name, bump }.data(),
+        accounts: crate::accounts::InitializeP2CSubscriptionAccount {
+            p2c_subscription_account,
+            p2c_config,
+            validator_vote_account,
+            payer,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct FundP2CSubscriptionArgs {
+    pub amount: u64,
+}
+
+pub struct FundP2CSubscriptionAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub funder: Pubkey,
+    pub system_program: Pubkey,
+}
+
+pub fn fund_p2c_subscription_ix(
+    program_id: Pubkey,
+    args: FundP2CSubscriptionArgs,
+    accounts: FundP2CSubscriptionAccounts,
+) -> Instruction {
+    let FundP2CSubscriptionArgs { amount } = args;
+    let FundP2CSubscriptionAccounts {
+        p2c_subscription_account,
+        funder,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::FundP2cSubscription { amount }.data(),
+        accounts: crate::accounts::FundP2CSubscription {
+            p2c_subscription_account,
+            funder,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct RecordP2CSubscriptionArgs {
+    pub epoch: u64,
+    pub stake: u64,
+    pub amount_due: u64,
+}
+
+pub struct RecordP2CSubscriptionAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+pub fn record_p2c_subscription_ix(
+    program_id: Pubkey,
+    args: RecordP2CSubscriptionArgs,
+    accounts: RecordP2CSubscriptionAccounts,
+) -> Instruction {
+    let RecordP2CSubscriptionArgs {
+        epoch,
+        stake,
+        amount_due,
+    } = args;
+    let RecordP2CSubscriptionAccounts {
+        p2c_subscription_account,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::RecordP2cSubscription {
+            epoch,
+            stake,
+            amount_due,
+        }
+        .data(),
+        accounts: crate::accounts::RecordP2CSubscription {
+            p2c_subscription_account,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct ClaimEpochP2CSubscriptionArgs {
+    pub epoch: u64,
+    /// If true and due is not fully prepaid, mark claimed and book shortfall as deficit.
+    pub force_claim: bool,
+}
+
+pub struct ClaimEpochP2CSubscriptionAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub commission_account: Pubkey,
+    pub validator_identity: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+pub fn claim_epoch_p2c_subscription_ix(
+    program_id: Pubkey,
+    args: ClaimEpochP2CSubscriptionArgs,
+    accounts: ClaimEpochP2CSubscriptionAccounts,
+) -> Instruction {
+    let ClaimEpochP2CSubscriptionArgs { epoch, force_claim } = args;
+    let ClaimEpochP2CSubscriptionAccounts {
+        p2c_subscription_account,
+        commission_account,
+        validator_identity,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::ClaimEpochP2cSubscription { epoch, force_claim }.data(),
+        accounts: crate::accounts::ClaimEpochP2CSubscription {
+            p2c_subscription_account,
+            commission_account,
+            validator_identity,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateP2CEpochConvertedToBlockRewardArgs {
+    pub epoch: u64,
+}
+
+pub struct UpdateP2CEpochConvertedToBlockRewardAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub validator_vote_account: Pubkey,
+    pub signer: Pubkey,
+}
+
+pub fn update_p2c_epoch_converted_to_block_reward_ix(
+    program_id: Pubkey,
+    args: UpdateP2CEpochConvertedToBlockRewardArgs,
+    accounts: UpdateP2CEpochConvertedToBlockRewardAccounts,
+) -> Instruction {
+    let UpdateP2CEpochConvertedToBlockRewardArgs { epoch } = args;
+    let UpdateP2CEpochConvertedToBlockRewardAccounts {
+        p2c_subscription_account,
+        validator_vote_account,
+        signer,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateP2cEpochConvertedToBlockReward { epoch }.data(),
+        accounts: crate::accounts::UpdateP2CEpochConvertedToBlockReward {
+            p2c_subscription_account,
+            validator_vote_account,
+            signer,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateP2CSubscriptionConfigArgs {
+    pub commission_bps: u16,
+    pub commission_account: Pubkey,
+    pub block_reward_conversion_enabled: bool,
+    pub grace_epochs: Option<u8>,
+    pub record_authority: Option<Pubkey>,
+}
+
+pub struct UpdateP2CSubscriptionConfigAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub config: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+pub fn update_p2c_subscription_config_ix(
+    program_id: Pubkey,
+    args: UpdateP2CSubscriptionConfigArgs,
+    accounts: UpdateP2CSubscriptionConfigAccounts,
+) -> Instruction {
+    let UpdateP2CSubscriptionConfigArgs {
+        commission_bps,
+        commission_account,
+        block_reward_conversion_enabled,
+        grace_epochs,
+        record_authority,
+    } = args;
+    let UpdateP2CSubscriptionConfigAccounts {
+        p2c_subscription_account,
+        config,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateP2cSubscriptionConfig {
+            commission_bps,
+            commission_account,
+            block_reward_conversion_enabled,
+            grace_epochs,
+            record_authority,
+        }
+        .data(),
+        accounts: crate::accounts::UpdateP2CSubscriptionConfig {
+            p2c_subscription_account,
+            config,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct UpdateP2CDeficitArgs {
+    pub update: crate::state::DeficitUpdate,
+}
+
+pub struct UpdateP2CDeficitAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+pub fn update_p2c_deficit_ix(
+    program_id: Pubkey,
+    args: UpdateP2CDeficitArgs,
+    accounts: UpdateP2CDeficitAccounts,
+) -> Instruction {
+    let UpdateP2CDeficitArgs { update } = args;
+    let UpdateP2CDeficitAccounts {
+        p2c_subscription_account,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::UpdateP2cDeficit { update }.data(),
+        accounts: crate::accounts::UpdateP2CDeficit {
+            p2c_subscription_account,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct ClearP2CDeficitArgs {
+    pub amount: u64,
+}
+
+pub struct ClearP2CDeficitAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub commission_account: Pubkey,
+    pub validator_identity: Pubkey,
+    pub funder: Pubkey,
+    pub system_program: Pubkey,
+}
+
+/// User transfers SOL; program deducts up to deficit and pays commission + identity.
+pub fn clear_p2c_deficit_ix(
+    program_id: Pubkey,
+    args: ClearP2CDeficitArgs,
+    accounts: ClearP2CDeficitAccounts,
+) -> Instruction {
+    let ClearP2CDeficitArgs { amount } = args;
+    let ClearP2CDeficitAccounts {
+        p2c_subscription_account,
+        commission_account,
+        validator_identity,
+        funder,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::ClearP2cDeficit { amount }.data(),
+        accounts: crate::accounts::ClearP2CDeficit {
+            p2c_subscription_account,
+            commission_account,
+            validator_identity,
+            funder,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub struct CloseP2CSubscriptionAccountAccounts {
+    pub p2c_subscription_account: Pubkey,
+    pub initializer: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+pub fn close_p2c_subscription_account_ix(
+    program_id: Pubkey,
+    accounts: CloseP2CSubscriptionAccountAccounts,
+) -> Instruction {
+    let CloseP2CSubscriptionAccountAccounts {
+        p2c_subscription_account,
+        initializer,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::CloseP2cSubscriptionAccount {}.data(),
+        accounts: crate::accounts::CloseP2CSubscriptionAccount {
+            p2c_subscription_account,
+            initializer,
+            manager_authority,
         }
         .to_account_metas(None),
     }
