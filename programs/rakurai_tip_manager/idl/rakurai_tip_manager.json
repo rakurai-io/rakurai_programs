@@ -367,8 +367,7 @@
     {
       "name": "change_tip_receiver",
       "docs": [
-        "Changes the active tip receiver (legacy). Drains tips and rotates config receiver.",
-        "Prefer `change_tip_receiver_v1` for RAA gate, vote auth, and TCA validation."
+        "Deprecated: use [`change_tip_receiver_v2`]."
       ],
       "discriminator": [
         69,
@@ -715,10 +714,7 @@
     {
       "name": "change_tip_receiver_v1",
       "docs": [
-        "Changes the active tip receiver and drains tips to `old_tip_receiver` (wallet or TCA).",
-        "Commission on the drain uses tip-manager **global** config (set by the previous leader from",
-        "their TCA). After the drain, global commission is synced from the **new** TCA for the next",
-        "leader. When `old_tip_receiver` is a TCA, CPIs `record_revenue` to update the ledger."
+        "Deprecated: use [`change_tip_receiver_v2`]."
       ],
       "discriminator": [
         179,
@@ -1101,7 +1097,7 @@
       "docs": [
         "Mirror of `change_tip_receiver_v1` for **TCAV1** (`REVENUE_SHARE_V1`).",
         "Commission on the drain uses tip-manager global config; after drain, syncs global from the",
-        "**new** TCAV1. Optional CPI `record_revenue_v1`."
+        "**new** TCAV1. Records against legacy TCA or TCAV1 old receiver."
       ],
       "discriminator": [
         205,
@@ -2274,6 +2270,11 @@
       "code": 6003,
       "name": "RakuraiSchedulerNotEnabled",
       "msg": "Rakurai scheduler is not enabled for this validator."
+    },
+    {
+      "code": 6004,
+      "name": "Deprecated",
+      "msg": "This instruction is deprecated; use the v2 / current replacement."
     }
   ],
   "types": [

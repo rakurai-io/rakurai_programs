@@ -2,22 +2,22 @@ use {
     anchor_lang::AccountDeserialize,
     clap::{Args, Parser, Subcommand, ValueEnum},
     colored::{ColoredString, Colorize},
+    rakurai_activation::sdk::derive_activation_account_address,
     rakurai_cli::{
-        normalize_to_url_if_moniker, parse_keypair, parse_pubkey, sign_and_send_instructions,
-        sign_and_send_transaction,
+        get_node_pubkey_from_vote_account, normalize_to_url_if_moniker, parse_keypair,
+        parse_pubkey, sign_and_send_instructions, sign_and_send_transaction,
     },
     reward_distribution::{
         sdk::{
-            derive_revenue_share_account_address, derive_revenue_share_account_v1_address,
+            derive_revenue_share_account_v1_address, derive_tips_and_mev_share_config_address,
             instruction::{
-                record_revenue_ix, record_revenue_v1_ix, settle_revenue_ix, RecordRevenueArgs,
-                RecordRevenueShareAccounts, SettleRevenueAccounts, SettleRevenueArgs,
+                initialize_revenue_share_account_v1_ix, record_revenue_v1_with_epoch_ix,
+                settle_revenue_ix, InitializeRevenueShareAccountV1Accounts,
+                InitializeRevenueShareAccountV1Args, RecordRevenueShareAccounts,
+                RecordRevenueWithEpochArgs, SettleRevenueAccounts, SettleRevenueArgs,
             },
         },
-        state::{
-            EpochAmountEntry, EpochAmountEntryV1, RevenueKind, RevenueShareAccount,
-            RevenueShareAccountV1,
-        },
+        state::{EpochAmountEntryV1, RevenueKind, RevenueShareAccountV1, RAKURAI_REVENUE_NAME},
     },
     solana_account_decoder_client_types::UiAccountEncoding,
     solana_rpc_client::rpc_client::RpcClient,
@@ -27,7 +27,7 @@ use {
     },
     solana_sdk::{
         account::Account, commitment_config::CommitmentConfig, instruction::Instruction,
-        pubkey::Pubkey, rent::Rent, signature::Signer, system_instruction, system_program,
+        pubkey::Pubkey, rent::Rent, signature::Signer, system_program,
     },
     std::{error::Error, sync::Arc},
 };
@@ -38,7 +38,7 @@ type CliResult<T = ()> = Result<T, Box<dyn Error>>;
 const SHARE_KIND_OFFSET: usize = 8;
 const NAME_OFFSET: usize = 9;
 /// Default instructions per settle-all transaction (tx size limits).
-const DEFAULT_TRANSFER_ALL_BATCH_SIZE: usize = 10;
+const DEFAULT_TRANSFER_ALL_BATCH_SIZE: usize = 5;
 
 #[derive(Parser)]
 #[command(
@@ -79,19 +79,22 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Fetch and display one TCA or MCA (requires vote pubkey).
+    /// Create a partner MCA (Mev-share) vault. TCA init and reserved `rakurai` name are blocked.
+    #[command(hide = true)]
+    CreateAccount(CreateAccountArgs),
+    /// Show one MCA/TCA: balance, owed, and deficit (pass `--vote-pubkey`).
     GetAccount(AccountArgs),
-    /// List every TCA or MCA for a service (`--revenue-kind` + `--revenue-name`).
+    /// List all MCA/TCA for a service as a vote × epoch pending table.
     GetAllAccounts(GetAllAccountsArgs),
-    /// Show the unclaimed/unsettled record for one epoch.
+    /// Show pending amount for one epoch on one MCA/TCA.
     GetPendingRecord(PendingRecordArgs),
-    /// Show every epoch record that still has an amount pending settlement.
+    /// List every unsettled epoch on one MCA/TCA.
     GetAllPendingRecords(AccountArgs),
-    /// Record MCA MevShare revenue for the current epoch (post-pack partners).
+    /// Record RevShare amount on an MCA ledger (no SOL moves; `--epoch` + `--amount`).
     RecordRevenue(RecordRevenueCliArgs),
-    /// Transfer SOL into a vault for one recorded epoch.
+    /// Settle MevShare for one recorded epoch by transferring SOL into the MCA/TCA.
     Transfer(TransferArgs),
-    /// Settle all pending epochs for every vault matching this service.
+    /// Settle every pending epoch across all MCA/TCA for this service.
     TransferAll(TransferAllArgs),
 }
 
@@ -111,16 +114,6 @@ impl From<ShareKindArg> for RevenueKind {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
-enum AccountVersion {
-    /// Prefer V1, then legacy. Fail only if neither exists.
-    Auto,
-    /// Legacy PDA only.
-    Legacy,
-    /// V1 PDA only.
-    V1,
-}
-
 #[derive(Args, Clone)]
 struct ServiceArgs {
     /// TCA (`Tip`) or MCA (`Mev-share`).
@@ -130,15 +123,34 @@ struct ServiceArgs {
     /// Service revenue name (unique id assigned by Rakurai; PDA seed).
     #[arg(long = "revenue-name", required = true)]
     revenue_name: String,
+}
 
-    /// Select the PDA layout. Defaults to auto (include both layouts when listing).
+#[derive(Args)]
+struct CreateAccountArgs {
+    /// Partner service id (PDA seed). Reserved name `rakurai` is blocked.
+    #[arg(long = "revenue-name", required = true)]
+    revenue_name: String,
+
+    /// Validator vote account used in the PDA seeds.
+    #[arg(short = 'v', long = "vote-pubkey", required = true, value_parser = parse_pubkey)]
+    vote_pubkey: Pubkey,
+
+    /// MCA record authority (must sign later `record-revenue` calls).
+    #[arg(long = "record-authority", required = true, value_parser = parse_pubkey)]
+    record_authority: Pubkey,
+
+    /// Rakurai Activation program ID (RAA must exist and be enabled for this validator).
     #[arg(
-        long = "account-version",
-        alias = "vault-version",
-        value_enum,
-        default_value = "auto"
+        long = "activation-program-id",
+        required = true,
+        value_parser = parse_pubkey,
+        help = "Rakurai Activation Program ID [testnet: pmQHMpnpA534JmxEdwY3ADfwDBFmy5my3CeutHM2QTt, mainnet-beta: rAKACC6Qw8HYa87ntGPRbfYEMnK2D9JVLsmZaKPpMmi]"
     )]
-    account_version: AccountVersion,
+    activation_program_id: Pubkey,
+
+    /// Preview without sending a transaction.
+    #[arg(long, default_value_t = false)]
+    dry_run: bool,
 }
 
 #[derive(Args, Clone)]
@@ -155,6 +167,10 @@ struct TargetArgs {
 struct AccountArgs {
     #[command(flatten)]
     target: TargetArgs,
+
+    /// Show per-epoch ledger breakdown.
+    #[arg(long, default_value_t = false)]
+    detail: bool,
 }
 
 #[derive(Args)]
@@ -172,7 +188,11 @@ struct RecordRevenueCliArgs {
     #[command(flatten)]
     target: TargetArgs,
 
-    /// Lamports to add to the current-epoch recorded amount on the MCA.
+    /// Epoch ledger entry to attribute (must not be in the future).
+    #[arg(short, long, required = true)]
+    epoch: u64,
+
+    /// Lamports to add to the epoch's recorded amount on the MCA.
     #[arg(short = 'x', long, required = true)]
     amount: u64,
 }
@@ -210,7 +230,7 @@ struct TransferAllArgs {
     #[command(flatten)]
     service: ServiceArgs,
 
-    /// Instructions (settle epochs) per transaction. Default: 10.
+    /// Instructions (settle epochs) per transaction (keeps tx size under limits). Default: 5.
     #[arg(long, default_value_t = DEFAULT_TRANSFER_ALL_BATCH_SIZE)]
     batch_size: usize,
 
@@ -219,184 +239,81 @@ struct TransferAllArgs {
     dry_run: bool,
 }
 
-enum VaultAccount {
-    Legacy {
-        address: Pubkey,
-        account: RevenueShareAccount,
-        /// On-chain lamports at load time (for legacy pending vs balance).
-        lamports: u64,
-    },
-    V1 {
-        address: Pubkey,
-        account: RevenueShareAccountV1,
-        lamports: u64,
-    },
+// ---------------------------------------------------------------------------
+// Vault wrapper (V1 only)
+// ---------------------------------------------------------------------------
+
+struct VaultAccount {
+    address: Pubkey,
+    account: RevenueShareAccountV1,
 }
 
 impl VaultAccount {
     fn address(&self) -> Pubkey {
-        match self {
-            Self::Legacy { address, .. } | Self::V1 { address, .. } => *address,
-        }
+        self.address
     }
 
-    fn lamports(&self) -> u64 {
-        match self {
-            Self::Legacy { lamports, .. } | Self::V1 { lamports, .. } => *lamports,
-        }
-    }
-
-    /// Claimable balance = total lamports minus rent-exempt minimum (matches on-chain claim).
-    fn available_balance(&self) -> u64 {
-        let space = match self {
-            Self::Legacy { account, .. } => {
-                RevenueShareAccount::space_for(account.max_epoch_entries as usize)
-            }
-            Self::V1 { account, .. } => {
-                RevenueShareAccountV1::space_for(account.max_epoch_entries as usize)
-            }
-        };
-        self.lamports()
-            .saturating_sub(Rent::default().minimum_balance(space))
-    }
-
-    fn version_name(&self) -> &'static str {
-        match self {
-            Self::Legacy { .. } => "legacy",
-            Self::V1 { .. } => "v1",
-        }
+    /// Spendable lamports after the rent-exempt minimum.
+    fn balance_after_rent(&self, lamports: u64) -> u64 {
+        let space = RevenueShareAccountV1::space_for(self.account.max_epoch_entries as usize);
+        lamports.saturating_sub(Rent::default().minimum_balance(space))
     }
 
     fn record_authority(&self) -> Pubkey {
-        match self {
-            Self::Legacy { account, .. } => account.record_authority,
-            Self::V1 { account, .. } => account.record_authority,
-        }
+        self.account.record_authority
     }
 
     fn share_kind(&self) -> RevenueKind {
-        match self {
-            Self::Legacy { account, .. } => account.share_kind,
-            Self::V1 { account, .. } => account.share_kind,
-        }
+        self.account.share_kind
     }
 
     fn validator_vote(&self) -> Pubkey {
-        match self {
-            Self::Legacy { account, .. } => account.validator_vote,
-            Self::V1 { account, .. } => account.validator_vote,
-        }
+        self.account.validator_vote
     }
 
     fn revenue_name(&self) -> [u8; 32] {
-        match self {
-            Self::Legacy { account, .. } => account.name,
-            Self::V1 { account, .. } => account.name,
-        }
+        self.account.name
     }
 
     fn is_rakurai_tip_tca(&self) -> bool {
-        match self {
-            Self::Legacy { account, .. } => {
-                account.share_kind == RevenueKind::Tip
-                    && account.name == reward_distribution::state::RAKURAI_REVENUE_NAME
-            }
-            Self::V1 { account, .. } => account.is_rakurai_tip_tca(),
-        }
+        self.account.is_rakurai_tip_tca()
     }
 
-    /// Pending SOL still needed for partner settle (not manager claim).
-    ///
-    /// **Legacy:** Unclaimed epochs are covered by rent-aware vault balance (oldest first).
-    /// Fully covered epochs are claim-only (not pending). When balance cannot cover
-    /// recorded `amount`, pending = remaining shortfall.
-    ///
-    /// **V1:** Unclaimed with `transferred_amount < amount` → pending =
-    /// `amount - transferred`. Fully transferred but unclaimed is claim-only.
     fn pending(&self, epoch: u64) -> CliResult<PendingAmount> {
         if let Some((_, p)) = self.all_pending().into_iter().find(|(e, _)| *e == epoch) {
             return Ok(p);
         }
-        // No settle shortfall: report the raw entry (claim-only or missing settle need).
-        match self {
-            Self::Legacy { account, .. } => {
-                let entry = find_legacy_entry(account, epoch)?;
-                Ok(PendingAmount {
-                    recorded: entry.amount,
-                    transferred: None,
-                    pending: 0,
-                    claimed: entry.claimed,
-                })
-            }
-            Self::V1 { account, .. } => {
-                let entry = find_v1_entry(account, epoch)?;
-                Ok(PendingAmount {
-                    recorded: entry.amount,
-                    transferred: Some(entry.transferred_amount),
-                    pending: 0,
-                    claimed: entry.claimed,
-                })
-            }
-        }
+        let entry = find_v1_entry(&self.account, epoch)?;
+        Ok(PendingAmount {
+            recorded: entry.amount,
+            transferred: entry.transferred_amount,
+            pending: 0,
+            claimed: entry.claimed,
+        })
     }
 
     fn all_pending(&self) -> Vec<(u64, PendingAmount)> {
-        let mut records: Vec<(u64, PendingAmount)> = match self {
-            Self::Legacy { account, .. } => {
-                // Cover unclaimed epochs with available vault balance (oldest first).
-                let mut cover = self.available_balance();
-                let mut entries: Vec<_> = account
-                    .ledger
-                    .entries
-                    .iter()
-                    .filter(|e| !e.claimed && e.amount > 0)
-                    .collect();
-                entries.sort_unstable_by_key(|e| e.epoch);
-                let mut out = Vec::new();
-                for entry in entries {
-                    if cover >= entry.amount {
-                        // Fully funded → claim remains, not settle-pending.
-                        cover -= entry.amount;
-                        continue;
-                    }
-                    let pending = entry.amount - cover;
-                    cover = 0;
-                    out.push((
-                        entry.epoch,
-                        PendingAmount {
-                            recorded: entry.amount,
-                            transferred: None,
-                            pending,
-                            claimed: false,
-                        },
-                    ));
+        let mut records: Vec<(u64, PendingAmount)> = self
+            .account
+            .ledger
+            .entries
+            .iter()
+            .filter_map(|entry| {
+                if entry.claimed {
+                    return None;
                 }
-                out
-            }
-            Self::V1 { account, .. } => {
-                // Ledger transfer shortfall is settle-pending; fully transferred → claim only.
-                account
-                    .ledger
-                    .entries
-                    .iter()
-                    .filter_map(|entry| {
-                        if entry.claimed {
-                            return None;
-                        }
-                        let pending = entry.amount.saturating_sub(entry.transferred_amount);
-                        (pending > 0).then_some((
-                            entry.epoch,
-                            PendingAmount {
-                                recorded: entry.amount,
-                                transferred: Some(entry.transferred_amount),
-                                pending,
-                                claimed: false,
-                            },
-                        ))
-                    })
-                    .collect()
-            }
-        };
+                let pending = entry.amount.saturating_sub(entry.transferred_amount);
+                (pending > 0).then_some((
+                    entry.epoch,
+                    PendingAmount {
+                        recorded: entry.amount,
+                        transferred: entry.transferred_amount,
+                        pending,
+                        claimed: false,
+                    },
+                ))
+            })
+            .collect();
         records.sort_unstable_by_key(|(epoch, _)| *epoch);
         records
     }
@@ -404,10 +321,14 @@ impl VaultAccount {
 
 struct PendingAmount {
     recorded: u64,
-    transferred: Option<u64>,
+    transferred: u64,
     pending: u64,
     claimed: bool,
 }
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 fn name_to_bytes(name: &str) -> Result<[u8; 32], String> {
     let bytes = name.as_bytes();
@@ -426,6 +347,16 @@ fn name_to_bytes(name: &str) -> Result<[u8; 32], String> {
     Ok(result)
 }
 
+fn reject_reserved_rakurai_name(name: &[u8; 32]) -> CliResult {
+    if *name == RAKURAI_REVENUE_NAME {
+        return Err(
+            "reserved revenue name `rakurai` cannot be used to create partner MCA/PSA accounts"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
 fn name_to_string(name: &[u8; 32]) -> String {
     let len = name
         .iter()
@@ -434,51 +365,13 @@ fn name_to_string(name: &[u8; 32]) -> String {
     String::from_utf8_lossy(&name[..len]).into_owned()
 }
 
-fn find_legacy_entry(account: &RevenueShareAccount, epoch: u64) -> CliResult<&EpochAmountEntry> {
-    account
-        .ledger
-        .entries
-        .iter()
-        .find(|entry| entry.epoch == epoch)
-        .ok_or_else(|| format!("no legacy record found for epoch {epoch}").into())
-}
-
 fn find_v1_entry(account: &RevenueShareAccountV1, epoch: u64) -> CliResult<&EpochAmountEntryV1> {
     account
         .ledger
         .entries
         .iter()
         .find(|entry| entry.epoch == epoch)
-        .ok_or_else(|| format!("no V1 record found for epoch {epoch}").into())
-}
-
-fn decode_legacy(
-    address: Pubkey,
-    raw: Option<Account>,
-    program_id: Pubkey,
-) -> CliResult<Option<VaultAccount>> {
-    let Some(raw) = raw else {
-        return Ok(None);
-    };
-    if raw.owner != program_id {
-        return Err(format!(
-            "legacy account {address} is owned by {}, expected {program_id}",
-            raw.owner
-        )
-        .into());
-    }
-
-    let lamports = raw.lamports;
-    let mut data = raw.data.as_slice();
-    match RevenueShareAccount::try_deserialize(&mut data) {
-        Ok(account) => Ok(Some(VaultAccount::Legacy {
-            address,
-            account,
-            lamports,
-        })),
-        // Wrong layout (e.g. V1 PDA data / unrelated program account): treat as missing.
-        Err(_) => Ok(None),
-    }
+        .ok_or_else(|| format!("no record found for epoch {epoch}").into())
 }
 
 fn decode_v1(
@@ -491,41 +384,17 @@ fn decode_v1(
     };
     if raw.owner != program_id {
         return Err(format!(
-            "V1 account {address} is owned by {}, expected {program_id}",
+            "account {address} is owned by {}, expected {program_id}",
             raw.owner
         )
         .into());
     }
 
-    let lamports = raw.lamports;
     let mut data = raw.data.as_slice();
     match RevenueShareAccountV1::try_deserialize(&mut data) {
-        Ok(account) => Ok(Some(VaultAccount::V1 {
-            address,
-            account,
-            lamports,
-        })),
-        // Wrong layout (e.g. legacy PDA data): treat as missing.
+        Ok(account) => Ok(Some(VaultAccount { address, account })),
         Err(_) => Ok(None),
     }
-}
-
-fn decode_for_version(
-    address: Pubkey,
-    raw: Account,
-    program_id: Pubkey,
-    account_version: AccountVersion,
-) -> CliResult<Option<VaultAccount>> {
-    if raw.owner != program_id {
-        return Ok(None);
-    }
-    Ok(match account_version {
-        AccountVersion::Legacy => decode_legacy(address, Some(raw), program_id)?,
-        AccountVersion::V1 => decode_v1(address, Some(raw), program_id)?,
-        // Prefer V1 when both would fail-safe; try V1 first then legacy.
-        AccountVersion::Auto => decode_v1(address, Some(raw.clone()), program_id)?
-            .or(decode_legacy(address, Some(raw), program_id)?),
-    })
 }
 
 fn load_target(
@@ -535,41 +404,11 @@ fn load_target(
 ) -> CliResult<VaultAccount> {
     let name = name_to_bytes(&target.service.revenue_name)?;
     let kind = target.service.revenue_kind.into();
-    let legacy_address =
-        derive_revenue_share_account_address(&program_id, kind, &name, &target.vote_pubkey).0;
     let v1_address =
         derive_revenue_share_account_v1_address(&program_id, kind, &name, &target.vote_pubkey).0;
-    let mut accounts = rpc_client.get_multiple_accounts(&[legacy_address, v1_address])?;
-    let v1 = decode_v1(
-        v1_address,
-        accounts
-            .pop()
-            .ok_or("RPC omitted the V1 account response")?,
-        program_id,
-    )?;
-    let legacy = decode_legacy(
-        legacy_address,
-        accounts
-            .pop()
-            .ok_or("RPC omitted the legacy account response")?,
-        program_id,
-    )?;
-
-    match target.service.account_version {
-        AccountVersion::Legacy => legacy
-            .ok_or_else(|| format!("legacy account does not exist at {legacy_address}").into()),
-        AccountVersion::V1 => {
-            v1.ok_or_else(|| format!("V1 account does not exist at {v1_address}").into())
-        }
-        AccountVersion::Auto => match (v1, legacy) {
-            (Some(account), _) => Ok(account),
-            (None, Some(account)) => Ok(account),
-            (None, None) => Err(format!(
-                "no V1 or legacy account exists (V1 {v1_address}, legacy {legacy_address})"
-            )
-            .into()),
-        },
-    }
+    let raw = rpc_client.get_account(&v1_address).ok();
+    decode_v1(v1_address, raw, program_id)?
+        .ok_or_else(|| format!("account does not exist at {v1_address}").into())
 }
 
 fn share_kind_byte(kind: RevenueKind) -> u8 {
@@ -611,60 +450,203 @@ fn load_service_accounts(
 
     let mut vaults = Vec::new();
     for (address, raw) in accounts {
-        if let Some(vault) = decode_for_version(address, raw, program_id, service.account_version)?
-        {
+        if let Some(vault) = decode_v1(address, Some(raw), program_id)? {
             if vault.share_kind() == kind && vault.revenue_name() == name {
                 vaults.push(vault);
             }
         }
     }
 
-    vaults.sort_by_key(|vault| (vault.validator_vote().to_string(), vault.version_name()));
+    vaults.sort_by_key(|vault| vault.validator_vote().to_string());
     Ok(vaults)
 }
+
+// ---------------------------------------------------------------------------
+// Display helpers
+// ---------------------------------------------------------------------------
 
 fn print_heading(title: &str) {
     println!("📌 {}", title.bold().underline().blue());
 }
 
 fn print_field(icon: ColoredString, label: &str, value: impl std::fmt::Display) {
-    // Match rakurai-activation: icon + fixed-width label + value.
     println!("   {} {:<12} {}", icon, label, value);
 }
 
-fn display_account(vault: &VaultAccount, balance: u64) {
-    let (kind, name, vote, record_authority) = match vault {
-        VaultAccount::Legacy { account, .. } => (
-            account.share_kind,
-            &account.name,
-            account.validator_vote,
-            account.record_authority,
-        ),
-        VaultAccount::V1 { account, .. } => (
-            account.share_kind,
-            &account.name,
-            account.validator_vote,
-            account.record_authority,
-        ),
-    };
+fn kind_name(kind: RevenueKind) -> &'static str {
+    match kind {
+        RevenueKind::Tip => "Tip",
+        RevenueKind::MevShare => "Mev-share",
+    }
+}
 
-    print_heading("Rakurai Reward Distribution Account");
+fn kind_account_label(kind: RevenueKind) -> &'static str {
+    match kind {
+        RevenueKind::Tip => "Tips Collection Account (TCA)",
+        RevenueKind::MevShare => "Mev-Share Collection Account (MCA)",
+    }
+}
+
+fn kind_accounts_label(kind: RevenueKind) -> &'static str {
+    match kind {
+        RevenueKind::Tip => "Tips Collection Accounts (TCA)",
+        RevenueKind::MevShare => "Mev-Share Collection Accounts (MCA)",
+    }
+}
+
+fn short_pubkey(s: &str) -> String {
+    if s.len() <= 12 {
+        return s.to_string();
+    }
+    format!("{}....{}", &s[..6], &s[s.len() - 6..])
+}
+
+const SOL_DECIMALS: usize = 5;
+
+fn lamports_to_sol(lamports: u64) -> f64 {
+    lamports as f64 / 1_000_000_000.0
+}
+
+fn format_lamports(lamports: u64) -> String {
+    if lamports == 0 {
+        "-".to_string()
+    } else {
+        lamports.to_string()
+    }
+}
+
+fn format_sol_only(lamports: u64) -> String {
+    if lamports == 0 {
+        return "-".to_string();
+    }
+    format!(
+        "{sol:.prec$} SOL",
+        sol = lamports_to_sol(lamports),
+        prec = SOL_DECIMALS
+    )
+}
+
+fn format_row_total_with_sol(lamports: u64) -> String {
+    if lamports == 0 {
+        return "-".to_string();
+    }
+    format!(
+        "{lamports} ({sol:.prec$} SOL)",
+        lamports = lamports,
+        sol = lamports_to_sol(lamports),
+        prec = SOL_DECIMALS
+    )
+}
+
+fn format_total_with_sol(lamports: u64) -> String {
+    if lamports == 0 {
+        return format!("0 lamports ({z:.prec$} SOL)", z = 0.0, prec = SOL_DECIMALS);
+    }
+    format!(
+        "{lamports} lamports ({sol:.prec$} SOL)",
+        lamports = lamports,
+        sol = lamports_to_sol(lamports),
+        prec = SOL_DECIMALS
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Display: get-account (summary + optional detail)
+// ---------------------------------------------------------------------------
+
+fn display_account(vault: &VaultAccount, balance: u64, current_epoch: u64, detail: bool) {
+    let kind = vault.share_kind();
+    let name = &vault.account.name;
+    let vote = vault.validator_vote();
+    let record_authority = vault.record_authority();
+    let available = vault.balance_after_rent(balance);
+
+    print_heading(kind_account_label(kind));
     print_field(
         "🔗".cyan(),
         "Pubkey:",
         vault.address().to_string().bold().green(),
     );
-    print_field("📦".cyan(), "Account:", vault.version_name().blue());
-    print_field("📝".cyan(), "Type:", kind_name(kind).magenta());
     print_field("📝".cyan(), "Name:", name_to_string(name).magenta());
     print_field("🔑".red(), "Vote:", vote.to_string());
-    print_field("🔏".magenta(), "Record auth:", record_authority.to_string());
+
+    println!();
     print_field(
         "💰".green(),
         "Balance:",
-        format_total_with_sol(balance).yellow(),
+        format_total_with_sol(available).yellow(),
     );
+
+    // Exclude the in-progress cluster epoch — not settleable yet.
+    let pending_records: Vec<_> = vault
+        .all_pending()
+        .into_iter()
+        .filter(|(epoch, _)| *epoch != current_epoch)
+        .collect();
+    let total_owed: u64 = pending_records.iter().map(|(_, p)| p.pending).sum();
+    print_field(
+        "💸".yellow(),
+        "Total owed:",
+        format_total_with_sol(total_owed).yellow(),
+    );
+
+    let deficit = vault.account.deficit;
+    if deficit > 0 {
+        print_field("⚠️".red(), "Deficit:", format_total_with_sol(deficit));
+        println!(
+            "   {} {}",
+            "❌".red(),
+            "Clear this deficit at the earliest to continue using services."
+        );
+    }
+
+    if total_owed == 0 {
+        println!("   {} {}", "✅".green(), "Nothing pending".green());
+    } else if available < total_owed {
+        println!(
+            "   {} {}",
+            "❌".red(),
+            format!(
+                "{} epoch(s) pending — settle them at the earliest to continue using services.",
+                pending_records.len()
+            )
+        );
+    }
+
+    if !detail {
+        println!(
+            "\n   {}",
+            "Use --detail to see per-epoch breakdown and record authority.".dimmed()
+        );
+        return;
+    }
+
+    println!();
+    print_field("🔏".magenta(), "Record auth:", record_authority.to_string());
+
+    println!();
+    println!("   {} {}", "📋".cyan(), "Epoch Details:".bold());
+    let mut entries: Vec<_> = vault.account.ledger.entries.iter().collect();
+    entries.sort_unstable_by_key(|e| e.epoch);
+    for entry in entries {
+        println!(
+            "      epoch {:>6}: recorded={:<12} transferred={:<12} pending={:<12} claimed={}",
+            entry.epoch.to_string().blue(),
+            entry.amount.to_string().yellow(),
+            entry.transferred_amount.to_string().yellow(),
+            entry
+                .amount
+                .saturating_sub(entry.transferred_amount)
+                .to_string()
+                .yellow(),
+            entry.claimed.to_string().blue(),
+        );
+    }
 }
+
+// ---------------------------------------------------------------------------
+// Display: pending records
+// ---------------------------------------------------------------------------
 
 fn display_pending(vault: &VaultAccount, epoch: u64, pending: &PendingAmount) {
     print_heading("Pending Revenue Record");
@@ -673,7 +655,6 @@ fn display_pending(vault: &VaultAccount, epoch: u64, pending: &PendingAmount) {
         "Pubkey:",
         vault.address().to_string().bold().green(),
     );
-    print_field("📦".cyan(), "Account:", vault.version_name().blue());
     display_pending_amount(epoch, pending);
 }
 
@@ -684,19 +665,11 @@ fn display_pending_amount(epoch: u64, pending: &PendingAmount) {
         "Recorded:",
         format_total_with_sol(pending.recorded).yellow(),
     );
-    if let Some(transferred) = pending.transferred {
-        print_field(
-            "💰".green(),
-            "Transferred:",
-            format_total_with_sol(transferred).yellow(),
-        );
-    } else {
-        print_field(
-            "💰".green(),
-            "Funded (via balance):",
-            format_total_with_sol(pending.recorded.saturating_sub(pending.pending)).yellow(),
-        );
-    }
+    print_field(
+        "💰".green(),
+        "Transferred:",
+        format_total_with_sol(pending.transferred).yellow(),
+    );
     print_field(
         "💰".yellow(),
         "Pending settle:",
@@ -713,93 +686,36 @@ fn display_pending_amount(epoch: u64, pending: &PendingAmount) {
     );
 }
 
-fn kind_name(kind: RevenueKind) -> &'static str {
-    match kind {
-        RevenueKind::Tip => "Tip",
-        RevenueKind::MevShare => "Mev-share",
-    }
-}
-
-/// Abbreviate a pubkey (or similar base58 string) as `ABCDEF....UVWXYZ`.
-fn short_pubkey(s: &str) -> String {
-    if s.len() <= 12 {
-        return s.to_string();
-    }
-    format!("{}....{}", &s[..6], &s[s.len() - 6..])
-}
-
-/// SOL display decimals (1 SOL = 1e9 lamports).
-const SOL_DECIMALS: usize = 5;
-
-fn lamports_to_sol(lamports: u64) -> f64 {
-    lamports as f64 / 1_000_000_000.0
-}
-
-/// Format an amount as integer lamports, or `-` when zero.
-fn format_lamports(lamports: u64) -> String {
-    if lamports == 0 {
-        "-".to_string()
-    } else {
-        lamports.to_string()
-    }
-}
-
-/// Format as `X.XXXXX SOL` only (footer totals). Zero → `-`.
-fn format_sol_only(lamports: u64) -> String {
-    if lamports == 0 {
-        return "-".to_string();
-    }
-    format!(
-        "{sol:.prec$} SOL",
-        sol = lamports_to_sol(lamports),
-        prec = SOL_DECIMALS
-    )
-}
-
-/// Format as `N (X.XXXXX SOL)`. Zero → `-`.
-fn format_row_total_with_sol(lamports: u64) -> String {
-    if lamports == 0 {
-        return "-".to_string();
-    }
-    format!(
-        "{lamports} ({sol:.prec$} SOL)",
-        lamports = lamports,
-        sol = lamports_to_sol(lamports),
-        prec = SOL_DECIMALS
-    )
-}
-
-/// Format as `N lamports (X.XXXXX SOL)`.
-fn format_total_with_sol(lamports: u64) -> String {
-    if lamports == 0 {
-        return format!("0 lamports ({z:.prec$} SOL)", z = 0.0, prec = SOL_DECIMALS);
-    }
-    format!(
-        "{lamports} lamports ({sol:.prec$} SOL)",
-        lamports = lamports,
-        sol = lamports_to_sol(lamports),
-        prec = SOL_DECIMALS
-    )
-}
+// ---------------------------------------------------------------------------
+// Display: pivot table for get-all / transfer-all
+// ---------------------------------------------------------------------------
 
 type PendingByVote = std::collections::BTreeMap<String, std::collections::BTreeMap<u64, u64>>;
+type DeficitByVote = std::collections::BTreeMap<String, u64>;
 
-/// Aggregate unclaimed pending amounts from vaults into vote → epoch → lamports.
-/// Skips Rakurai tip TCAs when `skip_rakurai_tip` is true (transfer paths).
 fn aggregate_pending_by_vote(
     vaults: &[VaultAccount],
     skip_rakurai_tip: bool,
-) -> (PendingByVote, Vec<u64>, u64) {
+    exclude_epoch: Option<u64>,
+) -> (PendingByVote, DeficitByVote, Vec<u64>, u64, u64) {
     let mut by_vote: PendingByVote = std::collections::BTreeMap::new();
+    let mut deficits: DeficitByVote = std::collections::BTreeMap::new();
     let mut epochs = std::collections::BTreeSet::new();
     for vault in vaults {
         if skip_rakurai_tip && vault.is_rakurai_tip_tca() {
             continue;
         }
         let vote = vault.validator_vote().to_string();
+        let deficit = vault.account.deficit;
+        if deficit > 0 {
+            *deficits.entry(vote.clone()).or_default() = deficit;
+        }
         let vote_map = by_vote.entry(vote).or_default();
         for (epoch, pending) in vault.all_pending() {
             if pending.pending == 0 {
+                continue;
+            }
+            if exclude_epoch == Some(epoch) {
                 continue;
             }
             epochs.insert(epoch);
@@ -813,18 +729,34 @@ fn aggregate_pending_by_vote(
             grand_total = grand_total.saturating_add(*amount);
         }
     }
-    // Drop validators with no remaining pending after filters.
-    by_vote.retain(|_, m| !m.is_empty());
-    (by_vote, epochs, grand_total)
+    let grand_deficit: u64 = deficits.values().copied().sum();
+    // Keep rows that have pending epochs and/or open deficit.
+    by_vote.retain(|vote, m| !m.is_empty() || deficits.get(vote).copied().unwrap_or(0) > 0);
+    for vote in deficits.keys() {
+        by_vote.entry(vote.clone()).or_default();
+    }
+    (by_vote, deficits, epochs, grand_total, grand_deficit)
 }
 
-/// Print summary + pivot table (epochs = columns, vote rows, TOTAL col with SOL).
-fn print_pending_pivot_table(by_vote: &PendingByVote, epochs: &[u64], grand_total: u64) {
+fn print_pending_pivot_table(
+    by_vote: &PendingByVote,
+    deficits: &DeficitByVote,
+    epochs: &[u64],
+    grand_total: u64,
+    grand_deficit: u64,
+) {
     print_field(
         "💰".green(),
-        "Total:",
+        "Total owed:",
         format_total_with_sol(grand_total).bold().yellow(),
     );
+    if grand_deficit > 0 {
+        print_field(
+            "⚠️".red(),
+            "Total deficit:",
+            format_total_with_sol(grand_deficit).bold().yellow(),
+        );
+    }
     print_field(
         "🔑".red(),
         "Validators:",
@@ -833,7 +765,7 @@ fn print_pending_pivot_table(by_vote: &PendingByVote, epochs: &[u64], grand_tota
     print_field("🕒".cyan(), "Epochs:", epochs.len().to_string().magenta());
 
     println!();
-    if epochs.is_empty() {
+    if epochs.is_empty() && grand_deficit == 0 {
         println!("   {}", "(no pending revenue records)".yellow());
         return;
     }
@@ -850,22 +782,23 @@ fn print_pending_pivot_table(by_vote: &PendingByVote, epochs: &[u64], grand_tota
         row_totals.insert(vote.clone(), row_total);
     }
 
-    // Wide enough for `N (X.XXXXX SOL)` row totals; body epoch cells stay lamports-only.
     const VOTE_W: usize = 15;
     const EPOCH_W: usize = 15;
+    const DEFICIT_W: usize = 15;
     const TOTAL_W: usize = 30;
 
     print!("   {:<width$}", "Vote".bold(), width = VOTE_W);
     for epoch in epochs {
         print!("  {:>width$}", epoch.to_string().bold(), width = EPOCH_W);
     }
+    print!("  {:>width$}", "Deficit".bold(), width = DEFICIT_W);
     print!(
         "  {:>width$}",
         "TOTAL (lamports / SOL)".bold(),
         width = TOTAL_W
     );
     println!();
-    let line_w = VOTE_W + epochs.len() * (EPOCH_W + 2) + TOTAL_W + 2;
+    let line_w = VOTE_W + epochs.len() * (EPOCH_W + 2) + (DEFICIT_W + 2) + TOTAL_W + 2;
     println!("   {}", "-".repeat(line_w));
 
     for (vote, vote_map) in by_vote {
@@ -874,6 +807,8 @@ fn print_pending_pivot_table(by_vote: &PendingByVote, epochs: &[u64], grand_tota
             let amount = vote_map.get(epoch).copied().unwrap_or(0);
             print!("  {:>width$}", format_lamports(amount), width = EPOCH_W);
         }
+        let deficit = deficits.get(vote).copied().unwrap_or(0);
+        print!("  {:>width$}", format_lamports(deficit), width = DEFICIT_W);
         let row_total = row_totals.get(vote).copied().unwrap_or(0);
         print!(
             "  {:>width$}",
@@ -884,7 +819,6 @@ fn print_pending_pivot_table(by_vote: &PendingByVote, epochs: &[u64], grand_tota
     }
 
     println!("   {}", "-".repeat(line_w));
-    // Footer TOTAL: SOL only (5 dp).
     print!("   {:<width$}", "TOTAL".bold(), width = VOTE_W);
     for total in &epoch_totals {
         print!(
@@ -895,16 +829,94 @@ fn print_pending_pivot_table(by_vote: &PendingByVote, epochs: &[u64], grand_tota
     }
     print!(
         "  {:>width$}",
+        format_sol_only(grand_deficit).bold().yellow(),
+        width = DEFICIT_W
+    );
+    print!(
+        "  {:>width$}",
         format_sol_only(grand_total).bold().yellow(),
         width = TOTAL_W
     );
     println!();
 }
 
+// ---------------------------------------------------------------------------
+// Command handlers
+// ---------------------------------------------------------------------------
+
+fn process_create_account(
+    rpc_client: Arc<RpcClient>,
+    program_id: Pubkey,
+    keypair_path: &str,
+    args: CreateAccountArgs,
+) -> CliResult {
+    let name = name_to_bytes(&args.revenue_name)?;
+    reject_reserved_rakurai_name(&name)?;
+
+    let payer = parse_keypair(keypair_path)?;
+    let node_pubkey = get_node_pubkey_from_vote_account(rpc_client.clone(), args.vote_pubkey)?;
+    let (raa, _) = derive_activation_account_address(&args.activation_program_id, &node_pubkey);
+    let (tips_config, _) = derive_tips_and_mev_share_config_address(&program_id);
+    let (mca_address, bump) = derive_revenue_share_account_v1_address(
+        &program_id,
+        RevenueKind::MevShare,
+        &name,
+        &args.vote_pubkey,
+    );
+
+    if rpc_client.get_account(&mca_address).is_ok() {
+        return Err(format!("MCA already exists at {mca_address}").into());
+    }
+
+    print_heading("Create Mev-Share Collection Account (MCA)");
+    print_field(
+        "🔗".cyan(),
+        "Pubkey:",
+        mca_address.to_string().bold().green(),
+    );
+    print_field("📝".cyan(), "Name:", args.revenue_name.magenta());
+    print_field("🔑".red(), "Vote:", args.vote_pubkey.to_string());
+    print_field(
+        "🔏".magenta(),
+        "Record auth:",
+        args.record_authority.to_string(),
+    );
+    print_field("🔑".red(), "Payer:", payer.pubkey().to_string());
+    print_field("📦".cyan(), "RAA:", raa.to_string());
+
+    if args.dry_run {
+        println!(
+            "\n   {}",
+            "Dry run only — no transaction was sent.".yellow()
+        );
+        return Ok(());
+    }
+
+    let instruction = initialize_revenue_share_account_v1_ix(
+        program_id,
+        InitializeRevenueShareAccountV1Args {
+            share_kind: RevenueKind::MevShare,
+            name,
+            record_authority: args.record_authority,
+            bump,
+        },
+        InitializeRevenueShareAccountV1Accounts {
+            revenue_share_account: mca_address,
+            tips_and_mev_share_config: tips_config,
+            rakurai_activation_account: raa,
+            validator_vote_account: args.vote_pubkey,
+            payer: payer.pubkey(),
+            system_program: system_program::ID,
+        },
+    );
+    sign_and_send_transaction(rpc_client, instruction, &payer)
+}
+
 fn process_get_account(rpc_client: &RpcClient, program_id: Pubkey, args: AccountArgs) -> CliResult {
     let vault = load_target(rpc_client, program_id, &args.target)?;
     let balance = rpc_client.get_balance(&vault.address())?;
-    display_account(&vault, balance);
+    let current_epoch = rpc_client.get_epoch_info()?.epoch;
+    display_account(&vault, balance, current_epoch, args.detail);
     Ok(())
 }
 
@@ -915,27 +927,28 @@ fn process_get_all_accounts(
 ) -> CliResult {
     let vaults = load_service_accounts(rpc_client, program_id, &args.service)?;
     let kind: RevenueKind = args.service.revenue_kind.into();
+    let current_epoch = rpc_client.get_epoch_info()?.epoch;
 
-    print_heading("Service Revenue Accounts");
-    print_field("📝".cyan(), "Type:", kind_name(kind).magenta());
+    print_heading(kind_accounts_label(kind));
     print_field("📝".cyan(), "Name:", args.service.revenue_name.magenta());
     print_field("📦".cyan(), "Accounts:", vaults.len().to_string().magenta());
 
     if vaults.is_empty() {
         println!(
             "\n   {}",
-            "No TCA/MCA found for this revenue-kind + revenue-name.".yellow()
+            "No accounts found for this revenue-kind + revenue-name.".yellow()
         );
         return Ok(());
     }
 
-    let (by_vote, epochs, grand_total) = aggregate_pending_by_vote(&vaults, false);
-    print_pending_pivot_table(&by_vote, &epochs, grand_total);
+    let (by_vote, deficits, epochs, grand_total, grand_deficit) =
+        aggregate_pending_by_vote(&vaults, false, Some(current_epoch));
+    print_pending_pivot_table(&by_vote, &deficits, &epochs, grand_total, grand_deficit);
 
     if !args.detail {
         println!(
             "\n   {}",
-            "--detail for per-account pubkey, layout, record authority, and balance.".dimmed()
+            "--detail for per-account pubkey, record authority, and balance.".dimmed()
         );
         return Ok(());
     }
@@ -943,7 +956,12 @@ fn process_get_all_accounts(
     print_heading("Account details");
     for vault in &vaults {
         let balance = rpc_client.get_balance(&vault.address())?;
-        let pending = vault.all_pending();
+        let available = vault.balance_after_rent(balance);
+        let pending: Vec<_> = vault
+            .all_pending()
+            .into_iter()
+            .filter(|(epoch, _)| *epoch != current_epoch)
+            .collect();
         let pending_total: u64 = pending.iter().map(|(_, p)| p.pending).sum();
 
         println!();
@@ -952,7 +970,6 @@ fn process_get_all_accounts(
             "Pubkey:",
             vault.address().to_string().bold().green(),
         );
-        print_field("📦".cyan(), "Account:", vault.version_name().blue());
         print_field("🔑".red(), "Vote:", vault.validator_vote().to_string());
         print_field(
             "🔏".magenta(),
@@ -962,7 +979,7 @@ fn process_get_all_accounts(
         print_field(
             "💰".green(),
             "Balance:",
-            format_total_with_sol(balance).yellow(),
+            format_total_with_sol(available).yellow(),
         );
         print_field(
             "🕒".cyan(),
@@ -973,6 +990,25 @@ fn process_get_all_accounts(
                 pending_total.to_string().yellow()
             ),
         );
+        if vault.account.deficit > 0 {
+            print_field(
+                "⚠️".red(),
+                "Deficit:",
+                format_total_with_sol(vault.account.deficit).yellow(),
+            );
+        }
+        if pending_total > 0 && available < pending_total {
+            println!(
+                "   {} {}",
+                "❌".red(),
+                format!(
+                    "Underfunded: owed {}, balance {}",
+                    format_total_with_sol(pending_total),
+                    format_total_with_sol(available),
+                )
+                .red()
+            );
+        }
         for (epoch, amount) in &pending {
             println!(
                 "      epoch {:>8}: {}",
@@ -1009,7 +1045,6 @@ fn process_get_all_pending(
         "Pubkey:",
         vault.address().to_string().bold().green(),
     );
-    print_field("📦".cyan(), "Account:", vault.version_name().blue());
     print_field("📝".cyan(), "Records:", records.len().to_string().magenta());
     for (epoch, pending) in records {
         println!();
@@ -1055,24 +1090,23 @@ fn process_record_revenue(
         revenue_share_account: vault.address(),
         record_authority: authority.pubkey(),
     };
-    let instruction = match &vault {
-        VaultAccount::Legacy { .. } => record_revenue_ix(
-            program_id,
-            RecordRevenueArgs {
-                amount: args.amount,
-            },
-            accounts,
-        ),
-        VaultAccount::V1 { .. } => record_revenue_v1_ix(
-            program_id,
-            RecordRevenueArgs {
-                amount: args.amount,
-            },
-            accounts,
-        ),
-    };
-
     let clock_epoch = rpc_client.get_epoch_info()?.epoch;
+    if args.epoch > clock_epoch {
+        return Err(format!(
+            "epoch {} is in the future (current cluster epoch is {}); refusing record-revenue",
+            args.epoch, clock_epoch
+        )
+        .into());
+    }
+
+    let instruction = record_revenue_v1_with_epoch_ix(
+        program_id,
+        RecordRevenueWithEpochArgs {
+            epoch: args.epoch,
+            amount: args.amount,
+        },
+        accounts,
+    );
 
     print_heading("Partner MevShare Record Revenue");
     print_field(
@@ -1080,12 +1114,7 @@ fn process_record_revenue(
         "Vault:",
         vault.address().to_string().bold().green(),
     );
-    print_field("📦".cyan(), "Account:", vault.version_name().blue());
-    print_field(
-        "🕒".cyan(),
-        "Epoch:",
-        format!("{clock_epoch} (current cluster epoch)").blue(),
-    );
+    print_field("🕒".cyan(), "Epoch:", args.epoch.to_string().blue());
     print_field(
         "💰".green(),
         "Amount:",
@@ -1109,20 +1138,15 @@ fn settle_instruction(
         );
     }
 
-    match vault {
-        VaultAccount::Legacy { address, .. } => {
-            Ok(system_instruction::transfer(&payer, address, amount))
-        }
-        VaultAccount::V1 { address, .. } => Ok(settle_revenue_ix(
-            program_id,
-            SettleRevenueArgs { epoch, amount },
-            SettleRevenueAccounts {
-                revenue_share_account: *address,
-                payer,
-                system_program: system_program::ID,
-            },
-        )),
-    }
+    Ok(settle_revenue_ix(
+        program_id,
+        SettleRevenueArgs { epoch, amount },
+        SettleRevenueAccounts {
+            revenue_share_account: vault.address(),
+            payer,
+            system_program: system_program::ID,
+        },
+    ))
 }
 
 fn process_transfer(
@@ -1152,13 +1176,13 @@ fn process_transfer(
     let payer = parse_keypair(keypair_path)?;
     let instruction = settle_instruction(program_id, &vault, args.epoch, amount, payer.pubkey())?;
 
-    print_heading("Partner Tip / MevShare Settlement Transfer");
+    let kind = vault.share_kind();
+    print_heading(&format!("{} Settlement Transfer", kind_account_label(kind)));
     print_field(
         "🔗".cyan(),
         "Vault:",
         vault.address().to_string().bold().green(),
     );
-    print_field("📦".cyan(), "Account:", vault.version_name().blue());
     print_field(
         "🔑".red(),
         "Vote:",
@@ -1183,7 +1207,6 @@ fn process_transfer(
 
 struct PendingSettlement {
     vote: Pubkey,
-    version: &'static str,
     epoch: u64,
     amount: u64,
     instruction: Instruction,
@@ -1216,7 +1239,6 @@ fn process_transfer_all(
                 settle_instruction(program_id, vault, epoch, pending.pending, payer.pubkey())?;
             jobs.push(PendingSettlement {
                 vote: vault.validator_vote(),
-                version: vault.version_name(),
                 epoch,
                 amount: pending.pending,
                 instruction,
@@ -1240,8 +1262,9 @@ fn process_transfer_all(
     );
     print_field("🔑".red(), "Payer:", payer.pubkey().to_string());
 
-    let (by_vote, epochs, grand_total) = aggregate_pending_by_vote(&vaults, true);
-    print_pending_pivot_table(&by_vote, &epochs, grand_total);
+    let (by_vote, deficits, epochs, grand_total, grand_deficit) =
+        aggregate_pending_by_vote(&vaults, true, None);
+    print_pending_pivot_table(&by_vote, &deficits, &epochs, grand_total, grand_deficit);
 
     if jobs.is_empty() {
         println!("\n   {}", "Nothing pending to settle.".green());
@@ -1264,12 +1287,10 @@ fn process_transfer_all(
             "Sending batch of {} settlement(s)",
             instructions.len()
         ));
-        // Preview this batch briefly (vote + epoch).
         for job in chunk {
             println!(
-                "   {}  {}  epoch {:>6}  {} lamports",
+                "   {}  epoch {:>6}  {} lamports",
                 short_pubkey(&job.vote.to_string()).cyan(),
-                job.version.blue(),
                 job.epoch.to_string().blue(),
                 job.amount.to_string().yellow()
             );
@@ -1294,6 +1315,9 @@ fn main() -> CliResult {
     ));
 
     match cli.command {
+        Commands::CreateAccount(args) => {
+            process_create_account(rpc_client, cli.program_id, &cli.keypair, args)
+        }
         Commands::GetAccount(args) => process_get_account(&rpc_client, cli.program_id, args),
         Commands::GetAllAccounts(args) => {
             process_get_all_accounts(&rpc_client, cli.program_id, args)
@@ -1329,5 +1353,13 @@ mod tests {
     fn rejects_invalid_name_lengths() {
         assert!(name_to_bytes("").is_err());
         assert!(name_to_bytes(&"x".repeat(33)).is_err());
+    }
+
+    #[test]
+    fn rejects_reserved_rakurai_name() {
+        let name = name_to_bytes("rakurai").unwrap();
+        assert!(reject_reserved_rakurai_name(&name).is_err());
+        let ok = name_to_bytes("circularfi").unwrap();
+        assert!(reject_reserved_rakurai_name(&ok).is_ok());
     }
 }
