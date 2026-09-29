@@ -1,7 +1,7 @@
 //! Helpers for the `rakurai-client-config` CLI.
 
 use {
-    anchor_lang::{AccountDeserialize, AnchorSerialize},
+    anchor_lang::AccountDeserialize,
     colored::*,
     rakurai_client_config::{
         sdk::{
