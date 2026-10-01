@@ -52,3 +52,47 @@ To close a Solana program, use the following command. You must provide the progr
 solana program close 4wyjfWEX6746eoepd37Gb6KcPpLpkJhe4CqWzerLfpCB --keypair ~/.config/solana/id.json -ut --bypass-warning
 ```
 This command will close the program and reclaim the funds.
+
+## Building the IDL (Anchor 0.30.1)
+
+> **Anchor version:** `anchor-cli 0.30.1`
+
+To generate the IDL for a program:
+
+```bash
+anchor idl build --program-name rakurai_activation -o ./idl/rakurai_activation.json
+```
+
+### Fixing the `source_file` build error
+
+On Anchor `0.30.1`, `anchor idl build` may fail while compiling `anchor-syn` with:
+
+```
+error[E0599]: no method named `source_file` found for struct `proc_macro2::Span` in the current scope
+   --> .../anchor-syn/.../idl/defined.rs:499:66
+```
+
+**Cause:** This is a Rust compile error inside `anchor-syn` itself (not a missing `/// CHECK:` doc comment). Anchor 0.30.1 calls `proc_macro2::Span::call_site().source_file().path()`, but `proc-macro2 >= 1.0.95` removed the semver-exempt `source_file()` method (it was replaced by `.file()` / `.local_file()` to track a nightly compiler change made on 2025-04-16).
+
+**Fix:** Three things must align for Anchor 0.30.1 — pin `proc-macro2` to `1.0.94`, use a nightly from *before* 2025-04-16, and pass the `procmacro2_semver_exempt` cfg.
+
+1. Pin `proc-macro2` back to the last version that has `source_file()`:
+
+```bash
+cargo update -p proc-macro2 --precise 1.0.94
+```
+
+2. Install a nightly toolchain from before the 2025-04-16 API removal (so `proc-macro2 1.0.94` itself compiles):
+
+```bash
+rustup toolchain install nightly-2025-04-14 --profile minimal
+```
+
+3. Build the IDL with that toolchain and the semver-exempt flag (required to expose `source_file()`):
+
+```bash
+RUSTUP_TOOLCHAIN=nightly-2025-04-14 RUSTFLAGS='--cfg procmacro2_semver_exempt' \
+  anchor idl build --program-name rakurai_activation -o ./idl/rakurai_activation.json
+```
+
+> **Note:** Keep the `proc-macro2 = "=1.0.94"` pin so a future `cargo update` doesn't bump it back and reintroduce the error. The cleaner long-term fix is upgrading to Anchor `0.31.1+`, which uses the new `.file()` API and works with current `proc-macro2` and recent nightlies.

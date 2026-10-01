@@ -11,13 +11,13 @@ pub struct RakuraiActivationConfigAccount {
     pub authority: Pubkey,
 
     /// Co-signer authority required to update Rakurai activation status.
-    pub block_builder_authority: Pubkey,
+    pub client_authority: Pubkey,
 
-    /// Commission charged by block builder (in basis points).
-    pub block_builder_commission_bps: u16,
+    /// Commission charged by the client (in basis points).
+    pub client_commission_bps: u16,
 
     /// Account where the commission is sent.
-    pub block_builder_commission_account: Pubkey,
+    pub client_commission_account: Pubkey,
 
     /// Bump seed for PDA.
     pub bump: u8,
@@ -38,8 +38,8 @@ pub struct RakuraiActivationAccount {
     /// Validator commission on Block Rewards in basis points.
     pub block_reward_commission_bps: u16,
 
-    /// Block builder commission in basis points.
-    pub block_builder_commission_bps: u16,
+    /// Client commission in basis points.
+    pub client_commission_bps: u16,
 
     /// Bump seed for PDA.
     pub bump: u8,
@@ -62,11 +62,11 @@ impl RakuraiActivationConfigAccount {
     pub fn validate(&self) -> Result<()> {
         let default_pubkey = Pubkey::default();
 
-        if self.block_builder_commission_account == default_pubkey {
+        if self.client_commission_account == default_pubkey {
             return Err(AccountValidationFailure.into());
         }
 
-        if self.block_builder_commission_bps > MAX_COMMISSION_BPS {
+        if self.client_commission_bps > MAX_COMMISSION_BPS {
             return Err(MaxCommissionBpsExceeded.into());
         }
 
@@ -87,7 +87,7 @@ impl RakuraiActivationAccount {
         if self.validator_authority == default_pubkey {
             return Err(AccountValidationFailure.into());
         }
-        if self.block_builder_commission_bps > MAX_COMMISSION_BPS
+        if self.client_commission_bps > MAX_COMMISSION_BPS
             || self.block_reward_commission_bps > MAX_COMMISSION_BPS
         {
             return Err(MaxCommissionBpsExceeded.into());

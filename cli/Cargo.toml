@@ -1,7 +1,7 @@
 [package]
 name = "rakurai_cli"
-version = "2.1.0"
-description = "Created with Anchor"
+version = "2.1.2"
+description = "Command-line tools for Rakurai validator operators and transaction-inclusion partners"
 edition = "2021"
 
 [dependencies]
@@ -11,13 +11,30 @@ bs58 = "0.5.1"
 clap = { version = "4.4", features = ["derive"] }
 colored = "2.0"
 rakurai_activation = { path = "../programs/rakurai_activation" }
+rakurai_client_config = { path = "../programs/rakurai_client_config", features = ["no-entrypoint"] }
+reward_distribution = { path = "../programs/reward_distribution", features = ["no-entrypoint"] }
 serde = "1.0.213"
 serde_derive = "1.0.213"
 serde_json = "1.0.132"
 shellexpand = "3.1.0"
 solana-rpc-client = "=2.1.21"
+solana-rpc-client-api = "=2.1.21"
+solana-account-decoder-client-types = "=2.1.21"
 solana-sdk = "=2.1.21"  
 
 [[bin]]
 name = "rakurai-activation"
 path = "src/bin/rakurai_activation_cli.rs"
+
+[[bin]]
+name = "rakurai-revshare"
+path = "src/bin/rakurai_revshare_cli.rs"
+
+[[bin]]
+name = "rakurai-p2c"
+path = "src/bin/rakurai_p2c_cli.rs"
+
+[[bin]]
+name = "rakurai-client-config"
+path = "src/bin/rakurai_client_config_cli.rs"
+
