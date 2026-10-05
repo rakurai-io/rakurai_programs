@@ -7,7 +7,7 @@ use {
         validator::{
             display_effective, display_global_config, display_proposal, display_validator_config,
             get_global_config, get_proposal, get_validator_config, load_config_from_file,
-            parse_vote, proposal_exists, try_get_validator_config,
+            maybe_dump_config, parse_vote, proposal_exists, try_get_validator_config,
         },
     },
     rakurai_client_config::sdk::{
@@ -122,8 +122,8 @@ enum GlobalCmd {
     MigrateToV3,
     /// Rewrite V2/V3 global payload to V4 (single URL + optional mev/resell/tpu)
     MigrateToV4,
-    /// Fetch and print global config
-    Show,
+    /// Fetch and print global config. Optionally dump payload JSON with `--config-file`.
+    Show(ShowDumpArgs),
     /// Close global config PDA and reclaim rent (manager-only)
     Close,
 }
@@ -142,8 +142,8 @@ enum ValidatorCmd {
     MigrateToV3(VoteArgs),
     /// Rewrite V2/V3 validator payload to V4
     MigrateToV4(VoteArgs),
-    /// Fetch and print validator config
-    Show(VoteArgs),
+    /// Fetch and print validator config. Optionally dump payload JSON with `--config-file`.
+    Show(ShowVoteArgs),
     /// Close validator config PDA and reclaim rent (manager-only)
     Close(VoteArgs),
 }
@@ -156,8 +156,8 @@ enum ProposalCmd {
     MigrateToV3(VoteArgs),
     /// Rewrite V2/V3 proposal payload to V4
     MigrateToV4(VoteArgs),
-    /// Fetch and print pending proposal
-    Show(VoteArgs),
+    /// Fetch and print pending proposal. Optionally dump payload JSON with `--config-file`.
+    Show(ShowVoteArgs),
     /// Copy proposal → live validator config and close proposal (manager)
     Approve(VoteArgs),
     /// Close proposal without changing live config (manager)
@@ -219,6 +219,22 @@ struct VoteArgs {
 }
 
 #[derive(Args)]
+struct ShowDumpArgs {
+    /// Write the config payload JSON (same shape as `--config-file` on update/submit).
+    #[arg(long)]
+    config_file: Option<String>,
+}
+
+#[derive(Args)]
+struct ShowVoteArgs {
+    #[arg(long, value_parser = parse_vote)]
+    vote: Pubkey,
+    /// Write the config payload JSON (same shape as `--config-file` on update/submit).
+    #[arg(long)]
+    config_file: Option<String>,
+}
+
+#[derive(Args)]
 struct ValidatorInitArgs {
     #[arg(long, value_parser = parse_vote)]
     vote: Pubkey,
@@ -256,6 +272,9 @@ struct UnionArgs {
     /// Vote pubkey. If that validator PDA exists it is used; otherwise global.
     #[arg(long, value_parser = parse_vote)]
     vote: Option<Pubkey>,
+    /// Write the effective config payload JSON (same shape as `--config-file` on update/submit).
+    #[arg(long)]
+    config_file: Option<String>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -642,8 +661,10 @@ fn run_global(
             sign_and_send_transaction(rpc.clone(), ix, &kp)?;
             display_global_config(&get_global_config(rpc, global)?, global);
         }
-        GlobalCmd::Show => {
-            display_global_config(&get_global_config(rpc, global)?, global);
+        GlobalCmd::Show(a) => {
+            let cfg = get_global_config(rpc, global)?;
+            display_global_config(&cfg, global);
+            maybe_dump_config(&cfg.config, a.config_file.as_deref())?;
         }
         GlobalCmd::Close => {
             let ix = close_global_ix(program_id, CloseGlobalAccounts { manager, global });
@@ -781,7 +802,9 @@ fn run_validator(
         }
         ValidatorCmd::Show(a) => {
             let (validator, _) = derive_validator_config_address(&program_id, &a.vote);
-            display_validator_config(&get_validator_config(rpc, validator)?, validator);
+            let cfg = get_validator_config(rpc, validator)?;
+            display_validator_config(&cfg, validator);
+            maybe_dump_config(&cfg.config, a.config_file.as_deref())?;
         }
         ValidatorCmd::Close(a) => {
             let (validator, _) = derive_validator_config_address(&program_id, &a.vote);
@@ -907,7 +930,9 @@ fn run_proposal(
         }
         ProposalCmd::Show(a) => {
             let (proposal, _) = derive_validator_proposal_address(&program_id, &a.vote);
-            display_proposal(&get_proposal(rpc, proposal)?, proposal);
+            let cfg = get_proposal(rpc, proposal)?;
+            display_proposal(&cfg, proposal);
+            maybe_dump_config(&cfg.config, a.config_file.as_deref())?;
         }
         ProposalCmd::Approve(a) => {
             let manager = kp.pubkey();
@@ -964,5 +989,8 @@ fn run_union(
         let (validator, _) = derive_validator_config_address(&program_id, &vote);
         try_get_validator_config(rpc.clone(), validator).map(|c| c.config)
     });
-    display_effective(&g.config, validator_cfg.as_ref())
+    display_effective(&g.config, validator_cfg.as_ref())?;
+    let effective = rakurai_client_config::sdk::effective_config(&g.config, validator_cfg.as_ref());
+    maybe_dump_config(effective, a.config_file.as_deref())?;
+    Ok(())
 }
