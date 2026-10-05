@@ -32,16 +32,16 @@ Worked example — add P2C `p2c-new-1` on global when global already has `p2c-ma
   "block_engine": { "sets": [ /* unchanged: copy from global show */ ] },
   "p2c": {
     "sets": [
-      { "name": "p2c-main-1", "url": [{ "url": "https://p2c1.example" }] },
-      { "name": "p2c-main-2", "url": [{ "url": "https://p2c2.example" }] },
-      { "name": "p2c-new-1", "url": [{ "url": "https://p2c-new.example" }] }
+      { "name": "p2c-main-1", "url": "https://p2c1.example", "mev": true },
+      { "name": "p2c-main-2", "url": "https://p2c2.example", "mev": true },
+      { "name": "p2c-new-1", "url": "https://p2c-new.example", "mev": true }
     ]
   },
   "virtual_priority": { "sets": [ /* unchanged: copy from global show */ ] }
 }
 ```
 
-Same pattern for a new **block engine** or **virtual-priority** set. To add a URL *inside* an existing set, copy that set’s current `url` list and append the URL.
+Same pattern for a new **block engine** or **virtual-priority** set. Block engine allows **one URL per UUID**. P2C is **one URL per UUID** with optional `mev` / `resell` / `enable_tpu_p2c_update` (at least one of mev|resell; TPU only with mev).
 
 [`examples/validator_config_overlay.json`](./examples/validator_config_overlay.json) is **not** a write template. It only shows extra validator-named sets. Fold those extras into a full current snapshot before `validator update` or `proposal submit`.
 
@@ -71,20 +71,24 @@ Each file has all three sections. See [`examples/validator_config.json`](./examp
     "sets": [
       {
         "name": "be-main-1",
-        "url": [
-          {
-            "url": "https://be1.example",
-            "max_bundles": 100,
-            "period_ms": 100,
-            "max_bundle_burst": 0
-          }
-        ]
+        "url": {
+          "url": "https://be1.example",
+          "max_bundles": 100,
+          "period_ms": 100,
+          "max_bundle_burst": 0
+        }
       }
     ]
   },
   "p2c": {
     "sets": [
-      { "name": "p2c-main-1", "url": [{ "url": "https://p2c1.example" }] }
+      {
+        "name": "p2c-main-1",
+        "url": "https://p2c1.example",
+        "mev": true,
+        "resell": true,
+        "enable_tpu_p2c_update": true
+      }
     ]
   },
   "virtual_priority": {
@@ -100,8 +104,8 @@ Each file has all three sections. See [`examples/validator_config.json`](./examp
 
 | Section | Fields |
 |---------|--------|
-| Block engine | `url`, `max_bundles`, `period_ms`, `max_bundle_burst` (`0` = unlimited / treat burst as `max_bundles` when quota is set). Scheduler **receives bundles** from these URLs. |
-| P2C | `url` only. Scheduler **sends** packed txns here for arbitrage / backrun (point of no return; no front-running). See [Post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations). |
+| Block engine | One `url` object per UUID: `url`, `max_bundles`, `period_ms`, `max_bundle_burst` (`0` = unlimited / treat burst as `max_bundles` when quota is set). Scheduler **receives bundles** from these URLs. |
+| P2C | One `url` per UUID. Optional `resell` → `StartExpiringPacketStream` (no boost/TPU). Optional `mev` → `StartExpiringMevPacketStream` (boost); optional `enable_tpu_p2c_update` → TPU on Mev path. Both may be true (two connections, distinct hashes). See [Post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations). |
 | Virtual priority | `key` (tip-account pubkey), `value` (fraction of that tip in `[0.0, 1.0]`; e.g. `0.1` = 10%) |
 
 `name` is truncated to 32 bytes. Omit `--config-file` on `global init` to create empty sets, then update with a full file.
@@ -213,8 +217,8 @@ Do **not** send a file that only contains the new set. Example — current P2C `
   "block_engine": { "sets": [ /* copy from show / union — unchanged */ ] },
   "p2c": {
     "sets": [
-      { "name": "p2c-main-1", "url": [{ "url": "https://p2c1.example" }] },
-      { "name": "p2c-op-1", "url": [{ "url": "https://p2c-operator.example" }] }
+      { "name": "p2c-main-1", "url": "https://p2c1.example", "mev": true },
+      { "name": "p2c-op-1", "url": "https://p2c-operator.example", "mev": true }
     ]
   },
   "virtual_priority": { "sets": [ /* copy from show / union — unchanged */ ] }

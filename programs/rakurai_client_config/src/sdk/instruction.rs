@@ -94,6 +94,25 @@ pub fn migrate_global_to_v3_ix(program_id: Pubkey, accounts: UpdateGlobalAccount
     }
 }
 
+pub fn migrate_global_to_v4_ix(program_id: Pubkey, accounts: UpdateGlobalAccounts) -> Instruction {
+    let UpdateGlobalAccounts {
+        manager,
+        global,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::MigrateGlobalToV4 {}.data(),
+        accounts: crate::accounts::MigrateGlobalToV4 {
+            manager,
+            global,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
 pub struct UpdateGlobalLimitsArgs {
     pub limits: ConfigLimits,
 }
@@ -214,6 +233,32 @@ pub fn migrate_validator_to_v3_ix(
         program_id,
         data: crate::instruction::MigrateValidatorToV3 {}.data(),
         accounts: crate::accounts::MigrateValidatorToV3 {
+            manager,
+            vote,
+            global,
+            validator,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub fn migrate_validator_to_v4_ix(
+    program_id: Pubkey,
+    accounts: UpdateValidatorAccounts,
+) -> Instruction {
+    let UpdateValidatorAccounts {
+        manager,
+        vote,
+        global,
+        validator,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::MigrateValidatorToV4 {}.data(),
+        accounts: crate::accounts::MigrateValidatorToV4 {
             manager,
             vote,
             global,
@@ -437,6 +482,32 @@ pub fn migrate_proposal_to_v3_ix(
         program_id,
         data: crate::instruction::MigrateProposalToV3 {}.data(),
         accounts: crate::accounts::MigrateProposalToV3 {
+            operator,
+            vote,
+            validator,
+            proposal,
+            system_program,
+        }
+        .to_account_metas(None),
+    }
+}
+
+pub fn migrate_proposal_to_v4_ix(
+    program_id: Pubkey,
+    accounts: UpdateProposalAccounts,
+) -> Instruction {
+    let UpdateProposalAccounts {
+        operator,
+        vote,
+        validator,
+        proposal,
+        system_program,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::MigrateProposalToV4 {}.data(),
+        accounts: crate::accounts::MigrateProposalToV4 {
             operator,
             vote,
             validator,

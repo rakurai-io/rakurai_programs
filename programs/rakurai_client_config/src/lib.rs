@@ -76,9 +76,21 @@ pub mod rakurai_client_config {
     }
 
     /// Manager-only: rewrite a V2 global payload as V3 (global TPU flag → per P2C URL).
-    /// No-op if already V3. Reallocs to fit.
+    /// No-op if already V3/V4. Reallocs to fit.
     pub fn migrate_global_to_v3(ctx: Context<MigrateGlobalToV3>) -> Result<()> {
         ctx.accounts.global.config.migrate_to_v3();
+        GlobalConfig::realloc_to_fit(
+            &ctx.accounts.global,
+            &ctx.accounts.manager,
+            &ctx.accounts.system_program,
+        )?;
+        Ok(())
+    }
+
+    /// Manager-only: rewrite V2/V3 global payload as V4 (single URL + stream options).
+    /// No-op if already V4. Reallocs to fit.
+    pub fn migrate_global_to_v4(ctx: Context<MigrateGlobalToV4>) -> Result<()> {
+        ctx.accounts.global.config.migrate_to_v4();
         GlobalConfig::realloc_to_fit(
             &ctx.accounts.global,
             &ctx.accounts.manager,
@@ -132,9 +144,20 @@ pub mod rakurai_client_config {
     }
 
     /// Manager-only: rewrite a V2 validator payload as V3 (global TPU flag → per P2C URL).
-    /// No-op if already V3. Reallocs to fit.
+    /// No-op if already V3/V4. Reallocs to fit.
     pub fn migrate_validator_to_v3(ctx: Context<MigrateValidatorToV3>) -> Result<()> {
         ctx.accounts.validator.config.migrate_to_v3();
+        ValidatorConfig::realloc_to_fit(
+            &ctx.accounts.validator,
+            &ctx.accounts.manager,
+            &ctx.accounts.system_program,
+        )?;
+        Ok(())
+    }
+
+    /// Manager-only: rewrite V2/V3 validator payload as V4. No-op if already V4.
+    pub fn migrate_validator_to_v4(ctx: Context<MigrateValidatorToV4>) -> Result<()> {
+        ctx.accounts.validator.config.migrate_to_v4();
         ValidatorConfig::realloc_to_fit(
             &ctx.accounts.validator,
             &ctx.accounts.manager,
@@ -194,9 +217,20 @@ pub mod rakurai_client_config {
     }
 
     /// Operator-only: rewrite a V2 proposal payload as V3 (global TPU flag → per P2C URL).
-    /// No-op if already V3. Reallocs to fit.
+    /// No-op if already V3/V4. Reallocs to fit.
     pub fn migrate_proposal_to_v3(ctx: Context<MigrateProposalToV3>) -> Result<()> {
         ctx.accounts.proposal.config.migrate_to_v3();
+        ValidatorProposal::realloc_to_fit(
+            &ctx.accounts.proposal,
+            &ctx.accounts.operator,
+            &ctx.accounts.system_program,
+        )?;
+        Ok(())
+    }
+
+    /// Operator-only: rewrite V2/V3 proposal payload as V4. No-op if already V4.
+    pub fn migrate_proposal_to_v4(ctx: Context<MigrateProposalToV4>) -> Result<()> {
+        ctx.accounts.proposal.config.migrate_to_v4();
         ValidatorProposal::realloc_to_fit(
             &ctx.accounts.proposal,
             &ctx.accounts.operator,
@@ -451,6 +485,20 @@ pub struct MigrateGlobalToV3<'info> {
 }
 
 #[derive(Accounts)]
+pub struct MigrateGlobalToV4<'info> {
+    #[account(mut)]
+    pub manager: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global.bump,
+        has_one = manager @ ConfigError::Unauthorized,
+    )]
+    pub global: Account<'info, GlobalConfig>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 #[instruction(operator: Pubkey)]
 pub struct InitValidator<'info> {
     #[account(mut)]
@@ -526,6 +574,29 @@ pub struct UpdateValidatorLimits<'info> {
 
 #[derive(Accounts)]
 pub struct MigrateValidatorToV3<'info> {
+    #[account(mut)]
+    pub manager: Signer<'info>,
+    /// CHECK: vote account used as PDA seed
+    pub vote: UncheckedAccount<'info>,
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global.bump,
+        has_one = manager @ ConfigError::Unauthorized,
+    )]
+    pub global: Account<'info, GlobalConfig>,
+    #[account(
+        mut,
+        seeds = [VALIDATOR_CONFIG_SEED, vote.key().as_ref()],
+        bump = validator.bump,
+        constraint = validator.vote == vote.key() @ ConfigError::VoteMismatch,
+        constraint = validator.manager == global.manager @ ConfigError::Unauthorized,
+    )]
+    pub validator: Account<'info, ValidatorConfig>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct MigrateValidatorToV4<'info> {
     #[account(mut)]
     pub manager: Signer<'info>,
     /// CHECK: vote account used as PDA seed
@@ -656,6 +727,30 @@ pub struct UpdateProposal<'info> {
 
 #[derive(Accounts)]
 pub struct MigrateProposalToV3<'info> {
+    #[account(mut)]
+    pub operator: Signer<'info>,
+    /// CHECK: vote account used as PDA seed
+    pub vote: UncheckedAccount<'info>,
+    #[account(
+        seeds = [VALIDATOR_CONFIG_SEED, vote.key().as_ref()],
+        bump = validator.bump,
+        constraint = validator.vote == vote.key() @ ConfigError::VoteMismatch,
+        has_one = operator @ ConfigError::UnauthorizedOperator,
+    )]
+    pub validator: Account<'info, ValidatorConfig>,
+    #[account(
+        mut,
+        seeds = [VALIDATOR_PROPOSAL_SEED, vote.key().as_ref()],
+        bump = proposal.bump,
+        constraint = proposal.vote == vote.key() @ ConfigError::VoteMismatch,
+        has_one = operator @ ConfigError::UnauthorizedOperator,
+    )]
+    pub proposal: Account<'info, ValidatorProposal>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct MigrateProposalToV4<'info> {
     #[account(mut)]
     pub operator: Signer<'info>,
     /// CHECK: vote account used as PDA seed
@@ -1052,6 +1147,10 @@ pub enum ConfigError {
     TooManyVpEntries,
     #[msg("virtual_priority value must be in [0.0, 1.0]")]
     InvalidVpValue,
+    #[msg("P2C entry must enable mev and/or resell")]
+    InvalidP2cOptions,
+    #[msg("enable_tpu_p2c_update requires mev")]
+    TpuRequiresMev,
     #[msg("ConfigLimits are zero or exceed absolute safety caps")]
     InvalidLimits,
     #[msg("Staging kind does not match this instruction")]

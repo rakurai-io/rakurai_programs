@@ -1533,7 +1533,7 @@
       "name": "migrate_global_to_v3",
       "docs": [
         "Manager-only: rewrite a V2 global payload as V3 (global TPU flag → per P2C URL).",
-        "No-op if already V3. Reallocs to fit."
+        "No-op if already V3/V4. Reallocs to fit."
       ],
       "discriminator": [
         35,
@@ -1598,10 +1598,78 @@
       "args": []
     },
     {
+      "name": "migrate_global_to_v4",
+      "docs": [
+        "Manager-only: rewrite V2/V3 global payload as V4 (single URL + stream options).",
+        "No-op if already V4. Reallocs to fit."
+      ],
+      "discriminator": [
+        23,
+        24,
+        53,
+        239,
+        47,
+        83,
+        50,
+        25
+      ],
+      "accounts": [
+        {
+          "name": "manager",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "global"
+          ]
+        },
+        {
+          "name": "global",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  45,
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "migrate_proposal_to_v3",
       "docs": [
         "Operator-only: rewrite a V2 proposal payload as V3 (global TPU flag → per P2C URL).",
-        "No-op if already V3. Reallocs to fit."
+        "No-op if already V3/V4. Reallocs to fit."
       ],
       "discriminator": [
         235,
@@ -1701,10 +1769,112 @@
       "args": []
     },
     {
+      "name": "migrate_proposal_to_v4",
+      "docs": [
+        "Operator-only: rewrite V2/V3 proposal payload as V4. No-op if already V4."
+      ],
+      "discriminator": [
+        48,
+        56,
+        109,
+        191,
+        120,
+        223,
+        73,
+        169
+      ],
+      "accounts": [
+        {
+          "name": "operator",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "validator",
+            "proposal"
+          ]
+        },
+        {
+          "name": "vote"
+        },
+        {
+          "name": "validator",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vote"
+              }
+            ]
+          }
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  45,
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vote"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "migrate_validator_to_v3",
       "docs": [
         "Manager-only: rewrite a V2 validator payload as V3 (global TPU flag → per P2C URL).",
-        "No-op if already V3. Reallocs to fit."
+        "No-op if already V3/V4. Reallocs to fit."
       ],
       "discriminator": [
         218,
@@ -1715,6 +1885,108 @@
         33,
         210,
         218
+      ],
+      "accounts": [
+        {
+          "name": "manager",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "global"
+          ]
+        },
+        {
+          "name": "vote"
+        },
+        {
+          "name": "global",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  45,
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "validator",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vote"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "migrate_validator_to_v4",
+      "docs": [
+        "Manager-only: rewrite V2/V3 validator payload as V4. No-op if already V4."
+      ],
+      "discriminator": [
+        50,
+        104,
+        42,
+        167,
+        113,
+        101,
+        214,
+        56
       ],
       "accounts": [
         {
@@ -2838,36 +3110,46 @@
     },
     {
       "code": 6010,
+      "name": "InvalidP2cOptions",
+      "msg": "P2C entry must enable mev and/or resell"
+    },
+    {
+      "code": 6011,
+      "name": "TpuRequiresMev",
+      "msg": "enable_tpu_p2c_update requires mev"
+    },
+    {
+      "code": 6012,
       "name": "InvalidLimits",
       "msg": "ConfigLimits are zero or exceed absolute safety caps"
     },
     {
-      "code": 6011,
+      "code": 6013,
       "name": "StagingKindInvalid",
       "msg": "Staging kind does not match this instruction"
     },
     {
-      "code": 6012,
+      "code": 6014,
       "name": "StagingLengthMismatch",
       "msg": "Staging payload length exceeds expected_len"
     },
     {
-      "code": 6013,
+      "code": 6015,
       "name": "StagingIncomplete",
       "msg": "Staging payload is incomplete"
     },
     {
-      "code": 6014,
+      "code": 6016,
       "name": "StagingTooLarge",
       "msg": "Staging payload is empty or exceeds MAX_STAGING_BYTES"
     },
     {
-      "code": 6015,
+      "code": 6017,
       "name": "StagingDeserializeFailed",
       "msg": "Failed to deserialize Config from staging bytes"
     },
     {
-      "code": 6016,
+      "code": 6018,
       "name": "UnexpectedConfigVersion",
       "msg": "Config payload is not the expected schema version"
     }
@@ -2933,6 +3215,30 @@
       }
     },
     {
+      "name": "BlockEngineEntryV4",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "name",
+            "type": {
+              "defined": {
+                "name": "Uuid"
+              }
+            }
+          },
+          {
+            "name": "url",
+            "type": {
+              "defined": {
+                "name": "BlockEngineConfig"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "BlockEngineV1",
       "type": {
         "kind": "struct",
@@ -2954,12 +3260,30 @@
       }
     },
     {
+      "name": "BlockEngineV4",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sets",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "BlockEngineEntryV4"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "Config",
       "docs": [
         "Versioned config payload shared by global and validator PDAs.",
         "",
         "Discriminant 0 (`V1`) is reserved so existing `V2` accounts (discriminant 1)",
-        "keep decoding after ConfigV1 was removed. `V3` is discriminant 2."
+        "keep decoding after ConfigV1 was removed. `V3` is discriminant 2, `V4` is 3."
       ],
       "type": {
         "kind": "enum",
@@ -2983,6 +3307,16 @@
               {
                 "defined": {
                   "name": "ConfigV3"
+                }
+              }
+            ]
+          },
+          {
+            "name": "V4",
+            "fields": [
+              {
+                "defined": {
+                  "name": "ConfigV4"
                 }
               }
             ]
@@ -3124,7 +3458,7 @@
     {
       "name": "ConfigV3",
       "docs": [
-        "V3 payload: same sections as V2, but `enable_tpu_p2c_update` lives per P2C URL."
+        "V3 payload: same sections as V2, but `enable_tpu_p2c_update` + `p2c_type` live per P2C URL."
       ],
       "type": {
         "kind": "struct",
@@ -3142,6 +3476,41 @@
             "type": {
               "defined": {
                 "name": "P2cV3"
+              }
+            }
+          },
+          {
+            "name": "virtual_priority",
+            "type": {
+              "defined": {
+                "name": "VirtualPriorityV1"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfigV4",
+      "docs": [
+        "V4 payload: one block-engine URL per UUID; one P2C URL per UUID with optional Mev/ReSell/TPU."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "block_engine",
+            "type": {
+              "defined": {
+                "name": "BlockEngineV4"
+              }
+            }
+          },
+          {
+            "name": "p2c",
+            "type": {
+              "defined": {
+                "name": "P2cV4"
               }
             }
           },
@@ -3191,7 +3560,7 @@
     {
       "name": "P2cConfig",
       "docs": [
-        "ConfigV3 P2C endpoint with per-URL TPU→P2C gate."
+        "ConfigV3 P2C endpoint with per-URL TPU→P2C gate and P2C type."
       ],
       "type": {
         "kind": "struct",
@@ -3203,6 +3572,14 @@
           {
             "name": "enable_tpu_p2c_update",
             "type": "bool"
+          },
+          {
+            "name": "p2c_type",
+            "type": {
+              "defined": {
+                "name": "P2cType"
+              }
+            }
           }
         ]
       }
@@ -3260,6 +3637,55 @@
       }
     },
     {
+      "name": "P2cEntryV4",
+      "docs": [
+        "One gRPC URL per UUID with independent stream options."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "name",
+            "type": {
+              "defined": {
+                "name": "Uuid"
+              }
+            }
+          },
+          {
+            "name": "url",
+            "type": "string"
+          },
+          {
+            "name": "mev",
+            "type": "bool"
+          },
+          {
+            "name": "resell",
+            "type": "bool"
+          },
+          {
+            "name": "enable_tpu_p2c_update",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "P2cType",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Mev"
+          },
+          {
+            "name": "ReSell"
+          }
+        ]
+      }
+    },
+    {
       "name": "P2cUrl",
       "docs": [
         "ConfigV2 P2C endpoint (url only). Same Borsh layout as the former `P2cConfig`."
@@ -3306,6 +3732,24 @@
               "vec": {
                 "defined": {
                   "name": "P2cEntryV3"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "P2cV4",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sets",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "P2cEntryV4"
                 }
               }
             }

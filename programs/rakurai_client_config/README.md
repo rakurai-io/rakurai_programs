@@ -14,7 +14,7 @@ On-chain **scheduler configuration** for Rakurai validators. This program stores
 
 ## 2. What you configure
 
-One versioned payload (`Config::V2` / `ConfigV2`, or `Config::V3` / `ConfigV3`) on every PDA. Three independent sections:
+One versioned payload (`Config::V2` / `ConfigV2`, `Config::V3` / `ConfigV3`, or `Config::V4` / `ConfigV4`) on every PDA. Three independent sections:
 
 | Section | What it is | Entry shape |
 |---------|------------|-------------|
@@ -88,7 +88,7 @@ Versioned enum (`ConfigLimits::V1(ConfigLimitsV1)`), stored on **Global**, **Val
 |-------|---------|---------------------|
 | `max_url_len` | 256 | 1024 |
 | `max_sets_per_section` | 16 | 64 |
-| `max_urls_per_set` | 8 | 32 |
+| `max_urls_per_set` | 8 | 32 | V2/V3 P2C & BE vec caps (V4 BE = 1 URL/UUID; V4 P2C = 1 URL + optional mev/resell/tpu) |
 | `max_vp_entries_per_set` | 64 | 255 |
 
 - Init order: `global init` → `validator init`.

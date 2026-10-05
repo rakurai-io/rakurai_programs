@@ -10,7 +10,7 @@ Install: [CLI overview](./README.md#2-installation). How billing works on-chain:
 
 ## 1. What this CLI is about
 
-Post-pack confirmations need a **prepaid subscription escrow** (PSA) per service name + validator vote. You keep that escrow funded; each epoch a stake-based fee is deducted from it. If the escrow runs dry and a deficit builds up, P2C access can move to grace and then stop until the shortfall is cleared.
+Post-pack confirmations need a **prepaid subscription escrow** (PSA) per service name + validator vote. You keep that escrow funded; each epoch a fee based on Updates/txn volume (**$50 / 1M Updates/txn**) is deducted from it. If the escrow runs dry and a deficit builds up, P2C access can move to grace and then stop until the shortfall is cleared.
 
 This CLI is how **you** manage funding for that escrow:
 

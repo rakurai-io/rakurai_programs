@@ -152,7 +152,7 @@ Partner steps: [rakurai-revshare](../../cli/partner_reward_settlement.md) (`Tip`
 
 ### Why it exists
 
-Anyone who wants **P2C / post-pack** must pay a **subscription** to receive the stream. This is not a tip and not a share of backrun profit — it is the **price of access**, based on SOL stake (a public number you can check on explorers).
+Anyone who wants **P2C / post-pack** must pay a **subscription** to receive the stream. This is not a tip and not a share of backrun profit — it is the **price of access**, based on Updates/txn volume (**$50 / 1M Updates/txn**, dollar equivalent in SOL).
 
 From each epoch’s fee: **commission to Rakurai**, **remainder to the validator**.
 
@@ -165,7 +165,7 @@ Full product guide: [Post-pack confirmations](https://docs.rakurai.io/docs/servi
 1. A **PSA** exists for your service + validator (created by Rakurai / ops; defaults from on-chain **`P2CConfigAccount`**)
 2. **You top up** SOL into that account (`fund` / `fund-all`, or any wallet transfer)
 3. For MevShare settlement, an **MCA** is also created by Rakurai / ops — then start post-pack
-4. Epoch ends. Rakurai writes the stake snapshot and the fee due
+4. Epoch ends. Update volume is priced and the fee due is written
 5. The fee is taken from prepaid: Rakurai’s cut, rest to the validator identity (**block-reward conversion** on by default)
 6. If the balance is too low, top up and try again — or the shortfall is booked as **deficit**
 7. After a short grace, status becomes **Suspended** and **post-pack is stopped** until the shortfall is cleared
