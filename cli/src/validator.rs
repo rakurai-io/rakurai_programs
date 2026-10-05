@@ -18,7 +18,7 @@ use {
 
 use crate::parse_pubkey;
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct ConfigFile {
     #[serde(default)]
     block_engine: SetsFileBe,
@@ -28,20 +28,20 @@ struct ConfigFile {
     virtual_priority: SetsFileVp,
 }
 
-#[derive(serde::Deserialize, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Default)]
 struct SetsFileBe {
     #[serde(default)]
     sets: Vec<BeEntryFile>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct BeEntryFile {
     name: String,
     #[serde(default)]
     url: Vec<BeUrlFile>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct BeUrlFile {
     url: String,
     #[serde(default)]
@@ -52,40 +52,40 @@ struct BeUrlFile {
     max_bundle_burst: u32,
 }
 
-#[derive(serde::Deserialize, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Default)]
 struct SetsFileP2c {
     #[serde(default)]
     sets: Vec<P2cEntryFile>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct P2cEntryFile {
     name: String,
     #[serde(default)]
     url: Vec<P2cUrlFile>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct P2cUrlFile {
     url: String,
     #[serde(default)]
     enable_tpu_p2c_update: bool,
 }
 
-#[derive(serde::Deserialize, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Default)]
 struct SetsFileVp {
     #[serde(default)]
     sets: Vec<VpEntryFile>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct VpEntryFile {
     name: String,
     #[serde(default)]
     url: Vec<VpUrlFile>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct VpUrlFile {
     key: String,
     value: f64,
@@ -163,6 +163,90 @@ pub fn load_config_from_file(path: &str) -> Result<Config, Box<dyn std::error::E
                 .collect::<Result<Vec<_>, _>>()?,
         },
     }))
+}
+
+fn config_to_file(cfg: &Config) -> Result<ConfigFile, Box<dyn std::error::Error>> {
+    let v3 = cfg
+        .to_v3()
+        .map_err(|_| "unsupported config schema (reserved v1); migrate to V3 before dumping")?;
+    Ok(ConfigFile {
+        block_engine: SetsFileBe {
+            sets: v3
+                .block_engine
+                .sets
+                .iter()
+                .map(|e| BeEntryFile {
+                    name: uuid_to_string(&e.name),
+                    url: e
+                        .url
+                        .iter()
+                        .map(|u| BeUrlFile {
+                            url: u.url.clone(),
+                            max_bundles: u.max_bundles,
+                            period_ms: u.period_ms,
+                            max_bundle_burst: u.max_bundle_burst,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        },
+        p2c: SetsFileP2c {
+            sets: v3
+                .p2c
+                .sets
+                .iter()
+                .map(|e| P2cEntryFile {
+                    name: uuid_to_string(&e.name),
+                    url: e
+                        .url
+                        .iter()
+                        .map(|u| P2cUrlFile {
+                            url: u.url.clone(),
+                            enable_tpu_p2c_update: u.enable_tpu_p2c_update,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        },
+        virtual_priority: SetsFileVp {
+            sets: v3
+                .virtual_priority
+                .sets
+                .iter()
+                .map(|e| VpEntryFile {
+                    name: uuid_to_string(&e.name),
+                    url: e
+                        .url
+                        .iter()
+                        .map(|u| VpUrlFile {
+                            key: u.key.to_string(),
+                            value: u.value,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        },
+    })
+}
+
+/// Write `cfg` as JSON in the same shape accepted by `load_config_from_file`.
+pub fn write_config_to_file(cfg: &Config, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let file = config_to_file(cfg)?;
+    let text = serde_json::to_string_pretty(&file)?;
+    fs::write(Path::new(path), text)?;
+    Ok(())
+}
+
+/// If `path` is set, dump `cfg` to that JSON file (round-trippable with update/submit).
+pub fn maybe_dump_config(
+    cfg: &Config,
+    path: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(path) = path {
+        write_config_to_file(cfg, path)?;
+        println!("Wrote config to {path}");
+    }
+    Ok(())
 }
 
 pub fn get_global_config(
