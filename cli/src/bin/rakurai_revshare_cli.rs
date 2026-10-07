@@ -27,7 +27,7 @@ use {
     },
     solana_sdk::{
         account::Account, commitment_config::CommitmentConfig, instruction::Instruction,
-        pubkey::Pubkey, rent::Rent, signature::Signer, system_program,
+        pubkey::Pubkey, rent::Rent, signature::Signer, system_instruction, system_program,
     },
     std::{error::Error, sync::Arc},
 };
@@ -96,6 +96,8 @@ enum Commands {
     Transfer(TransferArgs),
     /// Settle every pending epoch across all MCA/TCA for this service.
     TransferAll(TransferAllArgs),
+    /// Plain SOL transfer into one TCA/MCA vault (no settle / ledger update).
+    Fund(FundArgs),
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
@@ -235,6 +237,20 @@ struct TransferAllArgs {
     batch_size: usize,
 
     /// Preview pending settlements without sending transactions.
+    #[arg(long, default_value_t = false)]
+    dry_run: bool,
+}
+
+#[derive(Args)]
+struct FundArgs {
+    #[command(flatten)]
+    target: TargetArgs,
+
+    /// Lamports to transfer into the TCA/MCA vault.
+    #[arg(short = 'x', long, required = true)]
+    amount: u64,
+
+    /// Preview the transfer without sending a transaction.
     #[arg(long, default_value_t = false)]
     dry_run: bool,
 }
@@ -1149,6 +1165,50 @@ fn settle_instruction(
     ))
 }
 
+fn process_fund(
+    rpc_client: Arc<RpcClient>,
+    program_id: Pubkey,
+    keypair_path: &str,
+    args: FundArgs,
+) -> CliResult {
+    if args.amount == 0 {
+        return Err("fund amount must be greater than zero".into());
+    }
+
+    let vault = load_target(&rpc_client, program_id, &args.target)?;
+    let payer = parse_keypair(keypair_path)?;
+    let instruction =
+        system_instruction::transfer(&payer.pubkey(), &vault.address(), args.amount);
+
+    let kind = vault.share_kind();
+    print_heading(&format!("{} Fund Transfer", kind_account_label(kind)));
+    print_field(
+        "🔗".cyan(),
+        "Vault:",
+        vault.address().to_string().bold().green(),
+    );
+    print_field("📝".cyan(), "Name:", args.target.service.revenue_name.magenta());
+    print_field(
+        "🔑".red(),
+        "Vote:",
+        short_pubkey(&vault.validator_vote().to_string()),
+    );
+    print_field(
+        "💰".green(),
+        "Amount:",
+        format_total_with_sol(args.amount).yellow(),
+    );
+    print_field("🔑".red(), "Payer:", payer.pubkey().to_string());
+    if args.dry_run {
+        println!(
+            "\n   {}",
+            "Dry run only — no transaction was sent.".yellow()
+        );
+        return Ok(());
+    }
+    sign_and_send_transaction(rpc_client, instruction, &payer)
+}
+
 fn process_transfer(
     rpc_client: Arc<RpcClient>,
     program_id: Pubkey,
@@ -1335,6 +1395,7 @@ fn main() -> CliResult {
         Commands::TransferAll(args) => {
             process_transfer_all(rpc_client, cli.program_id, &cli.keypair, args)
         }
+        Commands::Fund(args) => process_fund(rpc_client, cli.program_id, &cli.keypair, args),
     }
 }
 
