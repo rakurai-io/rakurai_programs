@@ -2068,6 +2068,7 @@ dependencies = [
  "solana-rpc-client-api",
  "solana-sdk",
  "solana-sdk-ids",
+ "solana-system-interface 3.3.0",
 ]
 
 [[package]]
