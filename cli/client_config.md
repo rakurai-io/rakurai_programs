@@ -84,7 +84,8 @@ Each file has all three sections. See [`examples/validator_config.json`](./examp
           "max_bundle_burst": 0
         }
       }
-    ]
+    ],
+    "config": { "bs_pm": 20, "bs_np": 10, "bs_be": 10 }
   },
   "p2c": {
     "sets": [
@@ -104,7 +105,8 @@ Each file has all three sections. See [`examples/validator_config.json`](./examp
         "url": [{ "key": "<PUBKEY>", "value": 0.1 }]
       }
     ]
-  }
+  },
+  "sch_config": { "rs_mode": 1, "rs_enforce": false }
 }
 ```
 

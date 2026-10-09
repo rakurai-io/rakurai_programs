@@ -6,7 +6,8 @@ use {
     rakurai_client_config::{
         sdk::{
             effective_config, name_from_str, BlockEngineConfig, BlockEngineEntryV4, BlockEngineV4,
-            Config, ConfigLimits, ConfigV4, P2cEntryV4, P2cV4, Uuid, ValidatorProposal,
+            BundlesConfig, Config, ConfigLimits, ConfigV4, P2cEntryV4, P2cV4, SchedConfig, Uuid,
+            ValidatorProposal,
             VirtualPriorityConfig, VirtualPriorityEntryV1, VirtualPriorityV1,
         },
         state::{GlobalConfig, ValidatorConfig},
@@ -26,18 +27,66 @@ struct ConfigFile {
     p2c: SetsFileP2c,
     #[serde(default)]
     virtual_priority: SetsFileVp,
+    #[serde(default)]
+    sch_config: SchedConfigFile,
+}
+
+/// Missing fields take the on-chain defaults from [`SchedConfig::default`].
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+struct SchedConfigFile {
+    rs_mode: u8,
+    rs_enforce: bool,
+}
+
+impl Default for SchedConfigFile {
+    fn default() -> Self {
+        let d = SchedConfig::default();
+        Self {
+            rs_mode: d.rs_mode,
+            rs_enforce: d.rs_enforce,
+        }
+    }
+}
+
+/// Missing fields take the on-chain defaults from [`BundlesConfig::default`].
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+struct BundlesConfigFile {
+    bs_pm: u16,
+    bs_np: u16,
+    bs_be: u16,
+}
+
+impl Default for BundlesConfigFile {
+    fn default() -> Self {
+        let d = BundlesConfig::default();
+        Self {
+            bs_pm: d.bs_pm,
+            bs_np: d.bs_np,
+            bs_be: d.bs_be,
+        }
+    }
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Default)]
 struct SetsFileBe {
     #[serde(default)]
     sets: Vec<BeEntryFile>,
+    #[serde(default)]
+    config: BundlesConfigFile,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct BeEntryFile {
     name: String,
     url: BeUrlFile,
+    #[serde(default)]
+    consider_primary: bool,
+    #[serde(default)]
+    sch: u8,
+    #[serde(default)]
+    consider: u8,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -111,8 +160,16 @@ pub fn load_config_from_file(path: &str) -> Result<Config, Box<dyn std::error::E
                         period_ms: e.url.period_ms,
                         max_bundle_burst: e.url.max_bundle_burst,
                     },
+                    consider_primary: e.consider_primary,
+                    sch: e.sch,
+                    consider: e.consider,
                 })
                 .collect(),
+            config: BundlesConfig {
+                bs_pm: file.block_engine.config.bs_pm,
+                bs_np: file.block_engine.config.bs_np,
+                bs_be: file.block_engine.config.bs_be,
+            },
         },
         p2c: P2cV4 {
             sets: file
@@ -151,6 +208,10 @@ pub fn load_config_from_file(path: &str) -> Result<Config, Box<dyn std::error::E
                 )
                 .collect::<Result<Vec<_>, _>>()?,
         },
+        sch_config: SchedConfig {
+            rs_mode: file.sch_config.rs_mode,
+            rs_enforce: file.sch_config.rs_enforce,
+        },
     }))
 }
 
@@ -172,8 +233,16 @@ fn config_to_file(cfg: &Config) -> Result<ConfigFile, Box<dyn std::error::Error>
                         period_ms: e.url.period_ms,
                         max_bundle_burst: e.url.max_bundle_burst,
                     },
+                    consider_primary: e.consider_primary,
+                    sch: e.sch,
+                    consider: e.consider,
                 })
                 .collect(),
+            config: BundlesConfigFile {
+                bs_pm: v4.block_engine.config.bs_pm,
+                bs_np: v4.block_engine.config.bs_np,
+                bs_be: v4.block_engine.config.bs_be,
+            },
         },
         p2c: SetsFileP2c {
             sets: v4
@@ -206,6 +275,10 @@ fn config_to_file(cfg: &Config) -> Result<ConfigFile, Box<dyn std::error::Error>
                         .collect(),
                 })
                 .collect(),
+        },
+        sch_config: SchedConfigFile {
+            rs_mode: v4.sch_config.rs_mode,
+            rs_enforce: v4.sch_config.rs_enforce,
         },
     })
 }
@@ -271,12 +344,21 @@ fn display_config_payload(cfg: &Config) {
     };
     println!("   schema: {schema}");
     println!("   {}", "block_engine".yellow());
+    let bc = &v4.block_engine.config;
+    println!(
+        "     config: bs_pm {} / bs_np {} / bs_be {}",
+        bc.bs_pm, bc.bs_np, bc.bs_be
+    );
     for entry in &v4.block_engine.sets {
         println!("     [{}]", uuid_to_string(&entry.name));
         let u = &entry.url;
         println!(
             "       {} (max_bundles {} / period_ms {} / burst {})",
             u.url, u.max_bundles, u.period_ms, u.max_bundle_burst
+        );
+        println!(
+            "       consider_primary {} / sch {} / consider {}",
+            entry.consider_primary, entry.sch, entry.consider
         );
     }
     println!("   {}", "p2c".yellow());
@@ -294,6 +376,11 @@ fn display_config_payload(cfg: &Config) {
             println!("       {} -> {}", u.key, u.value);
         }
     }
+    println!("   {}", "sch_config".yellow());
+    println!(
+        "     rs_mode {} / rs_enforce {}",
+        v4.sch_config.rs_mode, v4.sch_config.rs_enforce
+    );
 }
 
 fn display_limits(limits: &ConfigLimits) {

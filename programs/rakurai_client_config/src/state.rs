@@ -294,20 +294,40 @@ impl ConfigV3 {
     }
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
+pub struct SchedConfig {
+    pub rs_mode: u8,
+    pub rs_enforce: bool,
+}
+
+impl Default for SchedConfig {
+    fn default() -> Self {
+        Self {
+            rs_mode: 1,
+            rs_enforce: false,
+        }
+    }
+}
+
 /// V4 payload: one block-engine URL per UUID; one P2C URL per UUID with optional Mev/ReSell/TPU.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub struct ConfigV4 {
     pub block_engine: BlockEngineV4,
     pub p2c: P2cV4,
     pub virtual_priority: VirtualPriorityV1,
+    pub sch_config: SchedConfig,
 }
 
 impl ConfigV4 {
     pub fn empty() -> Self {
         Self {
-            block_engine: BlockEngineV4 { sets: vec![] },
+            block_engine: BlockEngineV4 {
+                sets: vec![],
+                config: BundlesConfig::default(),
+            },
             p2c: P2cV4 { sets: vec![] },
             virtual_priority: VirtualPriorityV1 { sets: vec![] },
+            sch_config: SchedConfig::default(),
         }
     }
 
@@ -323,9 +343,13 @@ impl ConfigV4 {
                         Some(BlockEngineEntryV4 {
                             name: entry.name,
                             url,
+                            consider_primary: false,
+                            sch: 0,
+                            consider: 0,
                         })
                     })
                     .collect(),
+                config: BundlesConfig::default(),
             },
             p2c: P2cV4 {
                 sets: v3
@@ -352,6 +376,7 @@ impl ConfigV4 {
                     .collect(),
             },
             virtual_priority: v3.virtual_priority,
+            sch_config: SchedConfig::default(),
         }
     }
 
@@ -388,12 +413,33 @@ pub struct BlockEngineEntryV1 {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub struct BlockEngineV4 {
     pub sets: Vec<BlockEngineEntryV4>,
+    pub config: BundlesConfig,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
+pub struct BundlesConfig {
+    pub bs_pm: u16,
+    pub bs_np: u16,
+    pub bs_be: u16,
+}
+
+impl Default for BundlesConfig {
+    fn default() -> Self {
+        Self {
+            bs_pm: 20,
+            bs_np: 10,
+            bs_be: 10,
+        }
+    }
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub struct BlockEngineEntryV4 {
     pub name: Uuid,
     pub url: BlockEngineConfig,
+    pub consider_primary: bool,
+    pub sch: u8,
+    pub consider: u8,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
@@ -1088,10 +1134,12 @@ mod tests {
         assert!(v3.any_tpu_p2c_update_enabled());
         assert_eq!(v3.p2c.sets[0].url.len(), 2);
         assert!(v3.p2c.sets[0].url.iter().all(|u| u.enable_tpu_p2c_update));
-        assert!(v3.p2c.sets[0]
-            .url
-            .iter()
-            .all(|u| u.p2c_type == P2cType::Mev));
+        assert!(
+            v3.p2c.sets[0]
+                .url
+                .iter()
+                .all(|u| u.p2c_type == P2cType::Mev)
+        );
         assert!(!cfg.migrate_to_v3());
     }
 
@@ -1143,7 +1191,63 @@ mod tests {
         assert!(v4.p2c.sets[0].mev);
         assert!(v4.p2c.sets[0].resell);
         assert!(v4.p2c.sets[0].enable_tpu_p2c_update);
+        assert!(!v4.block_engine.sets[0].consider_primary);
+        assert_eq!(v4.block_engine.sets[0].sch, 0);
+        assert_eq!(v4.block_engine.sets[0].consider, 0);
+        assert_eq!(v4.block_engine.config, BundlesConfig::default());
+        assert_eq!(v4.sch_config, SchedConfig::default());
         assert!(!cfg.migrate_to_v4());
+    }
+
+    #[test]
+    fn v4_block_engine_options_round_trip() {
+        let mut v4 = ConfigV4::empty();
+        v4.block_engine.sets.push(BlockEngineEntryV4 {
+            name: Uuid::from_str_truncated("be"),
+            url: BlockEngineConfig {
+                url: "https://be".to_string(),
+                max_bundles: 0,
+                period_ms: 0,
+                max_bundle_burst: 0,
+            },
+            consider_primary: true,
+            sch: 7,
+            consider: 9,
+        });
+        v4.block_engine.config = BundlesConfig {
+            bs_pm: 1,
+            bs_np: 2,
+            bs_be: 3,
+        };
+        v4.sch_config = SchedConfig {
+            rs_mode: 4,
+            rs_enforce: true,
+        };
+        let cfg = Config::V4(v4);
+        let bytes = borsh::to_vec(&cfg).unwrap();
+        assert_eq!(Config::try_from_slice(&bytes).unwrap(), cfg);
+    }
+
+    #[test]
+    fn v4_defaults_for_bundles_and_sched_config() {
+        assert_eq!(
+            BundlesConfig::default(),
+            BundlesConfig {
+                bs_pm: 20,
+                bs_np: 10,
+                bs_be: 10,
+            }
+        );
+        assert_eq!(
+            SchedConfig::default(),
+            SchedConfig {
+                rs_mode: 1,
+                rs_enforce: false,
+            }
+        );
+        let v4 = ConfigV4::empty();
+        assert_eq!(v4.block_engine.config, BundlesConfig::default());
+        assert_eq!(v4.sch_config, SchedConfig::default());
     }
 
     #[test]

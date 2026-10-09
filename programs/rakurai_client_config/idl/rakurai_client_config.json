@@ -3234,6 +3234,29 @@
                 "name": "BlockEngineConfig"
               }
             }
+          },
+          {
+            "name": "consider_primary",
+            "docs": [
+              "Queue this block engine's bundles as primary in bundle stage. Defaults to `false`."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "sch",
+            "docs": [
+              "Bundle stage: a secondary bundle is only processed while fewer than `sch` bundles were",
+              "processed in that call. `0` = validator default (2)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "consider",
+            "docs": [
+              "Bundle stage: a secondary bundle is only eligible within the first `consider` bundles",
+              "examined in a call. `0` = validator default (10)."
+            ],
+            "type": "u8"
           }
         ]
       }
@@ -3273,6 +3296,34 @@
                 }
               }
             }
+          },
+          {
+            "name": "config",
+            "type": {
+              "defined": {
+                "name": "BundlesConfig"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "BundlesConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bs_pm",
+            "type": "u16"
+          },
+          {
+            "name": "bs_np",
+            "type": "u16"
+          },
+          {
+            "name": "bs_be",
+            "type": "u16"
           }
         ]
       }
@@ -3521,6 +3572,14 @@
                 "name": "VirtualPriorityV1"
               }
             }
+          },
+          {
+            "name": "sch_config",
+            "type": {
+              "defined": {
+                "name": "SchedConfig"
+              }
+            }
           }
         ]
       }
@@ -3753,6 +3812,22 @@
                 }
               }
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "SchedConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "rs_mode",
+            "type": "u8"
+          },
+          {
+            "name": "rs_enforce",
+            "type": "bool"
           }
         ]
       }
