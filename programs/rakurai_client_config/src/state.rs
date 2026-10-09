@@ -265,7 +265,6 @@ impl ConfigV3 {
                             .map(|u| P2cConfig {
                                 url: u.url,
                                 enable_tpu_p2c_update: enable,
-                                p2c_type: P2cType::Mev,
                             })
                             .collect(),
                     })
@@ -359,17 +358,13 @@ impl ConfigV4 {
                     .filter_map(|entry| {
                         let first = entry.url.first()?;
                         let url = first.url.clone();
-                        let mev = entry.url.iter().any(|u| u.p2c_type == P2cType::Mev);
-                        let resell = entry.url.iter().any(|u| u.p2c_type == P2cType::ReSell);
-                        let enable_tpu_p2c_update = entry
-                            .url
-                            .iter()
-                            .any(|u| u.p2c_type == P2cType::Mev && u.enable_tpu_p2c_update);
+                        let enable_tpu_p2c_update =
+                            entry.url.iter().any(|u| u.enable_tpu_p2c_update);
                         Some(P2cEntryV4 {
                             name: entry.name,
                             url,
-                            mev,
-                            resell,
+                            mev: true,
+                            resell: true,
                             enable_tpu_p2c_update,
                         })
                     })
@@ -487,7 +482,6 @@ pub struct P2cEntryV3 {
 pub struct P2cConfig {
     pub url: String,
     pub enable_tpu_p2c_update: bool,
-    pub p2c_type: P2cType,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
@@ -1134,12 +1128,6 @@ mod tests {
         assert!(v3.any_tpu_p2c_update_enabled());
         assert_eq!(v3.p2c.sets[0].url.len(), 2);
         assert!(v3.p2c.sets[0].url.iter().all(|u| u.enable_tpu_p2c_update));
-        assert!(
-            v3.p2c.sets[0]
-                .url
-                .iter()
-                .all(|u| u.p2c_type == P2cType::Mev)
-        );
         assert!(!cfg.migrate_to_v3());
     }
 
@@ -1172,12 +1160,10 @@ mod tests {
                         P2cConfig {
                             url: "https://p2c".to_string(),
                             enable_tpu_p2c_update: true,
-                            p2c_type: P2cType::Mev,
                         },
                         P2cConfig {
-                            url: "https://p2c".to_string(),
+                            url: "https://p2c-extra".to_string(),
                             enable_tpu_p2c_update: false,
-                            p2c_type: P2cType::ReSell,
                         },
                     ],
                 }],
