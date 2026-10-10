@@ -363,7 +363,7 @@ impl ConfigV4 {
                         Some(P2cEntryV4 {
                             name: entry.name,
                             url,
-                            mev: true,
+                            mev: false,
                             resell: true,
                             enable_tpu_p2c_update,
                         })
