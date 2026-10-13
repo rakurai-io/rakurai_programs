@@ -3314,19 +3314,43 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "bs_pm",
+            "name": "bs_pm1",
             "type": "u16"
           },
           {
-            "name": "bs_np",
+            "name": "bs_np1",
             "type": "u16"
           },
           {
-            "name": "bs_be",
+            "name": "bs_be1",
+            "type": "u16"
+          },
+          {
+            "name": "bs_d1",
+            "type": "u16"
+          },
+          {
+            "name": "bs_pm2",
+            "type": "u16"
+          },
+          {
+            "name": "bs_np2",
+            "type": "u16"
+          },
+          {
+            "name": "bs_be2",
+            "type": "u16"
+          },
+          {
+            "name": "bs_d2",
             "type": "u16"
           }
         ]
-      }
+      },
+      "docs": [
+        "Bundle-stage settings; `*1` fields apply to primary bundles (`consider_primary`), `*2` fields",
+        "to secondary bundles."
+      ]
     },
     {
       "name": "Config",
@@ -3824,6 +3848,10 @@
           {
             "name": "rs_mode",
             "type": "u8"
+          },
+          {
+            "name": "rs_cfg_d1",
+            "type": "u16"
           },
           {
             "name": "rs_enforce",

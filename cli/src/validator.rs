@@ -5,10 +5,10 @@ use {
     colored::*,
     rakurai_client_config::{
         sdk::{
-            effective_config, name_from_str, BlockEngineConfig, BlockEngineEntryV4, BlockEngineV4,
-            BundlesConfig, Config, ConfigLimits, ConfigV4, P2cEntryV4, P2cV4, SchedConfig, Uuid,
-            ValidatorProposal,
-            VirtualPriorityConfig, VirtualPriorityEntryV1, VirtualPriorityV1,
+            BlockEngineConfig, BlockEngineEntryV4, BlockEngineV4, BundlesConfig, Config,
+            ConfigLimits, ConfigV4, P2cEntryV4, P2cV4, SchedConfig, Uuid, ValidatorProposal,
+            VirtualPriorityConfig, VirtualPriorityEntryV1, VirtualPriorityV1, effective_config,
+            name_from_str,
         },
         state::{GlobalConfig, ValidatorConfig},
     },
@@ -36,6 +36,7 @@ struct ConfigFile {
 #[serde(default)]
 struct SchedConfigFile {
     rs_mode: u8,
+    rs_cfg_d1: u16,
     rs_enforce: bool,
 }
 
@@ -44,27 +45,59 @@ impl Default for SchedConfigFile {
         let d = SchedConfig::default();
         Self {
             rs_mode: d.rs_mode,
+            rs_cfg_d1: d.rs_cfg_d1,
             rs_enforce: d.rs_enforce,
         }
     }
 }
 
+/// `block_engine.config`: `*1` fields apply to primary bundles, `*2` to secondary.
 /// Missing fields take the on-chain defaults from [`BundlesConfig::default`].
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 struct BundlesConfigFile {
-    bs_pm: u16,
-    bs_np: u16,
-    bs_be: u16,
+    bs_pm1: u16,
+    bs_np1: u16,
+    bs_be1: u16,
+    bs_d1: u16,
+    bs_pm2: u16,
+    bs_np2: u16,
+    bs_be2: u16,
+    bs_d2: u16,
 }
 
 impl Default for BundlesConfigFile {
     fn default() -> Self {
-        let d = BundlesConfig::default();
+        Self::from(&BundlesConfig::default())
+    }
+}
+
+impl From<&BundlesConfig> for BundlesConfigFile {
+    fn from(c: &BundlesConfig) -> Self {
         Self {
-            bs_pm: d.bs_pm,
-            bs_np: d.bs_np,
-            bs_be: d.bs_be,
+            bs_pm1: c.bs_pm1,
+            bs_np1: c.bs_np1,
+            bs_be1: c.bs_be1,
+            bs_d1: c.bs_d1,
+            bs_pm2: c.bs_pm2,
+            bs_np2: c.bs_np2,
+            bs_be2: c.bs_be2,
+            bs_d2: c.bs_d2,
+        }
+    }
+}
+
+impl From<&BundlesConfigFile> for BundlesConfig {
+    fn from(c: &BundlesConfigFile) -> Self {
+        Self {
+            bs_pm1: c.bs_pm1,
+            bs_np1: c.bs_np1,
+            bs_be1: c.bs_be1,
+            bs_d1: c.bs_d1,
+            bs_pm2: c.bs_pm2,
+            bs_np2: c.bs_np2,
+            bs_be2: c.bs_be2,
+            bs_d2: c.bs_d2,
         }
     }
 }
@@ -165,11 +198,7 @@ pub fn load_config_from_file(path: &str) -> Result<Config, Box<dyn std::error::E
                     consider: e.consider,
                 })
                 .collect(),
-            config: BundlesConfig {
-                bs_pm: file.block_engine.config.bs_pm,
-                bs_np: file.block_engine.config.bs_np,
-                bs_be: file.block_engine.config.bs_be,
-            },
+            config: BundlesConfig::from(&file.block_engine.config),
         },
         p2c: P2cV4 {
             sets: file
@@ -210,6 +239,7 @@ pub fn load_config_from_file(path: &str) -> Result<Config, Box<dyn std::error::E
         },
         sch_config: SchedConfig {
             rs_mode: file.sch_config.rs_mode,
+            rs_cfg_d1: file.sch_config.rs_cfg_d1,
             rs_enforce: file.sch_config.rs_enforce,
         },
     }))
@@ -238,11 +268,7 @@ fn config_to_file(cfg: &Config) -> Result<ConfigFile, Box<dyn std::error::Error>
                     consider: e.consider,
                 })
                 .collect(),
-            config: BundlesConfigFile {
-                bs_pm: v4.block_engine.config.bs_pm,
-                bs_np: v4.block_engine.config.bs_np,
-                bs_be: v4.block_engine.config.bs_be,
-            },
+            config: BundlesConfigFile::from(&v4.block_engine.config),
         },
         p2c: SetsFileP2c {
             sets: v4
@@ -278,6 +304,7 @@ fn config_to_file(cfg: &Config) -> Result<ConfigFile, Box<dyn std::error::Error>
         },
         sch_config: SchedConfigFile {
             rs_mode: v4.sch_config.rs_mode,
+            rs_cfg_d1: v4.sch_config.rs_cfg_d1,
             rs_enforce: v4.sch_config.rs_enforce,
         },
     })
@@ -346,8 +373,8 @@ fn display_config_payload(cfg: &Config) {
     println!("   {}", "block_engine".yellow());
     let bc = &v4.block_engine.config;
     println!(
-        "     config: bs_pm {} / bs_np {} / bs_be {}",
-        bc.bs_pm, bc.bs_np, bc.bs_be
+        "Config :   bs_pm1 {} / bs_np1 {} / bs_be1 {} / bs_d1 {}  bs_pm2 {} / bs_np2 {} / bs_be2 {} / bs_d2 {}",
+        bc.bs_pm1, bc.bs_np1, bc.bs_be1, bc.bs_d1, bc.bs_pm2, bc.bs_np2, bc.bs_be2, bc.bs_d2
     );
     for entry in &v4.block_engine.sets {
         println!("     [{}]", uuid_to_string(&entry.name));
@@ -378,8 +405,8 @@ fn display_config_payload(cfg: &Config) {
     }
     println!("   {}", "sch_config".yellow());
     println!(
-        "     rs_mode {} / rs_enforce {}",
-        v4.sch_config.rs_mode, v4.sch_config.rs_enforce
+        "     rs_mode {} / rs_cfg_d1 {} / rs_enforce {}",
+        v4.sch_config.rs_mode, v4.sch_config.rs_cfg_d1, v4.sch_config.rs_enforce
     );
 }
 

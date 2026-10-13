@@ -296,6 +296,7 @@ impl ConfigV3 {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub struct SchedConfig {
     pub rs_mode: u8,
+    pub rs_cfg_d1: u16,
     pub rs_enforce: bool,
 }
 
@@ -303,6 +304,7 @@ impl Default for SchedConfig {
     fn default() -> Self {
         Self {
             rs_mode: 1,
+            rs_cfg_d1: 40,
             rs_enforce: false,
         }
     }
@@ -411,19 +413,31 @@ pub struct BlockEngineV4 {
     pub config: BundlesConfig,
 }
 
+/// Bundle-stage settings; `*1` fields apply to primary bundles (`consider_primary`), `*2` fields
+/// to secondary bundles.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub struct BundlesConfig {
-    pub bs_pm: u16,
-    pub bs_np: u16,
-    pub bs_be: u16,
+    pub bs_pm1: u16,
+    pub bs_np1: u16,
+    pub bs_be1: u16,
+    pub bs_d1: u16,
+    pub bs_pm2: u16,
+    pub bs_np2: u16,
+    pub bs_be2: u16,
+    pub bs_d2: u16,
 }
 
 impl Default for BundlesConfig {
     fn default() -> Self {
         Self {
-            bs_pm: 20,
-            bs_np: 10,
-            bs_be: 10,
+            bs_pm1: 20,
+            bs_np1: 10,
+            bs_be1: 10,
+            bs_d1: 0,
+            bs_pm2: 20,
+            bs_np2: 10,
+            bs_be2: 10,
+            bs_d2: 5,
         }
     }
 }
@@ -1201,12 +1215,18 @@ mod tests {
             consider: 9,
         });
         v4.block_engine.config = BundlesConfig {
-            bs_pm: 1,
-            bs_np: 2,
-            bs_be: 3,
+            bs_pm1: 1,
+            bs_np1: 2,
+            bs_be1: 3,
+            bs_d1: 4,
+            bs_pm2: 5,
+            bs_np2: 6,
+            bs_be2: 7,
+            bs_d2: 8,
         };
         v4.sch_config = SchedConfig {
             rs_mode: 4,
+            rs_cfg_d1: 25,
             rs_enforce: true,
         };
         let cfg = Config::V4(v4);
@@ -1219,15 +1239,21 @@ mod tests {
         assert_eq!(
             BundlesConfig::default(),
             BundlesConfig {
-                bs_pm: 20,
-                bs_np: 10,
-                bs_be: 10,
+                bs_pm1: 20,
+                bs_np1: 10,
+                bs_be1: 10,
+                bs_d1: 10,
+                bs_pm2: 20,
+                bs_np2: 10,
+                bs_be2: 10,
+                bs_d2: 10,
             }
         );
         assert_eq!(
             SchedConfig::default(),
             SchedConfig {
                 rs_mode: 1,
+                rs_cfg_d1: 40,
                 rs_enforce: false,
             }
         );
