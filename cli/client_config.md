@@ -85,7 +85,10 @@ Each file has all three sections. See [`examples/validator_config.json`](./examp
         }
       }
     ],
-    "config": { "bs_pm": 20, "bs_np": 10, "bs_be": 10 }
+    "config": {
+      "bs_pm1": 20, "bs_np1": 10, "bs_be1": 10, "bs_d1": 10,
+      "bs_pm2": 20, "bs_np2": 10, "bs_be2": 10, "bs_d2": 10
+    }
   },
   "p2c": {
     "sets": [
@@ -106,7 +109,7 @@ Each file has all three sections. See [`examples/validator_config.json`](./examp
       }
     ]
   },
-  "sch_config": { "rs_mode": 1, "rs_enforce": false }
+  "sch_config": { "rs_mode": 1, "rs_cfg_d1": 40, "rs_enforce": false }
 }
 ```
 
