@@ -52,20 +52,18 @@ Source: `programs/reward_distribution/src/` (v0.3.0).
 
 **Config PDA:** `[P2C_CONFIG]` (`P2CConfigAccount`) — manager / record / commission / grace / max_epoch defaults (like TipsAndMevShareConfig for TCA/MCA).
 
-**PSA PDA:** `[P2C_SUBSCRIPTION, name[32], vote]`. Anyone may create; defaults come from config. Anyone can fund. Manager signs ledger record/claim.
+**PSA PDA:** `[P2C_SUBSCRIPTION, name[32], vote]`. Anyone may create; defaults come from config. Anyone can fund. Manager or record authority signs ledger record; manager signs claim.
 
 | Instruction | Signer | Notes |
 |-------------|--------|-------|
 | initialize_p2c_config / update_p2c_config / close_p2c_config | config authority | Singleton defaults for PSA init |
 | initialize_p2c_subscription_account | any payer | Copies manager/record/commission/grace/max_epoch from `P2CConfig` |
 | fund_p2c_subscription | any funder | Or plain SOL transfer into PDA |
-| record_p2c_subscription | **manager_authority** | Record epoch + recorded_amount (optional updates; default 0) |
+| record_p2c_subscription | **manager_authority** or **record_authority** | Record epoch + recorded_amount (optional updates; default 0) |
 | claim_epoch_p2c_subscription | **manager_authority** | Pay `min(remaining, free)`; `force_claim` closes with deficit |
 | clear_p2c_deficit | any funder | Transfer + pay commission/identity against deficit |
-| update_p2c_epoch_converted_to_block_reward | manager **or** record_authority **or** vote identity | Post-claim only |
+| update_p2c_epoch_converted_to_block_reward | manager **or** record_authority **or** vote **node** | Same auth as `update_epoch_converted_to_block_reward_v1` |
 | update_p2c_subscription_config / update_p2c_deficit / close | manager_authority | Close blocked if unclaimed epochs |
-
-`record_authority` does **not** sign epoch records — only convert-to-block (optional path).
 
 ---
 

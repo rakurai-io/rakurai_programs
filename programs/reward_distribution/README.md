@@ -267,7 +267,7 @@ pub struct P2CSubscriptionAccount {
     pub validator_vote: Pubkey,
     pub initializer: Pubkey,               // paid rent; residual on close
     pub manager_authority: Pubkey,         // record / claim / config / close
-    pub record_authority: Pubkey,          // convert-to-block only (not epoch record)
+    pub record_authority: Pubkey,          // record epoch fees; convert-to-block with manager/node
     pub max_epoch_entries: u8,
     pub commission_bps: u16,
     pub commission_account: Pubkey,

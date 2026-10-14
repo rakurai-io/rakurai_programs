@@ -64,6 +64,7 @@ Global flags: `-k` / `--keypair`, `-u` / `--url`, `-p` / `--program-id`.
 | `get-all-accounts` | List escrows for a service `--name` |
 | `fund` | Top up prepaid SOL |
 | `fund-all` | Fund shortfalls for every underfunded PSA under `--name` (excludes current epoch) |
+| `record` | Record epoch fee (`--epoch` + `--amount`; optional `--updates`). Signer: manager or record authority |
 
 ### 3.1. `get-account`
 
@@ -119,6 +120,23 @@ rakurai-p2c \
 ```
 
 `--batch-size` (default **5** ix/txn) controls fund instructions per transaction to stay under Solana size limits. Pass `--dry-run` to preview.
+
+### 3.5. `record`
+
+Record the fee for one epoch. Signer must be the PSA **manager** or **record** authority. `--epoch` and `--amount` (lamports) are required; `--updates` is optional (default 0).
+
+```sh
+rakurai-p2c \
+  --url <RPC_URL> \
+  --program-id <REWARD_DISTRIBUTION_PROGRAM_ID> \
+  --keypair <MANAGER_OR_RECORD_AUTHORITY_KEYPAIR> \
+  record \
+  --name <SERVICE_NAME> \
+  --vote-pubkey <VALIDATOR_VOTE_PUBKEY> \
+  --epoch <EPOCH> \
+  --amount <LAMPORTS> \
+  [--updates <COUNT>]
+```
 
 ---
 
