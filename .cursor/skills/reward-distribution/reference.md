@@ -59,7 +59,7 @@ Source: `programs/reward_distribution/src/` (v0.3.0).
 | initialize_p2c_config / update_p2c_config / close_p2c_config | config authority | Singleton defaults for PSA init |
 | initialize_p2c_subscription_account | any payer | Copies manager/record/commission/grace/max_epoch from `P2CConfig` |
 | fund_p2c_subscription | any funder | Or plain SOL transfer into PDA |
-| record_p2c_subscription | **manager_authority** | Upload epoch stake + amount_due |
+| record_p2c_subscription | **manager_authority** | Record epoch + recorded_amount (optional updates; default 0) |
 | claim_epoch_p2c_subscription | **manager_authority** | Pay `min(remaining, free)`; `force_claim` closes with deficit |
 | clear_p2c_deficit | any funder | Transfer + pay commission/identity against deficit |
 | update_p2c_epoch_converted_to_block_reward | manager **or** record_authority **or** vote identity | Post-claim only |

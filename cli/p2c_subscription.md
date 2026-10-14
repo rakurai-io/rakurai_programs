@@ -67,7 +67,7 @@ Global flags: `-k` / `--keypair`, `-u` / `--url`, `-p` / `--program-id`.
 
 ### 3.1. `get-account`
 
-One escrow for one validator. Summary: pubkey, name, vote, status, balance after rent-exempt, **total owed** (past epochs only — current cluster epoch excluded), and **deficit only if greater than zero**. An underfunded alert appears only when balance is below owed. `--detail` adds manager/auth, commission, and per-epoch rows (`due` / `deducted` / `owed` / `claimed`).
+One escrow for one validator. Summary: pubkey, name, vote, status, balance after rent-exempt, **total owed** (past epochs only — current cluster epoch excluded), and **deficit only if greater than zero**. An underfunded alert appears only when balance is below owed. `--detail` adds manager/auth, commission, and per-epoch rows (`recorded` / `updates` / `deducted` / `owed` / `claimed`).
 
 ```sh
 rakurai-p2c \
