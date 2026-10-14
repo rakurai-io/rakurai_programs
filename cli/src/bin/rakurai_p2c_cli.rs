@@ -91,7 +91,7 @@ enum Commands {
     Fund(FundArgs),
     /// Top up shortfalls for every underfunded PSA under this service name.
     FundAll(FundAllArgs),
-    /// Record stake + amount due for an epoch (manager; `--epoch` + `--stake` + `--amount-due`).
+    /// Record epoch fee (manager; `--epoch` + `--amount`, optional `--updates`).
     #[command(hide = true)]
     Record(RecordArgs),
     /// Claim one epoch’s fee from prepaid into commission + validator (manager).
@@ -173,16 +173,17 @@ struct RecordArgs {
     #[command(flatten)]
     account: AccountArgs,
 
+    /// Epoch to record (required; same as MCA record-revenue).
     #[arg(short, long, required = true)]
     epoch: u64,
 
-    /// Off-chain stake snapshot for this epoch.
-    #[arg(long, required = true)]
-    stake: u64,
+    /// Optional updates/txn count for this epoch (default 0).
+    #[arg(long, default_value_t = 0)]
+    updates: u64,
 
-    /// Fee due for the epoch (lamports).
-    #[arg(short = 'x', long = "amount-due", required = true)]
-    amount_due: u64,
+    /// Recorded fee for the epoch in lamports (required; must be > 0).
+    #[arg(short = 'x', long = "amount", alias = "recorded-amount", required = true)]
+    amount: u64,
 }
 
 #[derive(Args)]
@@ -514,12 +515,14 @@ fn balance_after_rent(account: &P2CSubscriptionAccount, lamports: u64) -> u64 {
     lamports.saturating_sub(Rent::default().minimum_balance(space))
 }
 
-/// Remaining fee for an unclaimed epoch (`due - deducted`). Claimed rows are settled (shortfall → deficit).
+/// Remaining fee for an unclaimed epoch (`recorded - deducted`). Claimed rows are settled (shortfall → deficit).
 fn epoch_owed(entry: &P2CEpochEntry) -> u64 {
     if entry.claimed {
         0
     } else {
-        entry.amount_due.saturating_sub(entry.amount_deducted)
+        entry
+            .recorded_amount
+            .saturating_sub(entry.amount_deducted)
     }
 }
 
@@ -658,9 +661,10 @@ fn display_p2c(
     } else {
         for e in entries {
             println!(
-                "      epoch {:>6}: due={:<12} deducted={:<12} owed={:<12} claimed={}",
+                "      epoch {:>6}: recorded={:<12} updates={:<12} deducted={:<12} owed={:<12} claimed={}",
                 e.epoch.to_string().blue(),
-                e.amount_due.to_string().yellow(),
+                e.recorded_amount.to_string().yellow(),
+                e.updates.to_string().blue(),
                 e.amount_deducted.to_string().yellow(),
                 epoch_owed(e).to_string().yellow(),
                 e.claimed.to_string().blue(),
@@ -969,6 +973,9 @@ fn process_record(
     keypair_path: &str,
     args: RecordArgs,
 ) -> CliResult {
+    if args.amount == 0 {
+        return Err("record amount must be greater than zero".into());
+    }
     let (address, account) = load_p2c(
         &rpc_client,
         program_id,
@@ -987,8 +994,8 @@ fn process_record(
         program_id,
         RecordP2CSubscriptionArgs {
             epoch: args.epoch,
-            stake: args.stake,
-            amount_due: args.amount_due,
+            updates: args.updates,
+            recorded_amount: args.amount,
         },
         RecordP2CSubscriptionAccounts {
             p2c_subscription_account: address,
@@ -998,11 +1005,11 @@ fn process_record(
     print_heading("P2C Record Subscription Charge");
     print_field("🔗".cyan(), "Account:", address.to_string().bold().green());
     print_field("🕒".cyan(), "Epoch:", args.epoch.to_string().blue());
-    print_field("📝".cyan(), "Stake:", args.stake.to_string().blue());
+    print_field("📝".cyan(), "Updates:", args.updates.to_string().blue());
     print_field(
         "💰".green(),
-        "Due:",
-        format_total_with_sol(args.amount_due).yellow(),
+        "Recorded:",
+        format_total_with_sol(args.amount).yellow(),
     );
     sign_and_send_transaction(rpc_client, instruction, &authority)
 }
