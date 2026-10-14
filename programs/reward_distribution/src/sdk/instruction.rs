@@ -1506,8 +1506,10 @@ pub fn fund_p2c_subscription_ix(
 
 pub struct RecordP2CSubscriptionArgs {
     pub epoch: u64,
-    pub stake: u64,
-    pub amount_due: u64,
+    /// Optional updates/txn count; use `0` when not supplied.
+    pub updates: u64,
+    /// Required recorded fee for the epoch (lamports); must be > 0.
+    pub recorded_amount: u64,
 }
 
 pub struct RecordP2CSubscriptionAccounts {
@@ -1522,8 +1524,8 @@ pub fn record_p2c_subscription_ix(
 ) -> Instruction {
     let RecordP2CSubscriptionArgs {
         epoch,
-        stake,
-        amount_due,
+        updates,
+        recorded_amount,
     } = args;
     let RecordP2CSubscriptionAccounts {
         p2c_subscription_account,
@@ -1534,8 +1536,8 @@ pub fn record_p2c_subscription_ix(
         program_id,
         data: crate::instruction::RecordP2cSubscription {
             epoch,
-            stake,
-            amount_due,
+            updates,
+            recorded_amount,
         }
         .data(),
         accounts: crate::accounts::RecordP2CSubscription {

@@ -1319,11 +1319,11 @@ pub enum P2CSubscriptionStatus {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct P2CEpochEntry {
     pub epoch: u64,
-    /// Off-chain stake snapshot used to price this epoch.
-    pub stake: u64,
-    /// Fee due for the epoch.
-    pub amount_due: u64,
-    /// Lamports paid out on claim for this epoch (`min(due, free prepaid)`).
+    /// Optional off-chain updates/txn count for this epoch (0 if not supplied).
+    pub updates: u64,
+    /// Recorded fee for the epoch (lamports); same role as MCA ledger `amount`.
+    pub recorded_amount: u64,
+    /// Lamports paid out on claim for this epoch (`min(recorded, free prepaid)`).
     pub amount_deducted: u64,
     /// Whether this epoch has been claimed (payout attempted).
     pub claimed: bool,
@@ -1422,8 +1422,10 @@ impl P2CSubscriptionLedger {
         let victim = self.entries[evict_idx];
         let eviction = EvictedUnclaimedEpoch {
             epoch: victim.epoch,
-            unpaid: victim.amount_due.saturating_sub(victim.amount_deducted),
-            amount: victim.amount_due,
+            unpaid: victim
+                .recorded_amount
+                .saturating_sub(victim.amount_deducted),
+            amount: victim.recorded_amount,
             settled: victim.amount_deducted,
         };
         self.entries[evict_idx] = entry;
@@ -1696,22 +1698,25 @@ impl P2CSubscriptionAccount {
 
     /// Record a new epoch charge once.
     ///
+    /// `epoch` and `recorded_amount` are required (`recorded_amount` must be > 0).
+    /// `updates` is optional metadata (pass `0` when unknown).
+    ///
     /// When the ledger is full and every row is still unclaimed, evicts the oldest unclaimed
-    /// epoch (smallest epoch number), books unpaid (`amount_due - amount_deducted`) into `deficit`,
-    /// and returns [`EvictedUnclaimedEpoch`] for the caller to emit an event.
+    /// epoch (smallest epoch number), books unpaid (`recorded_amount - amount_deducted`) into
+    /// `deficit`, and returns [`EvictedUnclaimedEpoch`] for the caller to emit an event.
     pub fn record(
         &mut self,
         epoch: u64,
-        stake: u64,
-        amount_due: u64,
+        updates: u64,
+        recorded_amount: u64,
     ) -> Result<Option<EvictedUnclaimedEpoch>> {
-        if amount_due == 0 {
+        if recorded_amount == 0 {
             return Err(crate::ErrorCode::RewardsTooLow.into());
         }
         let entry = P2CEpochEntry {
             epoch,
-            stake,
-            amount_due,
+            updates,
+            recorded_amount,
             amount_deducted: 0,
             claimed: false,
             block_reward_converted: !self.block_reward_conversion_enabled,
@@ -1773,8 +1778,8 @@ impl P2CSubscriptionAccount {
 
     /// Pay from free prepaid against this epoch.
     ///
-    /// - Always notes and transfers `min(remaining_due, free)`.
-    /// - Marks `claimed` when fully paid (`amount_deducted >= amount_due`).
+    /// - Always notes and transfers `min(remaining_recorded, free)`.
+    /// - Marks `claimed` when fully paid (`amount_deducted >= recorded_amount`).
     /// - Or, if `force_claim`, marks claimed with any leftover as `deficit` (+ grace).
     /// - Without `force_claim` and still underfunded: leaves epoch open (partial noted).
     ///
@@ -1799,7 +1804,7 @@ impl P2CSubscriptionAccount {
             return Err(PrematureRevenueClaim.into());
         }
 
-        let (amount_due, prior_deducted) = {
+        let (recorded_amount, prior_deducted) = {
             let entry = ledger
                 .entries
                 .iter()
@@ -1808,10 +1813,10 @@ impl P2CSubscriptionAccount {
             if entry.claimed {
                 return Err(EpochAlreadyClaimed.into());
             }
-            (entry.amount_due, entry.amount_deducted)
+            (entry.recorded_amount, entry.amount_deducted)
         };
 
-        let remaining = amount_due.saturating_sub(prior_deducted);
+        let remaining = recorded_amount.saturating_sub(prior_deducted);
         let rent = Rent::get()?;
         let min_rent = rent.minimum_balance(p2c_account.data_len());
         // Prior partial payments already left the PDA; free is just spendable lamports.
@@ -1848,7 +1853,7 @@ impl P2CSubscriptionAccount {
             entry.amount_deducted
         };
 
-        let remaining_after = amount_due.saturating_sub(amount_deducted);
+        let remaining_after = recorded_amount.saturating_sub(amount_deducted);
         let close = remaining_after == 0 || force_claim;
         let shortfall = if close { remaining_after } else { 0 };
 
@@ -2374,13 +2379,28 @@ mod tests {
     }
 
     #[test]
-    fn p2c_record_once_and_sets_due() {
+    fn p2c_record_once_and_sets_recorded_amount() {
         let mut acc = test_p2c_account(true);
         acc.record(10, 1_000_000, 100).unwrap();
-        assert_eq!(acc.ledger.entries[0].amount_due, 100);
+        assert_eq!(acc.ledger.entries[0].updates, 1_000_000);
+        assert_eq!(acc.ledger.entries[0].recorded_amount, 100);
         assert_eq!(acc.ledger.entries[0].amount_deducted, 0);
         assert!(!acc.ledger.entries[0].claimed);
         assert!(!acc.ledger.entries[0].block_reward_converted);
+    }
+
+    #[test]
+    fn p2c_record_allows_zero_updates() {
+        let mut acc = test_p2c_account(true);
+        acc.record(11, 0, 50).unwrap();
+        assert_eq!(acc.ledger.entries[0].updates, 0);
+        assert_eq!(acc.ledger.entries[0].recorded_amount, 50);
+    }
+
+    #[test]
+    fn p2c_record_rejects_zero_recorded_amount() {
+        let mut acc = test_p2c_account(true);
+        assert!(acc.record(12, 1, 0).is_err());
     }
 
     #[test]

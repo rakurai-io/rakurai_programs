@@ -1231,19 +1231,20 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Record stake snapshot and amount due for an epoch (once). Manager only.
+    /// Record epoch fee once (MCA-style: required `epoch` + `recorded_amount`).
+    /// `updates` is optional metadata — pass `0` when not supplied. Manager only.
     /// If the ledger is full of unclaimed rows, the oldest epoch is moved into `deficit`.
     pub fn record_p2c_subscription(
         ctx: Context<RecordP2CSubscription>,
         epoch: u64,
-        stake: u64,
-        amount_due: u64,
+        updates: u64,
+        recorded_amount: u64,
     ) -> Result<()> {
         RecordP2CSubscription::auth(&ctx)?;
 
         let p2c_key = ctx.accounts.p2c_subscription_account.key();
         let p2c = &mut ctx.accounts.p2c_subscription_account;
-        let eviction = p2c.record(epoch, stake, amount_due)?;
+        let eviction = p2c.record(epoch, updates, recorded_amount)?;
 
         if let Some(evicted) = eviction {
             emit!(P2CLedgerEvictedToDeficitEvent {
@@ -1260,8 +1261,8 @@ pub mod reward_distribution {
         emit!(P2CSubscriptionRecordedEvent {
             p2c_subscription_account: p2c_key,
             epoch,
-            stake,
-            amount_due,
+            updates,
+            recorded_amount,
         });
 
         Ok(())
@@ -3176,8 +3177,8 @@ pub struct P2CSubscriptionFundedEvent {
 pub struct P2CSubscriptionRecordedEvent {
     pub p2c_subscription_account: Pubkey,
     pub epoch: u64,
-    pub stake: u64,
-    pub amount_due: u64,
+    pub updates: u64,
+    pub recorded_amount: u64,
 }
 
 /// Emitted when a full PSA ledger evicts an unclaimed epoch into account `deficit`.
