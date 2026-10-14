@@ -91,8 +91,7 @@ enum Commands {
     Fund(FundArgs),
     /// Top up shortfalls for every underfunded PSA under this service name.
     FundAll(FundAllArgs),
-    /// Record epoch fee (manager; `--epoch` + `--amount`, optional `--updates`).
-    #[command(hide = true)]
+    /// Record epoch fee (manager or record authority; `--epoch` + `--amount`, optional `--updates`).
     Record(RecordArgs),
     /// Claim one epoch’s fee from prepaid into commission + validator (manager).
     #[command(hide = true)]
@@ -983,10 +982,11 @@ fn process_record(
         args.account.vote_pubkey,
     )?;
     let authority = parse_keypair(keypair_path)?;
-    if authority.pubkey() != account.manager_authority {
+    let signer = authority.pubkey();
+    if signer != account.manager_authority && signer != account.record_authority {
         return Err(format!(
-            "keypair is not manager_authority {}",
-            account.manager_authority
+            "keypair is neither manager_authority {} nor record_authority {}",
+            account.manager_authority, account.record_authority
         )
         .into());
     }
@@ -999,7 +999,7 @@ fn process_record(
         },
         RecordP2CSubscriptionAccounts {
             p2c_subscription_account: address,
-            manager_authority: authority.pubkey(),
+            authority: signer,
         },
     );
     print_heading("P2C Record Subscription Charge");
