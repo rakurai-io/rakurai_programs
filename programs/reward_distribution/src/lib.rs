@@ -1232,7 +1232,7 @@ pub mod reward_distribution {
     }
 
     /// Record epoch fee once (MCA-style: required `epoch` + `recorded_amount`).
-    /// `updates` is optional metadata — pass `0` when not supplied. Manager only.
+    /// `updates` is optional metadata — pass `0` when not supplied.
     /// If the ledger is full of unclaimed rows, the oldest epoch is moved into `deficit`.
     pub fn record_p2c_subscription(
         ctx: Context<RecordP2CSubscription>,
@@ -1320,7 +1320,8 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Marks a claimed P2C epoch as converted to block rewards.
+    /// Marks a claimed P2C epoch as `block_reward_converted`.
+    /// Auth: manager, record authority, or validator identity (vote node signer).
     pub fn update_p2c_epoch_converted_to_block_reward(
         ctx: Context<UpdateP2CEpochConvertedToBlockReward>,
         epoch: u64,
@@ -1456,6 +1457,35 @@ fn require_epoch_not_future(epoch: u64) -> Result<()> {
     if epoch > Clock::get()?.epoch {
         return Err(ErrorCode::FutureEpochNotAllowed.into());
     }
+    Ok(())
+}
+
+/// Shared auth for convert-to-block: manager, record authority, or vote **node** identity.
+fn auth_manager_record_or_vote_node(
+    manager_authority: Pubkey,
+    record_authority: Pubkey,
+    validator_vote: Pubkey,
+    validator_vote_account: &AccountInfo,
+    signer: Pubkey,
+) -> Result<()> {
+    use rakurai_vote_state::VoteState;
+
+    if signer == manager_authority || signer == record_authority {
+        return Ok(());
+    }
+
+    if validator_vote_account.key() != validator_vote {
+        return Err(Unauthorized.into());
+    }
+    if validator_vote_account.owner != &solana_sdk_ids::vote::ID {
+        return Err(Unauthorized.into());
+    }
+    let node =
+        VoteState::deserialize_node_pubkey(validator_vote_account).map_err(|_| Unauthorized)?;
+    if node != signer {
+        return Err(Unauthorized.into());
+    }
+
     Ok(())
 }
 
@@ -2463,30 +2493,14 @@ pub struct UpdateEpochConvertedToBlockReward<'info> {
 
 impl UpdateEpochConvertedToBlockReward<'_> {
     fn auth(ctx: &Context<UpdateEpochConvertedToBlockReward>) -> Result<()> {
-        use rakurai_vote_state::VoteState;
-
-        let revenue_share_account = &ctx.accounts.revenue_share_account;
-        let signer = ctx.accounts.signer.key();
-
-        if signer == revenue_share_account.manager_authority
-            || signer == revenue_share_account.record_authority
-        {
-            return Ok(());
-        }
-
-        let vote = &ctx.accounts.validator_vote_account;
-        if vote.key() != revenue_share_account.validator_vote {
-            return Err(Unauthorized.into());
-        }
-        if vote.owner != &solana_sdk_ids::vote::ID {
-            return Err(Unauthorized.into());
-        }
-        let node = VoteState::deserialize_node_pubkey(vote).map_err(|_| Unauthorized)?;
-        if node != signer {
-            return Err(Unauthorized.into());
-        }
-
-        Ok(())
+        let acc = &ctx.accounts.revenue_share_account;
+        auth_manager_record_or_vote_node(
+            acc.manager_authority,
+            acc.record_authority,
+            acc.validator_vote,
+            &ctx.accounts.validator_vote_account.to_account_info(),
+            ctx.accounts.signer.key(),
+        )
     }
 }
 
@@ -2657,30 +2671,14 @@ pub struct UpdateEpochConvertedToBlockRewardV1<'info> {
 
 impl UpdateEpochConvertedToBlockRewardV1<'_> {
     fn auth(ctx: &Context<UpdateEpochConvertedToBlockRewardV1>) -> Result<()> {
-        use rakurai_vote_state::VoteState;
-
-        let revenue_share_account = &ctx.accounts.revenue_share_account;
-        let signer = ctx.accounts.signer.key();
-
-        if signer == revenue_share_account.manager_authority
-            || signer == revenue_share_account.record_authority
-        {
-            return Ok(());
-        }
-
-        let vote = &ctx.accounts.validator_vote_account;
-        if vote.key() != revenue_share_account.validator_vote {
-            return Err(Unauthorized.into());
-        }
-        if vote.owner != &solana_sdk_ids::vote::ID {
-            return Err(Unauthorized.into());
-        }
-        let node = VoteState::deserialize_node_pubkey(vote).map_err(|_| Unauthorized)?;
-        if node != signer {
-            return Err(Unauthorized.into());
-        }
-
-        Ok(())
+        let acc = &ctx.accounts.revenue_share_account;
+        auth_manager_record_or_vote_node(
+            acc.manager_authority,
+            acc.record_authority,
+            acc.validator_vote,
+            &ctx.accounts.validator_vote_account.to_account_info(),
+            ctx.accounts.signer.key(),
+        )
     }
 }
 
@@ -2769,14 +2767,19 @@ pub struct RecordP2CSubscription<'info> {
     #[account(mut)]
     pub p2c_subscription_account: Account<'info, P2CSubscriptionAccount>,
 
-    pub manager_authority: Signer<'info>,
+    /// `manager_authority` or `record_authority`.
+    pub authority: Signer<'info>,
 }
 
 impl RecordP2CSubscription<'_> {
     fn auth(ctx: &Context<RecordP2CSubscription>) -> Result<()> {
-        ctx.accounts
-            .p2c_subscription_account
-            .auth_manager_signer(ctx.accounts.manager_authority.key())
+        let acc = &ctx.accounts.p2c_subscription_account;
+        let signer = ctx.accounts.authority.key();
+        if signer == acc.manager_authority || signer == acc.record_authority {
+            Ok(())
+        } else {
+            Err(Unauthorized.into())
+        }
     }
 }
 
@@ -2822,28 +2825,14 @@ pub struct UpdateP2CEpochConvertedToBlockReward<'info> {
 
 impl UpdateP2CEpochConvertedToBlockReward<'_> {
     fn auth(ctx: &Context<UpdateP2CEpochConvertedToBlockReward>) -> Result<()> {
-        use rakurai_vote_state::VoteState;
-
         let acc = &ctx.accounts.p2c_subscription_account;
-        let signer = ctx.accounts.signer.key();
-
-        if signer == acc.manager_authority || signer == acc.record_authority {
-            return Ok(());
-        }
-
-        let vote = &ctx.accounts.validator_vote_account;
-        if vote.key() != acc.validator_vote {
-            return Err(Unauthorized.into());
-        }
-        if vote.owner != &solana_sdk_ids::vote::ID {
-            return Err(Unauthorized.into());
-        }
-        let node = VoteState::deserialize_node_pubkey(vote).map_err(|_| Unauthorized)?;
-        if node != signer {
-            return Err(Unauthorized.into());
-        }
-
-        Ok(())
+        auth_manager_record_or_vote_node(
+            acc.manager_authority,
+            acc.record_authority,
+            acc.validator_vote,
+            &ctx.accounts.validator_vote_account.to_account_info(),
+            ctx.accounts.signer.key(),
+        )
     }
 }
 

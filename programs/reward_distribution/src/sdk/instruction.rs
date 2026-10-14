@@ -1514,7 +1514,8 @@ pub struct RecordP2CSubscriptionArgs {
 
 pub struct RecordP2CSubscriptionAccounts {
     pub p2c_subscription_account: Pubkey,
-    pub manager_authority: Pubkey,
+    /// `manager_authority` or `record_authority`.
+    pub authority: Pubkey,
 }
 
 pub fn record_p2c_subscription_ix(
@@ -1529,7 +1530,7 @@ pub fn record_p2c_subscription_ix(
     } = args;
     let RecordP2CSubscriptionAccounts {
         p2c_subscription_account,
-        manager_authority,
+        authority,
     } = accounts;
 
     Instruction {
@@ -1542,7 +1543,7 @@ pub fn record_p2c_subscription_ix(
         .data(),
         accounts: crate::accounts::RecordP2CSubscription {
             p2c_subscription_account,
-            manager_authority,
+            authority,
         }
         .to_account_metas(None),
     }

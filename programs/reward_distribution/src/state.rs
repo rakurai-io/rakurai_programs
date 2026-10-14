@@ -1347,8 +1347,7 @@ pub struct P2CSubscriptionAccount {
     pub initializer: Pubkey,
     /// Creates PDA (pays rent), records epoch charges, claims, config, close.
     pub manager_authority: Pubkey,
-    /// Optional extra signer for convert-to-block (with manager / validator identity).
-    /// Not used for `record_p2c_subscription` (manager-only).
+    /// May record epoch charges; convert-to-block with manager or vote node.
     pub record_authority: Pubkey,
     pub max_epoch_entries: u8,
     /// e.g. 2000 = 20% to `commission_account` on claim.
