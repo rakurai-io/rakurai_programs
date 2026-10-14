@@ -7,7 +7,7 @@ You do not need to know how the chain works to follow this. Each kind of money h
 | | **RCA** | **TCA** | **PSA** | **MCA** |
 |--|---------|---------|---------|---------|
 | **Full name** | Reward Collection Account | Tips Collection Account | P2C Subscription Account | MevShare Collection Account |
-| **What money is this?** | The validator’s **block rewards** | **Tips** traders and landing services pay to land transactions | A **subscription fee** to *use* post-pack, priced from SOL stake | **Backrun profit** from post-pack |
+| **What money is this?** | The validator’s **block rewards** | **Tips** traders and landing services pay to land transactions | A **subscription fee** to *use* post-pack, priced from updates/txn volume | **Backrun profit** from post-pack |
 | **Who pays?** | The network (block rewards) | Traders / landing services | Anyone who wants post-pack access | The post-pack user who backran |
 | **Why it exists** | Stakers should get their share of block rewards | Tips must be split: Rakurai cut, then the validator | Post-pack is not free; pay a prepaid fee so the stream stays on | Backrun profit must be shared: Rakurai cut, then the validator |
 | **During the epoch** | Each time this validator leads, the last block’s reward is split; the **staker share** is parked in the RCA | Tips land in Rakurai tip accounts; Rakurai’s cut is taken; the **rest** is parked in the TCA | You **top up** the PSA so there is prepaid SOL sitting there | Nothing is collected automatically — profit sits with the user |
@@ -165,7 +165,7 @@ Full product guide: [Post-pack confirmations](https://docs.rakurai.io/docs/servi
 1. A **PSA** exists for your service + validator (created by Rakurai / ops; defaults from on-chain **`P2CConfigAccount`**)
 2. **You top up** SOL into that account (`fund` / `fund-all`, or any wallet transfer)
 3. For MevShare settlement, an **MCA** is also created by Rakurai / ops — then start post-pack
-4. Epoch ends. Update volume is priced and the fee due is written
+4. Epoch ends. Ops **records** the fee (`epoch` + `recorded_amount`; optional `updates` count) — same shape as MCA record
 5. The fee is taken from prepaid: Rakurai’s cut, rest to the validator identity (**block-reward conversion** on by default)
 6. If the balance is too low, top up and try again — or the shortfall is booked as **deficit**
 7. After a short grace, status becomes **Suspended** and **post-pack is stopped** until the shortfall is cleared
@@ -174,7 +174,7 @@ Full product guide: [Post-pack confirmations](https://docs.rakurai.io/docs/servi
 ```
 PSA exists (ops) → fund
     → MCA exists if sharing MevShare (ops) → start post-pack
-    → epoch ends → fee calculated from stake
+    → epoch ends → record epoch + recorded_amount (optional updates)
     → fee taken from prepaid (Rakurai + validator identity → high-priority block reward)
     → if empty: grace, then stream stopped until you top up
     → close → leftover returned
@@ -282,8 +282,8 @@ pub struct P2CSubscriptionAccount {
 
 pub struct P2CEpochEntry {
     pub epoch: u64,
-    pub stake: u64,                        // snapshot used to price the fee
-    pub amount_due: u64,
+    pub updates: u64,                      // optional updates/txn count (0 if omitted)
+    pub recorded_amount: u64,              // fee recorded for the epoch (lamports)
     pub amount_deducted: u64,              // paid from prepaid on claim
     pub claimed: bool,
     pub block_reward_converted: bool,
