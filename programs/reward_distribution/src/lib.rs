@@ -1231,7 +1231,7 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Record epoch fee once (MCA-style: required `epoch` + `recorded_amount`).
+    /// Record epoch fee once.
     /// `updates` is optional metadata — pass `0` when not supplied.
     /// If the ledger is full of unclaimed rows, the oldest epoch is moved into `deficit`.
     pub fn record_p2c_subscription(

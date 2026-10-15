@@ -993,7 +993,11 @@ impl RevenueShareAccountV1 {
     /// When the ledger is full and every row is still unclaimed, evicts the oldest unclaimed
     /// epoch (smallest epoch number), books unpaid (`amount - transferred_amount`) into `deficit`,
     /// and returns [`EvictedUnclaimedEpoch`] for the caller to emit an event.
-    pub fn record_revenue(&mut self, epoch: u64, amount: u64) -> Result<Option<EvictedUnclaimedEpoch>> {
+    pub fn record_revenue(
+        &mut self,
+        epoch: u64,
+        amount: u64,
+    ) -> Result<Option<EvictedUnclaimedEpoch>> {
         let capacity = self.max_epoch_entries as usize;
         let eviction = self.ledger.add(
             epoch,
@@ -1319,11 +1323,11 @@ pub enum P2CSubscriptionStatus {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct P2CEpochEntry {
     pub epoch: u64,
-    /// Optional off-chain updates/txn count for this epoch (0 if not supplied).
+    /// Optional off-chain txn updates count for this epoch (0 if not supplied).
     pub updates: u64,
-    /// Recorded fee for the epoch (lamports); same role as MCA ledger `amount`.
+    /// Recorded amount for the epoch (lamports).
     pub recorded_amount: u64,
-    /// Lamports paid out on claim for this epoch (`min(recorded, free prepaid)`).
+    /// Lamports paid out on claim for this epoch
     pub amount_deducted: u64,
     /// Whether this epoch has been claimed (payout attempted).
     pub claimed: bool,

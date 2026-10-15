@@ -540,19 +540,12 @@ pub fn close_p2c_config_ix(
     _args: CloseP2CConfigArgs,
     accounts: CloseP2CConfigAccounts,
 ) -> Instruction {
-    let CloseP2CConfigAccounts {
-        p2c_config,
-        signer,
-    } = accounts;
+    let CloseP2CConfigAccounts { p2c_config, signer } = accounts;
 
     Instruction {
         program_id,
         data: crate::instruction::CloseP2cConfig {}.data(),
-        accounts: crate::accounts::CloseP2CConfig {
-            p2c_config,
-            signer,
-        }
-        .to_account_metas(None),
+        accounts: crate::accounts::CloseP2CConfig { p2c_config, signer }.to_account_metas(None),
     }
 }
 
@@ -1506,7 +1499,7 @@ pub fn fund_p2c_subscription_ix(
 
 pub struct RecordP2CSubscriptionArgs {
     pub epoch: u64,
-    /// Optional updates/txn count; use `0` when not supplied.
+    /// Optional txn updates count; use `0` when not supplied.
     pub updates: u64,
     /// Required recorded fee for the epoch (lamports); must be > 0.
     pub recorded_amount: u64,
