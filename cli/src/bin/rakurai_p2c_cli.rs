@@ -24,15 +24,15 @@ use {
         },
     },
     solana_account_decoder_client_types::UiAccountEncoding,
+    solana_commitment_config::CommitmentConfig,
     solana_rpc_client::rpc_client::RpcClient,
     solana_rpc_client_api::{
         config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
         filter::{Memcmp, RpcFilterType},
     },
-    solana_commitment_config::CommitmentConfig,
-    solana_sdk::{instruction::Instruction, pubkey::Pubkey, rent::Rent, signature::Signer},
+    solana_sdk::{instruction::Instruction, pubkey::Pubkey, signature::Signer},
     solana_sdk_ids::system_program,
-    std::{error::Error, sync::Arc},
+    std::{collections::HashMap, error::Error, sync::Arc},
 };
 
 type CliResult<T = ()> = Result<T, Box<dyn Error>>;
@@ -91,7 +91,7 @@ enum Commands {
     Fund(FundArgs),
     /// Top up shortfalls for every underfunded PSA under this service name.
     FundAll(FundAllArgs),
-    /// Record epoch fee (manager or record authority; `--epoch` + `--amount`, optional `--updates`).
+    /// Record epoch fee (manager or record authority; `--epoch` + `--amount`).
     Record(RecordArgs),
     /// Claim one epoch’s fee from prepaid into commission + validator (manager).
     #[command(hide = true)]
@@ -104,7 +104,7 @@ enum Commands {
 #[derive(Args)]
 struct NameArgs {
     /// P2C service name (PDA seed).
-    #[arg(long = "name", alias = "revenue-name", required = true)]
+    #[arg(long = "revenue-name", alias = "name", required = true)]
     name: String,
 }
 
@@ -177,11 +177,16 @@ struct RecordArgs {
     epoch: u64,
 
     /// Optional updates/txn count for this epoch (default 0).
-    #[arg(long, default_value_t = 0)]
+    #[arg(hide = true, long, default_value_t = 0)]
     updates: u64,
 
     /// Recorded fee for the epoch in lamports (required; must be > 0).
-    #[arg(short = 'x', long = "amount", alias = "recorded-amount", required = true)]
+    #[arg(
+        short = 'x',
+        long = "amount",
+        alias = "recorded-amount",
+        required = true
+    )]
     amount: u64,
 }
 
@@ -297,14 +302,14 @@ type PendingByVote = std::collections::BTreeMap<String, std::collections::BTreeM
 type DeficitByVote = std::collections::BTreeMap<String, u64>;
 
 fn aggregate_p2c_by_vote(
-    accounts: &[(Pubkey, P2CSubscriptionAccount, u64)],
+    accounts: &[(Pubkey, P2CSubscriptionAccount, u64, usize)],
     current_epoch: u64,
 ) -> (PendingByVote, DeficitByVote, Vec<u64>, u64, u64) {
     let mut by_vote: PendingByVote = std::collections::BTreeMap::new();
     let mut deficits: DeficitByVote = std::collections::BTreeMap::new();
     let mut epochs = std::collections::BTreeSet::new();
 
-    for (_, account, _) in accounts {
+    for (_, account, _, _) in accounts {
         let vote = account.validator_vote.to_string();
         if account.deficit > 0 {
             *deficits.entry(vote.clone()).or_default() = account.deficit;
@@ -436,12 +441,30 @@ fn print_p2c_pivot_table(
     println!();
 }
 
+/// Cluster rent-exempt minimum for `data_len` (cached; do not use `Rent::default()`).
+fn min_rent_exempt(
+    rpc_client: &RpcClient,
+    data_len: usize,
+    cache: &mut HashMap<usize, u64>,
+) -> CliResult<u64> {
+    if let Some(v) = cache.get(&data_len) {
+        return Ok(*v);
+    }
+    let v = rpc_client.get_minimum_balance_for_rent_exemption(data_len)?;
+    cache.insert(data_len, v);
+    Ok(v)
+}
+
+fn prepaid_available(lamports: u64, min_rent: u64) -> u64 {
+    lamports.saturating_sub(min_rent)
+}
+
 fn load_p2c(
     rpc_client: &RpcClient,
     program_id: Pubkey,
     name: &str,
     vote: Pubkey,
-) -> CliResult<(Pubkey, P2CSubscriptionAccount)> {
+) -> CliResult<(Pubkey, P2CSubscriptionAccount, u64, usize)> {
     let name_bytes = name_to_bytes(name)?;
     let address = derive_p2c_subscription_address(&program_id, &name_bytes, &vote).0;
     let raw = rpc_client
@@ -450,17 +473,18 @@ fn load_p2c(
     if raw.owner != program_id {
         return Err(format!("account {address} owner mismatch").into());
     }
+    let data_len = raw.data.len();
     let mut data = raw.data.as_slice();
     let account = P2CSubscriptionAccount::try_deserialize(&mut data)
         .map_err(|e| format!("failed to deserialize P2C account: {e}"))?;
-    Ok((address, account))
+    Ok((address, account, raw.lamports, data_len))
 }
 
 fn load_all_p2c_by_name(
     rpc_client: &RpcClient,
     program_id: Pubkey,
     name: &str,
-) -> CliResult<Vec<(Pubkey, P2CSubscriptionAccount, u64)>> {
+) -> CliResult<Vec<(Pubkey, P2CSubscriptionAccount, u64, usize)>> {
     let name_bytes = name_to_bytes(name)?;
     let filters = vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
         P2C_NAME_OFFSET,
@@ -483,14 +507,15 @@ fn load_all_p2c_by_name(
 
     let mut out = Vec::new();
     for (address, raw) in accounts {
+        let data_len = raw.data.len();
         let mut data = raw.data.as_slice();
         if let Ok(account) = P2CSubscriptionAccount::try_deserialize(&mut data) {
             if account.name == name_bytes {
-                out.push((address, account, raw.lamports));
+                out.push((address, account, raw.lamports, data_len));
             }
         }
     }
-    out.sort_by_key(|(_, account, _)| account.validator_vote.to_string());
+    out.sort_by_key(|(_, account, _, _)| account.validator_vote.to_string());
     Ok(out)
 }
 
@@ -509,19 +534,12 @@ fn status_name(s: P2CSubscriptionStatus) -> &'static str {
     }
 }
 
-fn balance_after_rent(account: &P2CSubscriptionAccount, lamports: u64) -> u64 {
-    let space = P2CSubscriptionAccount::space_for(account.max_epoch_entries as usize);
-    lamports.saturating_sub(Rent::default().minimum_balance(space))
-}
-
 /// Remaining fee for an unclaimed epoch (`recorded - deducted`). Claimed rows are settled (shortfall → deficit).
 fn epoch_owed(entry: &P2CEpochEntry) -> u64 {
     if entry.claimed {
         0
     } else {
-        entry
-            .recorded_amount
-            .saturating_sub(entry.amount_deducted)
+        entry.recorded_amount.saturating_sub(entry.amount_deducted)
     }
 }
 
@@ -566,11 +584,11 @@ fn print_underfunded_alert(available: u64, pending: &[(u64, u64)]) {
 fn display_p2c(
     address: Pubkey,
     account: &P2CSubscriptionAccount,
-    balance: u64,
+    lamports: u64,
+    prepaid: u64,
     current_epoch: u64,
     detail: bool,
 ) {
-    let available = balance_after_rent(account, balance);
     print_heading("P2C Subscription Escrow");
     print_field("🔗".cyan(), "Pubkey:", address.to_string().bold().green());
     print_field(
@@ -588,8 +606,13 @@ fn display_p2c(
     );
     print_field(
         "💰".green(),
-        "Balance:",
-        format_total_with_sol(available).yellow(),
+        "Total:",
+        format_total_with_sol(lamports).yellow(),
+    );
+    print_field(
+        "💰".green(),
+        "Prepaid:",
+        format_total_with_sol(prepaid).yellow(),
     );
 
     let pending = actionable_owed(account, current_epoch);
@@ -614,7 +637,7 @@ fn display_p2c(
         );
     }
 
-    print_underfunded_alert(available, &pending);
+    print_underfunded_alert(prepaid, &pending);
 
     if !detail {
         println!(
@@ -660,10 +683,9 @@ fn display_p2c(
     } else {
         for e in entries {
             println!(
-                "      epoch {:>6}: recorded={:<12} updates={:<12} deducted={:<12} owed={:<12} claimed={}",
+                "      epoch {:>6}: recorded={:<12} deducted={:<12} owed={:<12} claimed={}",
                 e.epoch.to_string().blue(),
                 e.recorded_amount.to_string().yellow(),
-                e.updates.to_string().blue(),
                 e.amount_deducted.to_string().yellow(),
                 epoch_owed(e).to_string().yellow(),
                 e.claimed.to_string().blue(),
@@ -733,10 +755,20 @@ fn process_get_account(
     program_id: Pubkey,
     args: &AccountArgs,
 ) -> CliResult {
-    let (address, account) = load_p2c(rpc_client, program_id, &args.name.name, args.vote_pubkey)?;
-    let balance = rpc_client.get_balance(&address)?;
+    let (address, account, lamports, data_len) =
+        load_p2c(rpc_client, program_id, &args.name.name, args.vote_pubkey)?;
+    let mut rent_cache = HashMap::new();
+    let min_rent = min_rent_exempt(rpc_client, data_len, &mut rent_cache)?;
+    let prepaid = prepaid_available(lamports, min_rent);
     let current_epoch = rpc_client.get_epoch_info()?.epoch;
-    display_p2c(address, &account, balance, current_epoch, args.detail);
+    display_p2c(
+        address,
+        &account,
+        lamports,
+        prepaid,
+        current_epoch,
+        args.detail,
+    );
     Ok(())
 }
 
@@ -747,6 +779,7 @@ fn process_get_all_accounts(
 ) -> CliResult {
     let accounts = load_all_p2c_by_name(rpc_client, program_id, &args.name.name)?;
     let current_epoch = rpc_client.get_epoch_info()?.epoch;
+    let mut rent_cache = HashMap::new();
 
     print_heading("P2C Subscription Accounts");
     print_field("📝".cyan(), "Name:", args.name.name.magenta());
@@ -769,14 +802,16 @@ fn process_get_all_accounts(
     if !args.detail {
         println!(
             "\n   {}",
-            "--detail for per-account pubkey, status, balance, and epoch breakdown.".dimmed()
+            "--detail for per-account pubkey, status, total/prepaid, and epoch breakdown.".dimmed()
         );
         return Ok(());
     }
 
     print_heading("Account details");
-    for (address, account, lamports) in accounts {
-        display_p2c(address, &account, lamports, current_epoch, true);
+    for (address, account, lamports, data_len) in accounts {
+        let min_rent = min_rent_exempt(rpc_client, data_len, &mut rent_cache)?;
+        let prepaid = prepaid_available(lamports, min_rent);
+        display_p2c(address, &account, lamports, prepaid, current_epoch, true);
     }
     Ok(())
 }
@@ -790,7 +825,7 @@ fn process_fund(
     if args.amount == 0 {
         return Err("amount must be greater than zero".into());
     }
-    let (address, _) = load_p2c(
+    let (address, _, _, _) = load_p2c(
         &rpc_client,
         program_id,
         &args.account.name.name,
@@ -841,10 +876,12 @@ fn process_fund_all(
     let accounts = load_all_p2c_by_name(&rpc_client, program_id, &args.name.name)?;
     let funder = parse_keypair(keypair_path)?;
     let current_epoch = rpc_client.get_epoch_info()?.epoch;
+    let mut rent_cache = HashMap::new();
 
     let mut jobs = Vec::new();
-    for (address, account, lamports) in &accounts {
-        let available = balance_after_rent(account, *lamports);
+    for (address, account, lamports, data_len) in &accounts {
+        let min_rent = min_rent_exempt(&rpc_client, *data_len, &mut rent_cache)?;
+        let available = prepaid_available(*lamports, min_rent);
         let pending = actionable_owed(account, current_epoch);
         let owed: u64 = pending.iter().map(|(_, o)| *o).sum();
         if owed == 0 || available >= owed {
@@ -975,7 +1012,7 @@ fn process_record(
     if args.amount == 0 {
         return Err("record amount must be greater than zero".into());
     }
-    let (address, account) = load_p2c(
+    let (address, account, _, _) = load_p2c(
         &rpc_client,
         program_id,
         &args.account.name.name,
@@ -1020,7 +1057,7 @@ fn process_claim(
     keypair_path: &str,
     args: ClaimArgs,
 ) -> CliResult {
-    let (address, account) = load_p2c(
+    let (address, account, _, _) = load_p2c(
         &rpc_client,
         program_id,
         &args.account.name.name,
@@ -1064,7 +1101,7 @@ fn process_clear_deficit(
     keypair_path: &str,
     args: ClearDeficitArgs,
 ) -> CliResult {
-    let (address, account) = load_p2c(
+    let (address, account, _, _) = load_p2c(
         &rpc_client,
         program_id,
         &args.account.name.name,
