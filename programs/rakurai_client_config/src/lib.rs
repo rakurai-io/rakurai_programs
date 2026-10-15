@@ -3,10 +3,10 @@ use anchor_lang::prelude::*;
 use solana_security_txt::security_txt;
 
 use crate::state::{
-    CONFIG_STAGING_SEED, Config, ConfigLimits, ConfigStaging, GLOBAL_CONFIG_SEED, GlobalConfig,
-    MAX_STAGING_BYTES, STAGING_KIND_GLOBAL, STAGING_KIND_PROPOSAL, STAGING_KIND_VALIDATOR,
-    STAGING_TAG_GLOBAL, STAGING_TAG_PROPOSAL, STAGING_TAG_VALIDATOR, VALIDATOR_CONFIG_SEED,
-    VALIDATOR_PROPOSAL_SEED, ValidatorConfig, ValidatorProposal,
+    Config, ConfigLimits, ConfigStaging, GlobalConfig, ValidatorConfig, ValidatorProposal,
+    CONFIG_STAGING_SEED, GLOBAL_CONFIG_SEED, MAX_STAGING_BYTES, STAGING_KIND_GLOBAL,
+    STAGING_KIND_PROPOSAL, STAGING_KIND_VALIDATOR, STAGING_TAG_GLOBAL, STAGING_TAG_PROPOSAL,
+    STAGING_TAG_VALIDATOR, VALIDATOR_CONFIG_SEED, VALIDATOR_PROPOSAL_SEED,
 };
 
 #[cfg(not(feature = "no-entrypoint"))]
@@ -1149,8 +1149,6 @@ pub enum ConfigError {
     InvalidVpValue,
     #[msg("P2C entry must enable mev and/or resell")]
     InvalidP2cOptions,
-    #[msg("enable_tpu_p2c_update requires mev")]
-    TpuRequiresMev,
     #[msg("ConfigLimits are zero or exceed absolute safety caps")]
     InvalidLimits,
     #[msg("Staging kind does not match this instruction")]

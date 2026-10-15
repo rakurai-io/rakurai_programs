@@ -889,12 +889,8 @@ fn validate_sections_v4(
     }
     for entry in &p2c.sets {
         require!(
-            entry.mev || entry.resell,
+            entry.mev || entry.resell || entry.enable_tpu_p2c_update,
             crate::ConfigError::InvalidP2cOptions
-        );
-        require!(
-            !entry.enable_tpu_p2c_update || entry.mev,
-            crate::ConfigError::TpuRequiresMev
         );
         validate_urls(
             std::iter::once(entry.url.as_str()),
