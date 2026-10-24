@@ -1221,6 +1221,44 @@ pub fn claim_revenue_v1_ix(
     }
 }
 
+pub struct ClaimDeficitV1Args {
+    pub amount: u64,
+}
+
+pub struct ClaimDeficitV1Accounts {
+    pub revenue_share_account: Pubkey,
+    pub commission_account: Pubkey,
+    pub validator_identity: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+/// Manager pays open deficit from vault prepaid (no funder deposit).
+pub fn claim_deficit_v1_ix(
+    program_id: Pubkey,
+    args: ClaimDeficitV1Args,
+    accounts: ClaimDeficitV1Accounts,
+) -> Instruction {
+    let ClaimDeficitV1Args { amount } = args;
+    let ClaimDeficitV1Accounts {
+        revenue_share_account,
+        commission_account,
+        validator_identity,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::ClaimDeficitV1 { amount }.data(),
+        accounts: crate::accounts::ClaimDeficitV1 {
+            revenue_share_account,
+            commission_account,
+            validator_identity,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
 pub struct UpdateRevenueShareConfigArgs {
     pub commission_bps: u16,
     pub commission_account: Pubkey,

@@ -927,6 +927,53 @@ pub mod reward_distribution {
         Ok(())
     }
 
+    /// Manager pays open TCAV1/MCAV1 `deficit` from SOL already on the vault (no funder deposit).
+    /// Same commission split as `claim_revenue_v1` / `clear_deficit_v1`. Partial OK.
+    pub fn claim_deficit_v1(ctx: Context<ClaimDeficitV1>, amount: u64) -> Result<()> {
+        ClaimDeficitV1::auth(&ctx)?;
+
+        if amount == 0 {
+            return Err(RewardsTooLow.into());
+        }
+        if ctx.accounts.revenue_share_account.deficit == 0 {
+            return Err(NoDeficit.into());
+        }
+
+        let applied = amount.min(ctx.accounts.revenue_share_account.deficit);
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        let share_kind = revenue_share_account.share_kind;
+        let commission_bps = if revenue_share_account.is_rakurai_tip_tca() {
+            0
+        } else {
+            revenue_share_account.commission_bps
+        };
+        let key = revenue_share_account.key();
+        let vault_info = revenue_share_account.to_account_info();
+        let manager = ctx.accounts.manager_authority.key();
+        let acc: &mut RevenueShareAccountV1 = &mut *revenue_share_account;
+
+        let (paid, commission_amount, validator_amount) = RevenueShareAccountV1::clear_deficit(
+            &mut acc.deficit,
+            vault_info,
+            ctx.accounts.commission_account.to_account_info(),
+            ctx.accounts.validator_identity.to_account_info(),
+            commission_bps,
+            applied,
+        )?;
+
+        emit!(RevenueDeficitClearedEvent {
+            revenue_share_account: key,
+            share_kind,
+            funder: manager,
+            amount_paid: paid,
+            commission_amount,
+            validator_amount,
+            deficit_remaining: acc.deficit,
+        });
+
+        Ok(())
+    }
+
     /// Sets the cumulative `deficit` field on TCAV1. Manager authority only.
     pub fn update_deficit(ctx: Context<UpdateDeficit>, update: DeficitUpdate) -> Result<()> {
         UpdateDeficit::auth(&ctx)?;
@@ -2432,6 +2479,34 @@ pub struct ClaimRevenueV1<'info> {
 
 impl ClaimRevenueV1<'_> {
     fn auth(ctx: &Context<ClaimRevenueV1>) -> Result<()> {
+        ctx.accounts
+            .revenue_share_account
+            .auth_manager_signer(ctx.accounts.manager_authority.key())
+    }
+}
+
+/// Manager claims open deficit from vault prepaid (no funder deposit).
+#[derive(Accounts)]
+pub struct ClaimDeficitV1<'info> {
+    #[account(mut)]
+    pub revenue_share_account: Account<'info, RevenueShareAccountV1>,
+
+    /// CHECK: must match vault `commission_account`.
+    #[account(
+        mut,
+        constraint = commission_account.key() == revenue_share_account.commission_account @ Unauthorized
+    )]
+    pub commission_account: UncheckedAccount<'info>,
+
+    /// CHECK: validator identity receives remainder.
+    #[account(mut)]
+    pub validator_identity: UncheckedAccount<'info>,
+
+    pub manager_authority: Signer<'info>,
+}
+
+impl ClaimDeficitV1<'_> {
+    fn auth(ctx: &Context<ClaimDeficitV1>) -> Result<()> {
         ctx.accounts
             .revenue_share_account
             .auth_manager_signer(ctx.accounts.manager_authority.key())

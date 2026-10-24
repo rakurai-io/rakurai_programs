@@ -132,6 +132,32 @@ pub struct EpochAmountEntryV1 {
     pub block_reward_converted: bool,
 }
 
+impl EpochAmountEntryV1 {
+    /// Credit plain vault deposits into `transferred_amount` (up to recorded `amount`), then
+    /// return claimable = `min(transferred, available)`. Aligns `transferred_amount` to claimable.
+    /// Returns `(record_amount, claimable)`.
+    pub fn sync_and_claimable(&mut self, available: u64) -> Result<(u64, u64)> {
+        use crate::ErrorCode::*;
+        if self.amount == 0 && self.transferred_amount == 0 {
+            return Err(RewardsTooLow.into());
+        }
+        let under = self.amount.saturating_sub(self.transferred_amount);
+        if under > 0 && available > 0 {
+            let credit = under.min(available);
+            self.transferred_amount = self
+                .transferred_amount
+                .checked_add(credit)
+                .ok_or(ArithmeticError)?;
+        }
+        let claimable = self.transferred_amount.min(available);
+        if claimable == 0 {
+            return Err(RewardsTooLow.into());
+        }
+        self.transferred_amount = claimable;
+        Ok((self.amount, claimable))
+    }
+}
+
 /// Fixed header bytes after the 8-byte Anchor discriminator, before the ledger vec.
 /// `share_kind` through `block_reward_conversion_enabled`.
 pub const REVENUE_SHARE_FIXED_PREFIX_LEN: usize = 1  // share_kind
@@ -1141,8 +1167,11 @@ impl RevenueShareAccountV1 {
     }
 
     /// Splits claimable settled funds for an epoch between commission and validator identity.
-    /// Claimable = `transferred_amount` (may be above or below recorded `amount`).
-    /// If underfunded (`transferred < amount`), adds shortfall to `deficit`.
+    ///
+    /// If SOL was deposited via plain transfer (settle/`update_transferred_amount` skipped),
+    /// credits `transferred_amount` from vault lamports above rent (up to recorded `amount`),
+    /// then pays `min(transferred_amount, available)`.
+    /// Underfund (`claimable < amount`) adds shortfall to `deficit`.
     /// Returns `(commission, validator, claimed_total, shortfall)`.
     pub fn claim_revenue(
         ledger: &mut RevenueLedgerV1,
@@ -1160,26 +1189,17 @@ impl RevenueShareAccountV1 {
             return Err(PrematureRevenueClaim.into());
         }
 
-        let (record_amount, transferred_amount) = {
-            let entry = ledger
-                .entries
-                .iter()
-                .find(|e| e.epoch == epoch)
-                .ok_or(EpochEntryNotFound)?;
+        let rent = Rent::get()?;
+        let min_rent = rent.minimum_balance(revenue_share_account.data_len());
+        let available = revenue_share_account.lamports().saturating_sub(min_rent);
+
+        let (record_amount, claimable) = {
+            let entry = ledger.get_mut(epoch)?;
             if entry.claimed {
                 return Err(EpochAlreadyClaimed.into());
             }
-            if entry.amount == 0 && entry.transferred_amount == 0 {
-                return Err(RewardsTooLow.into());
-            }
-            (entry.amount, entry.transferred_amount)
+            entry.sync_and_claimable(available)?
         };
-
-        // Always pay what was transferred (supports under-settle and over-settle).
-        let claimable = transferred_amount;
-        if claimable == 0 {
-            return Err(RewardsTooLow.into());
-        }
 
         let shortfall = record_amount.saturating_sub(claimable);
 
@@ -1195,13 +1215,6 @@ impl RevenueShareAccountV1 {
         let validator_amount = claimable
             .checked_sub(commission_amount)
             .ok_or(ArithmeticError)?;
-
-        let rent = Rent::get()?;
-        let min_rent = rent.minimum_balance(revenue_share_account.data_len());
-        let available = revenue_share_account.lamports().saturating_sub(min_rent);
-        if available < claimable {
-            return Err(RewardsTooLow.into());
-        }
 
         if commission_amount > 0 {
             RewardCollectionAccount::transfer_lamports(
