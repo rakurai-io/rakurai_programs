@@ -3115,41 +3115,36 @@
     },
     {
       "code": 6011,
-      "name": "TpuRequiresMev",
-      "msg": "enable_tpu_p2c_update requires mev"
-    },
-    {
-      "code": 6012,
       "name": "InvalidLimits",
       "msg": "ConfigLimits are zero or exceed absolute safety caps"
     },
     {
-      "code": 6013,
+      "code": 6012,
       "name": "StagingKindInvalid",
       "msg": "Staging kind does not match this instruction"
     },
     {
-      "code": 6014,
+      "code": 6013,
       "name": "StagingLengthMismatch",
       "msg": "Staging payload length exceeds expected_len"
     },
     {
-      "code": 6015,
+      "code": 6014,
       "name": "StagingIncomplete",
       "msg": "Staging payload is incomplete"
     },
     {
-      "code": 6016,
+      "code": 6015,
       "name": "StagingTooLarge",
       "msg": "Staging payload is empty or exceeds MAX_STAGING_BYTES"
     },
     {
-      "code": 6017,
+      "code": 6016,
       "name": "StagingDeserializeFailed",
       "msg": "Failed to deserialize Config from staging bytes"
     },
     {
-      "code": 6018,
+      "code": 6017,
       "name": "UnexpectedConfigVersion",
       "msg": "Config payload is not the expected schema version"
     }
@@ -3237,25 +3232,14 @@
           },
           {
             "name": "consider_primary",
-            "docs": [
-              "Queue this block engine's bundles as primary in bundle stage. Defaults to `false`."
-            ],
             "type": "bool"
           },
           {
             "name": "sch",
-            "docs": [
-              "Bundle stage: a secondary bundle is only processed while fewer than `sch` bundles were",
-              "processed in that call. `0` = validator default (2)."
-            ],
             "type": "u8"
           },
           {
             "name": "consider",
-            "docs": [
-              "Bundle stage: a secondary bundle is only eligible within the first `consider` bundles",
-              "examined in a call. `0` = validator default (10)."
-            ],
             "type": "u8"
           }
         ]
@@ -3310,6 +3294,10 @@
     },
     {
       "name": "BundlesConfig",
+      "docs": [
+        "Bundle-stage settings; `*1` fields apply to primary bundles (`consider_primary`), `*2` fields",
+        "to secondary bundles."
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -3346,11 +3334,7 @@
             "type": "u16"
           }
         ]
-      },
-      "docs": [
-        "Bundle-stage settings; `*1` fields apply to primary bundles (`consider_primary`), `*2` fields",
-        "to secondary bundles."
-      ]
+      }
     },
     {
       "name": "Config",
@@ -3655,14 +3639,6 @@
           {
             "name": "enable_tpu_p2c_update",
             "type": "bool"
-          },
-          {
-            "name": "p2c_type",
-            "type": {
-              "defined": {
-                "name": "P2cType"
-              }
-            }
           }
         ]
       }
@@ -3750,20 +3726,6 @@
           {
             "name": "enable_tpu_p2c_update",
             "type": "bool"
-          }
-        ]
-      }
-    },
-    {
-      "name": "P2cType",
-      "type": {
-        "kind": "enum",
-        "variants": [
-          {
-            "name": "Mev"
-          },
-          {
-            "name": "ReSell"
           }
         ]
       }

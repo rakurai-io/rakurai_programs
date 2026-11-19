@@ -540,19 +540,12 @@ pub fn close_p2c_config_ix(
     _args: CloseP2CConfigArgs,
     accounts: CloseP2CConfigAccounts,
 ) -> Instruction {
-    let CloseP2CConfigAccounts {
-        p2c_config,
-        signer,
-    } = accounts;
+    let CloseP2CConfigAccounts { p2c_config, signer } = accounts;
 
     Instruction {
         program_id,
         data: crate::instruction::CloseP2cConfig {}.data(),
-        accounts: crate::accounts::CloseP2CConfig {
-            p2c_config,
-            signer,
-        }
-        .to_account_metas(None),
+        accounts: crate::accounts::CloseP2CConfig { p2c_config, signer }.to_account_metas(None),
     }
 }
 
@@ -1228,6 +1221,44 @@ pub fn claim_revenue_v1_ix(
     }
 }
 
+pub struct ClaimDeficitV1Args {
+    pub amount: u64,
+}
+
+pub struct ClaimDeficitV1Accounts {
+    pub revenue_share_account: Pubkey,
+    pub commission_account: Pubkey,
+    pub validator_identity: Pubkey,
+    pub manager_authority: Pubkey,
+}
+
+/// Manager pays open deficit from vault prepaid (no funder deposit).
+pub fn claim_deficit_v1_ix(
+    program_id: Pubkey,
+    args: ClaimDeficitV1Args,
+    accounts: ClaimDeficitV1Accounts,
+) -> Instruction {
+    let ClaimDeficitV1Args { amount } = args;
+    let ClaimDeficitV1Accounts {
+        revenue_share_account,
+        commission_account,
+        validator_identity,
+        manager_authority,
+    } = accounts;
+
+    Instruction {
+        program_id,
+        data: crate::instruction::ClaimDeficitV1 { amount }.data(),
+        accounts: crate::accounts::ClaimDeficitV1 {
+            revenue_share_account,
+            commission_account,
+            validator_identity,
+            manager_authority,
+        }
+        .to_account_metas(None),
+    }
+}
+
 pub struct UpdateRevenueShareConfigArgs {
     pub commission_bps: u16,
     pub commission_account: Pubkey,
@@ -1506,13 +1537,16 @@ pub fn fund_p2c_subscription_ix(
 
 pub struct RecordP2CSubscriptionArgs {
     pub epoch: u64,
-    pub stake: u64,
-    pub amount_due: u64,
+    /// Optional txn updates count; use `0` when not supplied.
+    pub updates: u64,
+    /// Required recorded fee for the epoch (lamports); must be > 0.
+    pub recorded_amount: u64,
 }
 
 pub struct RecordP2CSubscriptionAccounts {
     pub p2c_subscription_account: Pubkey,
-    pub manager_authority: Pubkey,
+    /// `manager_authority` or `record_authority`.
+    pub authority: Pubkey,
 }
 
 pub fn record_p2c_subscription_ix(
@@ -1522,25 +1556,25 @@ pub fn record_p2c_subscription_ix(
 ) -> Instruction {
     let RecordP2CSubscriptionArgs {
         epoch,
-        stake,
-        amount_due,
+        updates,
+        recorded_amount,
     } = args;
     let RecordP2CSubscriptionAccounts {
         p2c_subscription_account,
-        manager_authority,
+        authority,
     } = accounts;
 
     Instruction {
         program_id,
         data: crate::instruction::RecordP2cSubscription {
             epoch,
-            stake,
-            amount_due,
+            updates,
+            recorded_amount,
         }
         .data(),
         accounts: crate::accounts::RecordP2CSubscription {
             p2c_subscription_account,
-            manager_authority,
+            authority,
         }
         .to_account_metas(None),
     }

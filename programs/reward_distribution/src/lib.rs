@@ -927,6 +927,53 @@ pub mod reward_distribution {
         Ok(())
     }
 
+    /// Manager pays open TCAV1/MCAV1 `deficit` from SOL already on the vault (no funder deposit).
+    /// Same commission split as `claim_revenue_v1` / `clear_deficit_v1`. Partial OK.
+    pub fn claim_deficit_v1(ctx: Context<ClaimDeficitV1>, amount: u64) -> Result<()> {
+        ClaimDeficitV1::auth(&ctx)?;
+
+        if amount == 0 {
+            return Err(RewardsTooLow.into());
+        }
+        if ctx.accounts.revenue_share_account.deficit == 0 {
+            return Err(NoDeficit.into());
+        }
+
+        let applied = amount.min(ctx.accounts.revenue_share_account.deficit);
+        let revenue_share_account = &mut ctx.accounts.revenue_share_account;
+        let share_kind = revenue_share_account.share_kind;
+        let commission_bps = if revenue_share_account.is_rakurai_tip_tca() {
+            0
+        } else {
+            revenue_share_account.commission_bps
+        };
+        let key = revenue_share_account.key();
+        let vault_info = revenue_share_account.to_account_info();
+        let manager = ctx.accounts.manager_authority.key();
+        let acc: &mut RevenueShareAccountV1 = &mut *revenue_share_account;
+
+        let (paid, commission_amount, validator_amount) = RevenueShareAccountV1::clear_deficit(
+            &mut acc.deficit,
+            vault_info,
+            ctx.accounts.commission_account.to_account_info(),
+            ctx.accounts.validator_identity.to_account_info(),
+            commission_bps,
+            applied,
+        )?;
+
+        emit!(RevenueDeficitClearedEvent {
+            revenue_share_account: key,
+            share_kind,
+            funder: manager,
+            amount_paid: paid,
+            commission_amount,
+            validator_amount,
+            deficit_remaining: acc.deficit,
+        });
+
+        Ok(())
+    }
+
     /// Sets the cumulative `deficit` field on TCAV1. Manager authority only.
     pub fn update_deficit(ctx: Context<UpdateDeficit>, update: DeficitUpdate) -> Result<()> {
         UpdateDeficit::auth(&ctx)?;
@@ -1231,19 +1278,20 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Record stake snapshot and amount due for an epoch (once). Manager only.
+    /// Record epoch fee once.
+    /// `updates` is optional metadata — pass `0` when not supplied.
     /// If the ledger is full of unclaimed rows, the oldest epoch is moved into `deficit`.
     pub fn record_p2c_subscription(
         ctx: Context<RecordP2CSubscription>,
         epoch: u64,
-        stake: u64,
-        amount_due: u64,
+        updates: u64,
+        recorded_amount: u64,
     ) -> Result<()> {
         RecordP2CSubscription::auth(&ctx)?;
 
         let p2c_key = ctx.accounts.p2c_subscription_account.key();
         let p2c = &mut ctx.accounts.p2c_subscription_account;
-        let eviction = p2c.record(epoch, stake, amount_due)?;
+        let eviction = p2c.record(epoch, updates, recorded_amount)?;
 
         if let Some(evicted) = eviction {
             emit!(P2CLedgerEvictedToDeficitEvent {
@@ -1260,8 +1308,8 @@ pub mod reward_distribution {
         emit!(P2CSubscriptionRecordedEvent {
             p2c_subscription_account: p2c_key,
             epoch,
-            stake,
-            amount_due,
+            updates,
+            recorded_amount,
         });
 
         Ok(())
@@ -1319,7 +1367,8 @@ pub mod reward_distribution {
         Ok(())
     }
 
-    /// Marks a claimed P2C epoch as converted to block rewards.
+    /// Marks a claimed P2C epoch as `block_reward_converted`.
+    /// Auth: manager, record authority, or validator identity (vote node signer).
     pub fn update_p2c_epoch_converted_to_block_reward(
         ctx: Context<UpdateP2CEpochConvertedToBlockReward>,
         epoch: u64,
@@ -1458,6 +1507,35 @@ fn require_epoch_not_future(epoch: u64) -> Result<()> {
     Ok(())
 }
 
+/// Shared auth for convert-to-block: manager, record authority, or vote **node** identity.
+fn auth_manager_record_or_vote_node(
+    manager_authority: Pubkey,
+    record_authority: Pubkey,
+    validator_vote: Pubkey,
+    validator_vote_account: &AccountInfo,
+    signer: Pubkey,
+) -> Result<()> {
+    use rakurai_vote_state::VoteState;
+
+    if signer == manager_authority || signer == record_authority {
+        return Ok(());
+    }
+
+    if validator_vote_account.key() != validator_vote {
+        return Err(Unauthorized.into());
+    }
+    if validator_vote_account.owner != &solana_sdk_ids::vote::ID {
+        return Err(Unauthorized.into());
+    }
+    let node =
+        VoteState::deserialize_node_pubkey(validator_vote_account).map_err(|_| Unauthorized)?;
+    if node != signer {
+        return Err(Unauthorized.into());
+    }
+
+    Ok(())
+}
+
 fn record_revenue_v1_impl(ctx: Context<RecordRevenueV1>, epoch: u64, amount: u64) -> Result<()> {
     let revenue_key = ctx.accounts.revenue_share_account.key();
     let revenue_share_account = &mut ctx.accounts.revenue_share_account;
@@ -1511,7 +1589,7 @@ fn initialize_reward_collection_account_inner(
         return Err(ErrorCode::Unauthorized.into());
     }
 
-    let node_pubkey = VoteState::deserialize_node_pubkey(validator_vote_account).unwrap();
+    let node_pubkey = VoteState::deserialize_node_pubkey(validator_vote_account)?;
     if &node_pubkey != signer {
         return Err(ErrorCode::Unauthorized.into());
     }
@@ -2407,6 +2485,34 @@ impl ClaimRevenueV1<'_> {
     }
 }
 
+/// Manager claims open deficit from vault prepaid (no funder deposit).
+#[derive(Accounts)]
+pub struct ClaimDeficitV1<'info> {
+    #[account(mut)]
+    pub revenue_share_account: Account<'info, RevenueShareAccountV1>,
+
+    /// CHECK: must match vault `commission_account`.
+    #[account(
+        mut,
+        constraint = commission_account.key() == revenue_share_account.commission_account @ Unauthorized
+    )]
+    pub commission_account: UncheckedAccount<'info>,
+
+    /// CHECK: validator identity receives remainder.
+    #[account(mut)]
+    pub validator_identity: UncheckedAccount<'info>,
+
+    pub manager_authority: Signer<'info>,
+}
+
+impl ClaimDeficitV1<'_> {
+    fn auth(ctx: &Context<ClaimDeficitV1>) -> Result<()> {
+        ctx.accounts
+            .revenue_share_account
+            .auth_manager_signer(ctx.accounts.manager_authority.key())
+    }
+}
+
 /// Sets cumulative deficit on TCAV1 (manager write-off / adjustment).
 #[derive(Accounts)]
 pub struct UpdateDeficit<'info> {
@@ -2462,30 +2568,14 @@ pub struct UpdateEpochConvertedToBlockReward<'info> {
 
 impl UpdateEpochConvertedToBlockReward<'_> {
     fn auth(ctx: &Context<UpdateEpochConvertedToBlockReward>) -> Result<()> {
-        use rakurai_vote_state::VoteState;
-
-        let revenue_share_account = &ctx.accounts.revenue_share_account;
-        let signer = ctx.accounts.signer.key();
-
-        if signer == revenue_share_account.manager_authority
-            || signer == revenue_share_account.record_authority
-        {
-            return Ok(());
-        }
-
-        let vote = &ctx.accounts.validator_vote_account;
-        if vote.key() != revenue_share_account.validator_vote {
-            return Err(Unauthorized.into());
-        }
-        if vote.owner != &solana_sdk_ids::vote::ID {
-            return Err(Unauthorized.into());
-        }
-        let node = VoteState::deserialize_node_pubkey(vote).map_err(|_| Unauthorized)?;
-        if node != signer {
-            return Err(Unauthorized.into());
-        }
-
-        Ok(())
+        let acc = &ctx.accounts.revenue_share_account;
+        auth_manager_record_or_vote_node(
+            acc.manager_authority,
+            acc.record_authority,
+            acc.validator_vote,
+            &ctx.accounts.validator_vote_account.to_account_info(),
+            ctx.accounts.signer.key(),
+        )
     }
 }
 
@@ -2656,30 +2746,14 @@ pub struct UpdateEpochConvertedToBlockRewardV1<'info> {
 
 impl UpdateEpochConvertedToBlockRewardV1<'_> {
     fn auth(ctx: &Context<UpdateEpochConvertedToBlockRewardV1>) -> Result<()> {
-        use rakurai_vote_state::VoteState;
-
-        let revenue_share_account = &ctx.accounts.revenue_share_account;
-        let signer = ctx.accounts.signer.key();
-
-        if signer == revenue_share_account.manager_authority
-            || signer == revenue_share_account.record_authority
-        {
-            return Ok(());
-        }
-
-        let vote = &ctx.accounts.validator_vote_account;
-        if vote.key() != revenue_share_account.validator_vote {
-            return Err(Unauthorized.into());
-        }
-        if vote.owner != &solana_sdk_ids::vote::ID {
-            return Err(Unauthorized.into());
-        }
-        let node = VoteState::deserialize_node_pubkey(vote).map_err(|_| Unauthorized)?;
-        if node != signer {
-            return Err(Unauthorized.into());
-        }
-
-        Ok(())
+        let acc = &ctx.accounts.revenue_share_account;
+        auth_manager_record_or_vote_node(
+            acc.manager_authority,
+            acc.record_authority,
+            acc.validator_vote,
+            &ctx.accounts.validator_vote_account.to_account_info(),
+            ctx.accounts.signer.key(),
+        )
     }
 }
 
@@ -2768,14 +2842,19 @@ pub struct RecordP2CSubscription<'info> {
     #[account(mut)]
     pub p2c_subscription_account: Account<'info, P2CSubscriptionAccount>,
 
-    pub manager_authority: Signer<'info>,
+    /// `manager_authority` or `record_authority`.
+    pub authority: Signer<'info>,
 }
 
 impl RecordP2CSubscription<'_> {
     fn auth(ctx: &Context<RecordP2CSubscription>) -> Result<()> {
-        ctx.accounts
-            .p2c_subscription_account
-            .auth_manager_signer(ctx.accounts.manager_authority.key())
+        let acc = &ctx.accounts.p2c_subscription_account;
+        let signer = ctx.accounts.authority.key();
+        if signer == acc.manager_authority || signer == acc.record_authority {
+            Ok(())
+        } else {
+            Err(Unauthorized.into())
+        }
     }
 }
 
@@ -2821,28 +2900,14 @@ pub struct UpdateP2CEpochConvertedToBlockReward<'info> {
 
 impl UpdateP2CEpochConvertedToBlockReward<'_> {
     fn auth(ctx: &Context<UpdateP2CEpochConvertedToBlockReward>) -> Result<()> {
-        use rakurai_vote_state::VoteState;
-
         let acc = &ctx.accounts.p2c_subscription_account;
-        let signer = ctx.accounts.signer.key();
-
-        if signer == acc.manager_authority || signer == acc.record_authority {
-            return Ok(());
-        }
-
-        let vote = &ctx.accounts.validator_vote_account;
-        if vote.key() != acc.validator_vote {
-            return Err(Unauthorized.into());
-        }
-        if vote.owner != &solana_sdk_ids::vote::ID {
-            return Err(Unauthorized.into());
-        }
-        let node = VoteState::deserialize_node_pubkey(vote).map_err(|_| Unauthorized)?;
-        if node != signer {
-            return Err(Unauthorized.into());
-        }
-
-        Ok(())
+        auth_manager_record_or_vote_node(
+            acc.manager_authority,
+            acc.record_authority,
+            acc.validator_vote,
+            &ctx.accounts.validator_vote_account.to_account_info(),
+            ctx.accounts.signer.key(),
+        )
     }
 }
 
@@ -3176,8 +3241,8 @@ pub struct P2CSubscriptionFundedEvent {
 pub struct P2CSubscriptionRecordedEvent {
     pub p2c_subscription_account: Pubkey,
     pub epoch: u64,
-    pub stake: u64,
-    pub amount_due: u64,
+    pub updates: u64,
+    pub recorded_amount: u64,
 }
 
 /// Emitted when a full PSA ledger evicts an unclaimed epoch into account `deficit`.
