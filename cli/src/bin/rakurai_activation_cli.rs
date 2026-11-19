@@ -19,13 +19,13 @@ use {
         normalize_to_url_if_moniker, parse_keypair, parse_pubkey, reconfirm_commission,
         sign_and_send_transaction, validate_commission, MAX_COMMISSION_BPS,
     },
+    solana_commitment_config::CommitmentConfig,
     solana_rpc_client::rpc_client::RpcClient,
     solana_sdk::{
-        commitment_config::CommitmentConfig,
         pubkey::Pubkey,
         signature::{Keypair, Signer},
-        system_program,
     },
+    solana_sdk_ids::system_program,
     std::sync::Arc,
 };
 

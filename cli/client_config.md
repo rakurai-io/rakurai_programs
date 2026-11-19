@@ -16,14 +16,20 @@ This CLI does **not** manage TCA / PSA / MCA money accounts — only scheduler *
 
 **To add a block-engine, P2C, or virtual-priority set:**
 
-1. Dump current config (`global show`, `validator show`, or `union --vote`)
-2. Copy it
-3. Append the new named set (keep every set you still want)
-4. Submit that file
+1. Dump current config to a JSON file:
+   ```bash
+   rakurai-client-config global show --config-file /tmp/global-current.json
+   rakurai-client-config validator show --vote <VOTE> --config-file /tmp/validator-current.json
+   rakurai-client-config union --vote <VOTE> --config-file /tmp/effective-current.json
+   ```
+2. Edit that file (append the new named set; keep every set you still want)
+3. Submit that file
 
 Do **not** submit a JSON that only contains the new set. That file becomes the whole PDA contents; other sets on that account are deleted.
 
 `union` is a **read**: validator PDA if it exists, otherwise global. It does not merge payloads.
+
+`--config-file` on `show` / `union` writes the same JSON shape accepted by `global update`, `validator update`, and `proposal submit`.
 
 Worked example — add P2C `p2c-new-1` on global when global already has `p2c-main-1` and `p2c-main-2`:
 
@@ -32,16 +38,16 @@ Worked example — add P2C `p2c-new-1` on global when global already has `p2c-ma
   "block_engine": { "sets": [ /* unchanged: copy from global show */ ] },
   "p2c": {
     "sets": [
-      { "name": "p2c-main-1", "url": [{ "url": "https://p2c1.example" }] },
-      { "name": "p2c-main-2", "url": [{ "url": "https://p2c2.example" }] },
-      { "name": "p2c-new-1", "url": [{ "url": "https://p2c-new.example" }] }
+      { "name": "p2c-main-1", "url": "https://p2c1.example", "mev": true },
+      { "name": "p2c-main-2", "url": "https://p2c2.example", "mev": true },
+      { "name": "p2c-new-1", "url": "https://p2c-new.example", "mev": true }
     ]
   },
   "virtual_priority": { "sets": [ /* unchanged: copy from global show */ ] }
 }
 ```
 
-Same pattern for a new **block engine** or **virtual-priority** set. To add a URL *inside* an existing set, copy that set’s current `url` list and append the URL.
+Same pattern for a new **block engine** or **virtual-priority** set. Block engine allows **one URL per UUID**. P2C is **one URL per UUID** with optional `mev` / `resell` / `enable_tpu_p2c_update` (at least one of mev|resell; TPU only with mev).
 
 [`examples/validator_config_overlay.json`](./examples/validator_config_overlay.json) is **not** a write template. It only shows extra validator-named sets. Fold those extras into a full current snapshot before `validator update` or `proposal submit`.
 
@@ -71,20 +77,28 @@ Each file has all three sections. See [`examples/validator_config.json`](./examp
     "sets": [
       {
         "name": "be-main-1",
-        "url": [
-          {
-            "url": "https://be1.example",
-            "max_bundles": 100,
-            "period_ms": 100,
-            "max_bundle_burst": 0
-          }
-        ]
+        "url": {
+          "url": "https://be1.example",
+          "max_bundles": 100,
+          "period_ms": 100,
+          "max_bundle_burst": 0
+        }
       }
-    ]
+    ],
+    "config": {
+      "bs_pm1": 20, "bs_np1": 10, "bs_be1": 10, "bs_d1": 10,
+      "bs_pm2": 20, "bs_np2": 10, "bs_be2": 10, "bs_d2": 10
+    }
   },
   "p2c": {
     "sets": [
-      { "name": "p2c-main-1", "url": [{ "url": "https://p2c1.example" }] }
+      {
+        "name": "p2c-main-1",
+        "url": "https://p2c1.example",
+        "mev": true,
+        "resell": true,
+        "enable_tpu_p2c_update": true
+      }
     ]
   },
   "virtual_priority": {
@@ -94,14 +108,15 @@ Each file has all three sections. See [`examples/validator_config.json`](./examp
         "url": [{ "key": "<PUBKEY>", "value": 0.1 }]
       }
     ]
-  }
+  },
+  "sch_config": { "rs_mode": 1, "rs_cfg_d1": 40, "rs_enforce": false }
 }
 ```
 
 | Section | Fields |
 |---------|--------|
-| Block engine | `url`, `max_bundles`, `period_ms`, `max_bundle_burst` (`0` = unlimited / treat burst as `max_bundles` when quota is set). Scheduler **receives bundles** from these URLs. |
-| P2C | `url` only. Scheduler **sends** packed txns here for arbitrage / backrun (point of no return; no front-running). See [Post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations). |
+| Block engine | One `url` object per UUID: `url`, `max_bundles`, `period_ms`, `max_bundle_burst` (`0` = unlimited / treat burst as `max_bundles` when quota is set). Scheduler **receives bundles** from these URLs. |
+| P2C | One `url` per UUID. Optional `resell` → `StartExpiringPacketStream` (no boost/TPU). Optional `mev` → `StartExpiringMevPacketStream` (boost); optional `enable_tpu_p2c_update` → TPU on Mev path. Both may be true (two connections, distinct hashes). See [Post-pack confirmations](https://docs.rakurai.io/docs/services/rakurai_jito_private/rakurai_docs/transaction_inclusion/post_pack_confirmations). |
 | Virtual priority | `key` (tip-account pubkey), `value` (fraction of that tip in `[0.0, 1.0]`; e.g. `0.1` = 10%) |
 
 `name` is truncated to 32 bytes. Omit `--config-file` on `global init` to create empty sets, then update with a full file.
@@ -135,7 +150,8 @@ rakurai-client-config global init --config-file cli/examples/validator_config.js
 # Optional caps on init (defaults shown):
 #   --max-url-len 256 --max-sets-per-section 16 --max-urls-per-set 8 --max-vp-entries-per-set 64
 rakurai-client-config global show
-# Edit the printed JSON (current + new), save, then:
+rakurai-client-config global show --config-file /tmp/global-current.json
+# Edit that JSON (current + new), then:
 rakurai-client-config global update --config-file /tmp/global-current-plus-new.json
 rakurai-client-config global set-limits --max-url-len 256 --max-sets-per-section 16
 rakurai-client-config global close
@@ -148,6 +164,7 @@ rakurai-client-config validator init --vote <VOTE_PUBKEY> --operator <OPERATOR_P
 rakurai-client-config validator set-operator --vote <VOTE_PUBKEY> --operator <OPERATOR_PUBKEY>
 rakurai-client-config validator set-limits --vote <VOTE_PUBKEY> --max-url-len 256
 rakurai-client-config validator show --vote <VOTE_PUBKEY>
+rakurai-client-config validator show --vote <VOTE_PUBKEY> --config-file /tmp/validator-current.json
 rakurai-client-config validator update --vote <VOTE_PUBKEY> --config-file /tmp/validator-current-plus-new.json
 rakurai-client-config validator close --vote <VOTE_PUBKEY>
 ```
@@ -172,6 +189,7 @@ rakurai-client-config -k manager.json proposal reject --vote <VOTE>
 ```sh
 rakurai-client-config union
 rakurai-client-config union --vote <VOTE_PUBKEY>
+rakurai-client-config union --vote <VOTE_PUBKEY> --config-file /tmp/effective-current.json
 ```
 
 ---
@@ -197,12 +215,12 @@ This copies **then-current global** onto the validator PDA. Only this operator c
 Use whichever snapshot you will edit. `union --vote` is the **effective** config (validator PDA if present, else global). After `validator init`, that is the validator PDA.
 
 ```sh
-rakurai-client-config union --vote <VOTE>
+rakurai-client-config union --vote <VOTE> --config-file /tmp/proposal-current-plus-new.json
 # or
-rakurai-client-config validator show --vote <VOTE>
+rakurai-client-config validator show --vote <VOTE> --config-file /tmp/proposal-current-plus-new.json
 ```
 
-Copy the printed `block_engine` / `p2c` / `virtual_priority` sets into a file, e.g. `/tmp/proposal-current-plus-new.json`.
+Edit `/tmp/proposal-current-plus-new.json`: keep every existing set and append the new one (see step 3).
 
 ### Step 3 — Operator: add the new set (keep current)
 
@@ -213,8 +231,8 @@ Do **not** send a file that only contains the new set. Example — current P2C `
   "block_engine": { "sets": [ /* copy from show / union — unchanged */ ] },
   "p2c": {
     "sets": [
-      { "name": "p2c-main-1", "url": [{ "url": "https://p2c1.example" }] },
-      { "name": "p2c-op-1", "url": [{ "url": "https://p2c-operator.example" }] }
+      { "name": "p2c-main-1", "url": "https://p2c1.example", "mev": true },
+      { "name": "p2c-op-1", "url": "https://p2c-operator.example", "mev": true }
     ]
   },
   "virtual_priority": { "sets": [ /* copy from show / union — unchanged */ ] }
