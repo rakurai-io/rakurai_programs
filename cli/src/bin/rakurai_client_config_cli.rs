@@ -7,7 +7,7 @@ use {
         validator::{
             display_effective, display_global_config, display_proposal, display_validator_config,
             get_global_config, get_proposal, get_validator_config, load_config_from_file,
-            parse_vote, proposal_exists, try_get_validator_config,
+            maybe_dump_config, parse_vote, proposal_exists, try_get_validator_config,
         },
     },
     rakurai_client_config::sdk::{
@@ -19,8 +19,9 @@ use {
             approve_proposal_ix, close_global_ix, close_validator_ix, commit_global_staging_ix,
             commit_proposal_staging_ix, commit_validator_staging_ix, init_global_ix,
             init_global_staging_ix, init_proposal_ix, init_proposal_staging_ix, init_validator_ix,
-            init_validator_staging_ix, migrate_global_to_v3_ix, migrate_proposal_to_v3_ix,
-            migrate_validator_to_v3_ix, reject_proposal_ix, set_operator_ix, update_global_ix,
+            init_validator_staging_ix, migrate_global_to_v3_ix, migrate_global_to_v4_ix,
+            migrate_proposal_to_v3_ix, migrate_proposal_to_v4_ix, migrate_validator_to_v3_ix,
+            migrate_validator_to_v4_ix, reject_proposal_ix, set_operator_ix, update_global_ix,
             update_global_limits_ix, update_proposal_ix, update_validator_ix,
             update_validator_limits_ix, write_global_staging_ix, write_proposal_staging_ix,
             write_validator_staging_ix, AbortGlobalStagingAccounts, AbortProposalStagingAccounts,
@@ -33,7 +34,7 @@ use {
             UpdateProposalArgs, UpdateValidatorAccounts, UpdateValidatorArgs,
             UpdateValidatorLimitsAccounts, UpdateValidatorLimitsArgs, ValidatorStagingAccounts,
         },
-        Config, ConfigLimits, ConfigLimitsV1, ConfigV3,
+        Config, ConfigLimits, ConfigLimitsV1, ConfigV4,
     },
     solana_rpc_client::rpc_client::RpcClient,
     solana_commitment_config::CommitmentConfig,
@@ -119,8 +120,10 @@ enum GlobalCmd {
     SetLimits(LimitsArgs),
     /// Rewrite V2 global payload to V3 (global TPU flag → per P2C URL)
     MigrateToV3,
-    /// Fetch and print global config
-    Show,
+    /// Rewrite V2/V3 global payload to V4 (single URL + optional mev/resell/tpu)
+    MigrateToV4,
+    /// Fetch and print global config. Optionally dump payload JSON with `--config-file`.
+    Show(ShowDumpArgs),
     /// Close global config PDA and reclaim rent (manager-only)
     Close,
 }
@@ -137,8 +140,10 @@ enum ValidatorCmd {
     SetOperator(SetOperatorCliArgs),
     /// Rewrite V2 validator payload to V3 (global TPU flag → per P2C URL)
     MigrateToV3(VoteArgs),
-    /// Fetch and print validator config
-    Show(VoteArgs),
+    /// Rewrite V2/V3 validator payload to V4
+    MigrateToV4(VoteArgs),
+    /// Fetch and print validator config. Optionally dump payload JSON with `--config-file`.
+    Show(ShowVoteArgs),
     /// Close validator config PDA and reclaim rent (manager-only)
     Close(VoteArgs),
 }
@@ -149,8 +154,10 @@ enum ProposalCmd {
     Submit(ProposalSubmitArgs),
     /// Rewrite V2 proposal payload to V3 (global TPU flag → per P2C URL)
     MigrateToV3(VoteArgs),
-    /// Fetch and print pending proposal
-    Show(VoteArgs),
+    /// Rewrite V2/V3 proposal payload to V4
+    MigrateToV4(VoteArgs),
+    /// Fetch and print pending proposal. Optionally dump payload JSON with `--config-file`.
+    Show(ShowVoteArgs),
     /// Copy proposal → live validator config and close proposal (manager)
     Approve(VoteArgs),
     /// Close proposal without changing live config (manager)
@@ -159,14 +166,14 @@ enum ProposalCmd {
 
 #[derive(Args)]
 struct ConfigFileArgs {
-    /// Path to JSON config (ConfigV3). Omit for empty sets. Per-URL `enable_tpu_p2c_update` defaults to false.
+    /// Path to JSON config (ConfigV4). Omit for empty sets.
     #[arg(long)]
     config_file: Option<String>,
 }
 
 #[derive(Args)]
 struct InitGlobalCliArgs {
-    /// Path to JSON config (ConfigV3). Omit for empty sets. Per-URL `enable_tpu_p2c_update` defaults to false.
+    /// Path to JSON config (ConfigV4). Omit for empty sets.
     #[arg(long)]
     config_file: Option<String>,
     #[arg(long, default_value_t = 256)]
@@ -212,6 +219,22 @@ struct VoteArgs {
 }
 
 #[derive(Args)]
+struct ShowDumpArgs {
+    /// Write the config payload JSON (same shape as `--config-file` on update/submit).
+    #[arg(long)]
+    config_file: Option<String>,
+}
+
+#[derive(Args)]
+struct ShowVoteArgs {
+    #[arg(long, value_parser = parse_vote)]
+    vote: Pubkey,
+    /// Write the config payload JSON (same shape as `--config-file` on update/submit).
+    #[arg(long)]
+    config_file: Option<String>,
+}
+
+#[derive(Args)]
 struct ValidatorInitArgs {
     #[arg(long, value_parser = parse_vote)]
     vote: Pubkey,
@@ -249,6 +272,9 @@ struct UnionArgs {
     /// Vote pubkey. If that validator PDA exists it is used; otherwise global.
     #[arg(long, value_parser = parse_vote)]
     vote: Option<Pubkey>,
+    /// Write the effective config payload JSON (same shape as `--config-file` on update/submit).
+    #[arg(long)]
+    config_file: Option<String>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -283,7 +309,7 @@ fn limits_from_cli(
 fn load_or_empty(path: Option<String>) -> Result<Config, Box<dyn std::error::Error>> {
     match path {
         Some(p) => load_config_from_file(&p),
-        None => Ok(Config::V3(ConfigV3::empty())),
+        None => Ok(Config::V4(ConfigV4::empty())),
     }
 }
 
@@ -623,8 +649,22 @@ fn run_global(
             sign_and_send_transaction(rpc.clone(), ix, &kp)?;
             display_global_config(&get_global_config(rpc, global)?, global);
         }
-        GlobalCmd::Show => {
+        GlobalCmd::MigrateToV4 => {
+            let ix = migrate_global_to_v4_ix(
+                program_id,
+                UpdateGlobalAccounts {
+                    manager,
+                    global,
+                    system_program: system_program::ID,
+                },
+            );
+            sign_and_send_transaction(rpc.clone(), ix, &kp)?;
             display_global_config(&get_global_config(rpc, global)?, global);
+        }
+        GlobalCmd::Show(a) => {
+            let cfg = get_global_config(rpc, global)?;
+            display_global_config(&cfg, global);
+            maybe_dump_config(&cfg.config, a.config_file.as_deref())?;
         }
         GlobalCmd::Close => {
             let ix = close_global_ix(program_id, CloseGlobalAccounts { manager, global });
@@ -745,9 +785,26 @@ fn run_validator(
             sign_and_send_transaction(rpc.clone(), ix, &kp)?;
             display_validator_config(&get_validator_config(rpc, validator)?, validator);
         }
+        ValidatorCmd::MigrateToV4(a) => {
+            let (validator, _) = derive_validator_config_address(&program_id, &a.vote);
+            let ix = migrate_validator_to_v4_ix(
+                program_id,
+                UpdateValidatorAccounts {
+                    manager,
+                    vote: a.vote,
+                    global,
+                    validator,
+                    system_program: system_program::ID,
+                },
+            );
+            sign_and_send_transaction(rpc.clone(), ix, &kp)?;
+            display_validator_config(&get_validator_config(rpc, validator)?, validator);
+        }
         ValidatorCmd::Show(a) => {
             let (validator, _) = derive_validator_config_address(&program_id, &a.vote);
-            display_validator_config(&get_validator_config(rpc, validator)?, validator);
+            let cfg = get_validator_config(rpc, validator)?;
+            display_validator_config(&cfg, validator);
+            maybe_dump_config(&cfg.config, a.config_file.as_deref())?;
         }
         ValidatorCmd::Close(a) => {
             let (validator, _) = derive_validator_config_address(&program_id, &a.vote);
@@ -786,7 +843,7 @@ fn run_proposal(
                     let ix = init_proposal_ix(
                         program_id,
                         InitProposalArgs {
-                            config: Config::V3(ConfigV3::empty()),
+                            config: Config::V4(ConfigV4::empty()),
                         },
                         InitProposalAccounts {
                             operator,
@@ -854,9 +911,28 @@ fn run_proposal(
             sign_and_send_transaction(rpc.clone(), ix, &kp)?;
             display_proposal(&get_proposal(rpc, proposal)?, proposal);
         }
+        ProposalCmd::MigrateToV4(a) => {
+            let operator = kp.pubkey();
+            let (validator, _) = derive_validator_config_address(&program_id, &a.vote);
+            let (proposal, _) = derive_validator_proposal_address(&program_id, &a.vote);
+            let ix = migrate_proposal_to_v4_ix(
+                program_id,
+                UpdateProposalAccounts {
+                    operator,
+                    vote: a.vote,
+                    validator,
+                    proposal,
+                    system_program: system_program::ID,
+                },
+            );
+            sign_and_send_transaction(rpc.clone(), ix, &kp)?;
+            display_proposal(&get_proposal(rpc, proposal)?, proposal);
+        }
         ProposalCmd::Show(a) => {
             let (proposal, _) = derive_validator_proposal_address(&program_id, &a.vote);
-            display_proposal(&get_proposal(rpc, proposal)?, proposal);
+            let cfg = get_proposal(rpc, proposal)?;
+            display_proposal(&cfg, proposal);
+            maybe_dump_config(&cfg.config, a.config_file.as_deref())?;
         }
         ProposalCmd::Approve(a) => {
             let manager = kp.pubkey();
@@ -913,5 +989,8 @@ fn run_union(
         let (validator, _) = derive_validator_config_address(&program_id, &vote);
         try_get_validator_config(rpc.clone(), validator).map(|c| c.config)
     });
-    display_effective(&g.config, validator_cfg.as_ref())
+    display_effective(&g.config, validator_cfg.as_ref())?;
+    let effective = rakurai_client_config::sdk::effective_config(&g.config, validator_cfg.as_ref());
+    maybe_dump_config(effective, a.config_file.as_deref())?;
+    Ok(())
 }

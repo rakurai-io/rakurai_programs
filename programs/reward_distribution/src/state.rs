@@ -132,6 +132,32 @@ pub struct EpochAmountEntryV1 {
     pub block_reward_converted: bool,
 }
 
+impl EpochAmountEntryV1 {
+    /// Credit plain vault deposits into `transferred_amount` (up to recorded `amount`), then
+    /// return claimable = `min(transferred, available)`. Aligns `transferred_amount` to claimable.
+    /// Returns `(record_amount, claimable)`.
+    pub fn sync_and_claimable(&mut self, available: u64) -> Result<(u64, u64)> {
+        use crate::ErrorCode::*;
+        if self.amount == 0 && self.transferred_amount == 0 {
+            return Err(RewardsTooLow.into());
+        }
+        let under = self.amount.saturating_sub(self.transferred_amount);
+        if under > 0 && available > 0 {
+            let credit = under.min(available);
+            self.transferred_amount = self
+                .transferred_amount
+                .checked_add(credit)
+                .ok_or(ArithmeticError)?;
+        }
+        let claimable = self.transferred_amount.min(available);
+        if claimable == 0 {
+            return Err(RewardsTooLow.into());
+        }
+        self.transferred_amount = claimable;
+        Ok((self.amount, claimable))
+    }
+}
+
 /// Fixed header bytes after the 8-byte Anchor discriminator, before the ledger vec.
 /// `share_kind` through `block_reward_conversion_enabled`.
 pub const REVENUE_SHARE_FIXED_PREFIX_LEN: usize = 1  // share_kind
@@ -993,7 +1019,11 @@ impl RevenueShareAccountV1 {
     /// When the ledger is full and every row is still unclaimed, evicts the oldest unclaimed
     /// epoch (smallest epoch number), books unpaid (`amount - transferred_amount`) into `deficit`,
     /// and returns [`EvictedUnclaimedEpoch`] for the caller to emit an event.
-    pub fn record_revenue(&mut self, epoch: u64, amount: u64) -> Result<Option<EvictedUnclaimedEpoch>> {
+    pub fn record_revenue(
+        &mut self,
+        epoch: u64,
+        amount: u64,
+    ) -> Result<Option<EvictedUnclaimedEpoch>> {
         let capacity = self.max_epoch_entries as usize;
         let eviction = self.ledger.add(
             epoch,
@@ -1137,8 +1167,11 @@ impl RevenueShareAccountV1 {
     }
 
     /// Splits claimable settled funds for an epoch between commission and validator identity.
-    /// Claimable = `transferred_amount` (may be above or below recorded `amount`).
-    /// If underfunded (`transferred < amount`), adds shortfall to `deficit`.
+    ///
+    /// If SOL was deposited via plain transfer (settle/`update_transferred_amount` skipped),
+    /// credits `transferred_amount` from vault lamports above rent (up to recorded `amount`),
+    /// then pays `min(transferred_amount, available)`.
+    /// Underfund (`claimable < amount`) adds shortfall to `deficit`.
     /// Returns `(commission, validator, claimed_total, shortfall)`.
     pub fn claim_revenue(
         ledger: &mut RevenueLedgerV1,
@@ -1156,26 +1189,17 @@ impl RevenueShareAccountV1 {
             return Err(PrematureRevenueClaim.into());
         }
 
-        let (record_amount, transferred_amount) = {
-            let entry = ledger
-                .entries
-                .iter()
-                .find(|e| e.epoch == epoch)
-                .ok_or(EpochEntryNotFound)?;
+        let rent = Rent::get()?;
+        let min_rent = rent.minimum_balance(revenue_share_account.data_len());
+        let available = revenue_share_account.lamports().saturating_sub(min_rent);
+
+        let (record_amount, claimable) = {
+            let entry = ledger.get_mut(epoch)?;
             if entry.claimed {
                 return Err(EpochAlreadyClaimed.into());
             }
-            if entry.amount == 0 && entry.transferred_amount == 0 {
-                return Err(RewardsTooLow.into());
-            }
-            (entry.amount, entry.transferred_amount)
+            entry.sync_and_claimable(available)?
         };
-
-        // Always pay what was transferred (supports under-settle and over-settle).
-        let claimable = transferred_amount;
-        if claimable == 0 {
-            return Err(RewardsTooLow.into());
-        }
 
         let shortfall = record_amount.saturating_sub(claimable);
 
@@ -1191,13 +1215,6 @@ impl RevenueShareAccountV1 {
         let validator_amount = claimable
             .checked_sub(commission_amount)
             .ok_or(ArithmeticError)?;
-
-        let rent = Rent::get()?;
-        let min_rent = rent.minimum_balance(revenue_share_account.data_len());
-        let available = revenue_share_account.lamports().saturating_sub(min_rent);
-        if available < claimable {
-            return Err(RewardsTooLow.into());
-        }
 
         if commission_amount > 0 {
             RewardCollectionAccount::transfer_lamports(
@@ -1319,11 +1336,11 @@ pub enum P2CSubscriptionStatus {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct P2CEpochEntry {
     pub epoch: u64,
-    /// Off-chain stake snapshot used to price this epoch.
-    pub stake: u64,
-    /// Fee due for the epoch.
-    pub amount_due: u64,
-    /// Lamports paid out on claim for this epoch (`min(due, free prepaid)`).
+    /// Optional off-chain txn updates count for this epoch (0 if not supplied).
+    pub updates: u64,
+    /// Recorded amount for the epoch (lamports).
+    pub recorded_amount: u64,
+    /// Lamports paid out on claim for this epoch
     pub amount_deducted: u64,
     /// Whether this epoch has been claimed (payout attempted).
     pub claimed: bool,
@@ -1347,8 +1364,7 @@ pub struct P2CSubscriptionAccount {
     pub initializer: Pubkey,
     /// Creates PDA (pays rent), records epoch charges, claims, config, close.
     pub manager_authority: Pubkey,
-    /// Optional extra signer for convert-to-block (with manager / validator identity).
-    /// Not used for `record_p2c_subscription` (manager-only).
+    /// May record epoch charges; convert-to-block with manager or vote node.
     pub record_authority: Pubkey,
     pub max_epoch_entries: u8,
     /// e.g. 2000 = 20% to `commission_account` on claim.
@@ -1422,8 +1438,10 @@ impl P2CSubscriptionLedger {
         let victim = self.entries[evict_idx];
         let eviction = EvictedUnclaimedEpoch {
             epoch: victim.epoch,
-            unpaid: victim.amount_due.saturating_sub(victim.amount_deducted),
-            amount: victim.amount_due,
+            unpaid: victim
+                .recorded_amount
+                .saturating_sub(victim.amount_deducted),
+            amount: victim.recorded_amount,
             settled: victim.amount_deducted,
         };
         self.entries[evict_idx] = entry;
@@ -1696,22 +1714,25 @@ impl P2CSubscriptionAccount {
 
     /// Record a new epoch charge once.
     ///
+    /// `epoch` and `recorded_amount` are required (`recorded_amount` must be > 0).
+    /// `updates` is optional metadata (pass `0` when unknown).
+    ///
     /// When the ledger is full and every row is still unclaimed, evicts the oldest unclaimed
-    /// epoch (smallest epoch number), books unpaid (`amount_due - amount_deducted`) into `deficit`,
-    /// and returns [`EvictedUnclaimedEpoch`] for the caller to emit an event.
+    /// epoch (smallest epoch number), books unpaid (`recorded_amount - amount_deducted`) into
+    /// `deficit`, and returns [`EvictedUnclaimedEpoch`] for the caller to emit an event.
     pub fn record(
         &mut self,
         epoch: u64,
-        stake: u64,
-        amount_due: u64,
+        updates: u64,
+        recorded_amount: u64,
     ) -> Result<Option<EvictedUnclaimedEpoch>> {
-        if amount_due == 0 {
+        if recorded_amount == 0 {
             return Err(crate::ErrorCode::RewardsTooLow.into());
         }
         let entry = P2CEpochEntry {
             epoch,
-            stake,
-            amount_due,
+            updates,
+            recorded_amount,
             amount_deducted: 0,
             claimed: false,
             block_reward_converted: !self.block_reward_conversion_enabled,
@@ -1773,8 +1794,8 @@ impl P2CSubscriptionAccount {
 
     /// Pay from free prepaid against this epoch.
     ///
-    /// - Always notes and transfers `min(remaining_due, free)`.
-    /// - Marks `claimed` when fully paid (`amount_deducted >= amount_due`).
+    /// - Always notes and transfers `min(remaining_recorded, free)`.
+    /// - Marks `claimed` when fully paid (`amount_deducted >= recorded_amount`).
     /// - Or, if `force_claim`, marks claimed with any leftover as `deficit` (+ grace).
     /// - Without `force_claim` and still underfunded: leaves epoch open (partial noted).
     ///
@@ -1799,7 +1820,7 @@ impl P2CSubscriptionAccount {
             return Err(PrematureRevenueClaim.into());
         }
 
-        let (amount_due, prior_deducted) = {
+        let (recorded_amount, prior_deducted) = {
             let entry = ledger
                 .entries
                 .iter()
@@ -1808,10 +1829,10 @@ impl P2CSubscriptionAccount {
             if entry.claimed {
                 return Err(EpochAlreadyClaimed.into());
             }
-            (entry.amount_due, entry.amount_deducted)
+            (entry.recorded_amount, entry.amount_deducted)
         };
 
-        let remaining = amount_due.saturating_sub(prior_deducted);
+        let remaining = recorded_amount.saturating_sub(prior_deducted);
         let rent = Rent::get()?;
         let min_rent = rent.minimum_balance(p2c_account.data_len());
         // Prior partial payments already left the PDA; free is just spendable lamports.
@@ -1848,7 +1869,7 @@ impl P2CSubscriptionAccount {
             entry.amount_deducted
         };
 
-        let remaining_after = amount_due.saturating_sub(amount_deducted);
+        let remaining_after = recorded_amount.saturating_sub(amount_deducted);
         let close = remaining_after == 0 || force_claim;
         let shortfall = if close { remaining_after } else { 0 };
 
@@ -2374,13 +2395,28 @@ mod tests {
     }
 
     #[test]
-    fn p2c_record_once_and_sets_due() {
+    fn p2c_record_once_and_sets_recorded_amount() {
         let mut acc = test_p2c_account(true);
         acc.record(10, 1_000_000, 100).unwrap();
-        assert_eq!(acc.ledger.entries[0].amount_due, 100);
+        assert_eq!(acc.ledger.entries[0].updates, 1_000_000);
+        assert_eq!(acc.ledger.entries[0].recorded_amount, 100);
         assert_eq!(acc.ledger.entries[0].amount_deducted, 0);
         assert!(!acc.ledger.entries[0].claimed);
         assert!(!acc.ledger.entries[0].block_reward_converted);
+    }
+
+    #[test]
+    fn p2c_record_allows_zero_updates() {
+        let mut acc = test_p2c_account(true);
+        acc.record(11, 0, 50).unwrap();
+        assert_eq!(acc.ledger.entries[0].updates, 0);
+        assert_eq!(acc.ledger.entries[0].recorded_amount, 50);
+    }
+
+    #[test]
+    fn p2c_record_rejects_zero_recorded_amount() {
+        let mut acc = test_p2c_account(true);
+        assert!(acc.record(12, 1, 0).is_err());
     }
 
     #[test]

@@ -105,13 +105,14 @@ impl Uuid {
 /// Versioned config payload shared by global and validator PDAs.
 ///
 /// Discriminant 0 (`V1`) is reserved so existing `V2` accounts (discriminant 1)
-/// keep decoding after ConfigV1 was removed. `V3` is discriminant 2.
+/// keep decoding after ConfigV1 was removed. `V3` is discriminant 2, `V4` is 3.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub enum Config {
     /// Former ConfigV1 — unsupported. Writing or validating this variant fails.
     V1,
     V2(ConfigV2),
     V3(ConfigV3),
+    V4(ConfigV4),
 }
 
 impl Config {
@@ -120,13 +121,14 @@ impl Config {
             Config::V1 => Err(error!(crate::ConfigError::UnexpectedConfigVersion)),
             Config::V2(v2) => v2.validate(limits),
             Config::V3(v3) => v3.validate(limits),
+            Config::V4(v4) => v4.validate(limits),
         }
     }
 
     pub fn as_v2(&self) -> Result<&ConfigV2> {
         match self {
             Config::V2(v2) => Ok(v2),
-            Config::V1 | Config::V3(_) => {
+            Config::V1 | Config::V3(_) | Config::V4(_) => {
                 Err(error!(crate::ConfigError::UnexpectedConfigVersion))
             }
         }
@@ -135,7 +137,16 @@ impl Config {
     pub fn as_v3(&self) -> Result<&ConfigV3> {
         match self {
             Config::V3(v3) => Ok(v3),
-            Config::V1 | Config::V2(_) => {
+            Config::V1 | Config::V2(_) | Config::V4(_) => {
+                Err(error!(crate::ConfigError::UnexpectedConfigVersion))
+            }
+        }
+    }
+
+    pub fn as_v4(&self) -> Result<&ConfigV4> {
+        match self {
+            Config::V4(v4) => Ok(v4),
+            Config::V1 | Config::V2(_) | Config::V3(_) => {
                 Err(error!(crate::ConfigError::UnexpectedConfigVersion))
             }
         }
@@ -150,6 +161,16 @@ impl Config {
         match self {
             Config::V3(v3) => Ok(v3.clone()),
             Config::V2(v2) => Ok(ConfigV3::from_v2(v2.clone())),
+            Config::V1 | Config::V4(_) => Err(error!(crate::ConfigError::UnexpectedConfigVersion)),
+        }
+    }
+
+    /// Prefer V4; project V3/V2 into the single-URL + options layout.
+    pub fn to_v4(&self) -> Result<ConfigV4> {
+        match self {
+            Config::V4(v4) => Ok(v4.clone()),
+            Config::V3(v3) => Ok(ConfigV4::from_v3(v3.clone())),
+            Config::V2(v2) => Ok(ConfigV4::from_v3(ConfigV3::from_v2(v2.clone()))),
             Config::V1 => Err(error!(crate::ConfigError::UnexpectedConfigVersion)),
         }
     }
@@ -159,9 +180,21 @@ impl Config {
     pub fn migrate_to_v3(&mut self) -> bool {
         let v2 = match self {
             Config::V2(v2) => v2.clone(),
-            Config::V1 | Config::V3(_) => return false,
+            Config::V1 | Config::V3(_) | Config::V4(_) => return false,
         };
         *self = Config::V3(ConfigV3::from_v2(v2));
+        true
+    }
+
+    /// Rewrite V2/V3 as V4 in place. Returns `true` if the version changed.
+    pub fn migrate_to_v4(&mut self) -> bool {
+        let v4 = match self {
+            Config::V4(_) => return false,
+            Config::V1 => return false,
+            Config::V2(v2) => ConfigV4::from_v3(ConfigV3::from_v2(v2.clone())),
+            Config::V3(v3) => ConfigV4::from_v3(v3.clone()),
+        };
+        *self = Config::V4(v4);
         true
     }
 }
@@ -198,7 +231,7 @@ impl ConfigV2 {
     }
 }
 
-/// V3 payload: same sections as V2, but `enable_tpu_p2c_update` lives per P2C URL.
+/// V3 payload: same sections as V2, but `enable_tpu_p2c_update` + `p2c_type` live per P2C URL.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub struct ConfigV3 {
     pub block_engine: BlockEngineV1,
@@ -261,6 +294,108 @@ impl ConfigV3 {
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
+pub struct SchedConfig {
+    pub rs_mode: u8,
+    pub rs_cfg_d1: u16,
+    pub rs_enforce: bool,
+}
+
+impl Default for SchedConfig {
+    fn default() -> Self {
+        Self {
+            rs_mode: 1,
+            rs_cfg_d1: 40,
+            rs_enforce: false,
+        }
+    }
+}
+
+/// V4 payload: one block-engine URL per UUID; one P2C URL per UUID with optional Mev/ReSell/TPU.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
+pub struct ConfigV4 {
+    pub block_engine: BlockEngineV4,
+    pub p2c: P2cV4,
+    pub virtual_priority: VirtualPriorityV1,
+    pub sch_config: SchedConfig,
+}
+
+impl ConfigV4 {
+    pub fn empty() -> Self {
+        Self {
+            block_engine: BlockEngineV4 {
+                sets: vec![],
+                config: BundlesConfig::default(),
+            },
+            p2c: P2cV4 { sets: vec![] },
+            virtual_priority: VirtualPriorityV1 { sets: vec![] },
+            sch_config: SchedConfig::default(),
+        }
+    }
+
+    pub fn from_v3(v3: ConfigV3) -> Self {
+        Self {
+            block_engine: BlockEngineV4 {
+                sets: v3
+                    .block_engine
+                    .sets
+                    .into_iter()
+                    .filter_map(|entry| {
+                        let url = entry.url.into_iter().next()?;
+                        Some(BlockEngineEntryV4 {
+                            name: entry.name,
+                            url,
+                            consider_primary: false,
+                            sch: 0,
+                            consider: 0,
+                        })
+                    })
+                    .collect(),
+                config: BundlesConfig::default(),
+            },
+            p2c: P2cV4 {
+                sets: v3
+                    .p2c
+                    .sets
+                    .into_iter()
+                    .filter_map(|entry| {
+                        let first = entry.url.first()?;
+                        let url = first.url.clone();
+                        let enable_tpu_p2c_update =
+                            entry.url.iter().any(|u| u.enable_tpu_p2c_update);
+                        Some(P2cEntryV4 {
+                            name: entry.name,
+                            url,
+                            mev: false,
+                            resell: true,
+                            enable_tpu_p2c_update,
+                        })
+                    })
+                    .collect(),
+            },
+            virtual_priority: v3.virtual_priority,
+            sch_config: SchedConfig::default(),
+        }
+    }
+
+    pub fn validate(&self, limits: &ConfigLimits) -> Result<()> {
+        validate_sections_v4(
+            &self.block_engine,
+            &self.p2c,
+            &self.virtual_priority,
+            limits,
+        )
+    }
+
+    /// True if any Mev endpoint enables TPU→P2C forwarding.
+    pub fn any_tpu_p2c_update_enabled(&self) -> bool {
+        self.p2c
+            .sets
+            .iter()
+            .any(|set| set.mev && set.enable_tpu_p2c_update)
+    }
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub struct BlockEngineV1 {
     /// Dynamic list of named endpoint groups; realloc when this grows/shrinks.
     pub sets: Vec<BlockEngineEntryV1>,
@@ -270,6 +405,50 @@ pub struct BlockEngineV1 {
 pub struct BlockEngineEntryV1 {
     pub name: Uuid,
     pub url: Vec<BlockEngineConfig>,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
+pub struct BlockEngineV4 {
+    pub sets: Vec<BlockEngineEntryV4>,
+    pub config: BundlesConfig,
+}
+
+/// Bundle-stage settings; `*1` fields apply to primary bundles (`consider_primary`), `*2` fields
+/// to secondary bundles.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
+pub struct BundlesConfig {
+    pub bs_pm1: u16,
+    pub bs_np1: u16,
+    pub bs_be1: u16,
+    pub bs_d1: u16,
+    pub bs_pm2: u16,
+    pub bs_np2: u16,
+    pub bs_be2: u16,
+    pub bs_d2: u16,
+}
+
+impl Default for BundlesConfig {
+    fn default() -> Self {
+        Self {
+            bs_pm1: 20,
+            bs_np1: 10,
+            bs_be1: 10,
+            bs_d1: 0,
+            bs_pm2: 20,
+            bs_np2: 10,
+            bs_be2: 10,
+            bs_d2: 5,
+        }
+    }
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
+pub struct BlockEngineEntryV4 {
+    pub name: Uuid,
+    pub url: BlockEngineConfig,
+    pub consider_primary: bool,
+    pub sch: u8,
+    pub consider: u8,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
@@ -312,11 +491,58 @@ pub struct P2cEntryV3 {
     pub url: Vec<P2cConfig>,
 }
 
-/// ConfigV3 P2C endpoint with per-URL TPU→P2C gate.
+/// ConfigV3 P2C endpoint with per-URL TPU→P2C gate and P2C type.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub struct P2cConfig {
     pub url: String,
     pub enable_tpu_p2c_update: bool,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
+pub struct P2cV4 {
+    pub sets: Vec<P2cEntryV4>,
+}
+
+/// One gRPC URL per UUID with independent stream options.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
+pub struct P2cEntryV4 {
+    pub name: Uuid,
+    pub url: String,
+    pub mev: bool,
+    pub resell: bool,
+    pub enable_tpu_p2c_update: bool,
+}
+
+/// Expanded runtime view of one enabled stream on a [`P2cEntryV4`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct P2cEndpointView<'a> {
+    pub p2c_type: P2cType,
+    pub url: &'a str,
+    pub enable_tpu_p2c_update: bool,
+}
+
+impl P2cEntryV4 {
+    pub fn endpoints(&self) -> impl Iterator<Item = P2cEndpointView<'_>> {
+        let url = self.url.as_str();
+        let resell = self.resell.then_some(P2cEndpointView {
+            p2c_type: P2cType::ReSell,
+            url,
+            enable_tpu_p2c_update: false,
+        });
+        let mev = self.mev.then_some(P2cEndpointView {
+            p2c_type: P2cType::Mev,
+            url,
+            enable_tpu_p2c_update: self.enable_tpu_p2c_update,
+        });
+        resell.into_iter().chain(mev)
+    }
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum P2cType {
+    #[default]
+    Mev,
+    ReSell,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
@@ -635,6 +861,57 @@ fn validate_sections_v3(
     Ok(())
 }
 
+fn validate_sections_v4(
+    block_engine: &BlockEngineV4,
+    p2c: &P2cV4,
+    virtual_priority: &VirtualPriorityV1,
+    limits: &ConfigLimits,
+) -> Result<()> {
+    let limits = limits.as_v1()?;
+    require!(
+        block_engine.sets.len() <= limits.max_sets_per_section as usize,
+        crate::ConfigError::TooManySets
+    );
+    require!(
+        p2c.sets.len() <= limits.max_sets_per_section as usize,
+        crate::ConfigError::TooManySets
+    );
+    require!(
+        virtual_priority.sets.len() <= limits.max_sets_per_section as usize,
+        crate::ConfigError::TooManySets
+    );
+
+    for entry in &block_engine.sets {
+        validate_urls(
+            std::iter::once(entry.url.url.as_str()),
+            limits.max_url_len as usize,
+        )?;
+    }
+    for entry in &p2c.sets {
+        require!(
+            entry.mev || entry.resell || entry.enable_tpu_p2c_update,
+            crate::ConfigError::InvalidP2cOptions
+        );
+        validate_urls(
+            std::iter::once(entry.url.as_str()),
+            limits.max_url_len as usize,
+        )?;
+    }
+    for entry in &virtual_priority.sets {
+        require!(
+            entry.url.len() <= limits.max_vp_entries_per_set as usize,
+            crate::ConfigError::TooManyVpEntries
+        );
+        for vp in &entry.url {
+            require!(
+                vp.value.is_finite() && (0.0..=1.0).contains(&vp.value),
+                crate::ConfigError::InvalidVpValue
+            );
+        }
+    }
+    Ok(())
+}
+
 fn validate_urls<'a>(urls: impl Iterator<Item = &'a str>, max_url_len: usize) -> Result<()> {
     for url in urls {
         require!(!url.is_empty(), crate::ConfigError::UrlEmpty);
@@ -865,9 +1142,133 @@ mod tests {
     }
 
     #[test]
+    fn migrate_v3_to_v4_collapses_to_one_url_with_options() {
+        let mut cfg = Config::V3(ConfigV3 {
+            block_engine: BlockEngineV1 {
+                sets: vec![BlockEngineEntryV1 {
+                    name: Uuid::from_str_truncated("be"),
+                    url: vec![
+                        BlockEngineConfig {
+                            url: "https://be1".to_string(),
+                            max_bundles: 1,
+                            period_ms: 1,
+                            max_bundle_burst: 0,
+                        },
+                        BlockEngineConfig {
+                            url: "https://be2".to_string(),
+                            max_bundles: 0,
+                            period_ms: 0,
+                            max_bundle_burst: 0,
+                        },
+                    ],
+                }],
+            },
+            p2c: P2cV3 {
+                sets: vec![P2cEntryV3 {
+                    name: Uuid::from_str_truncated("p2c"),
+                    url: vec![
+                        P2cConfig {
+                            url: "https://p2c".to_string(),
+                            enable_tpu_p2c_update: true,
+                        },
+                        P2cConfig {
+                            url: "https://p2c-extra".to_string(),
+                            enable_tpu_p2c_update: false,
+                        },
+                    ],
+                }],
+            },
+            virtual_priority: VirtualPriorityV1 { sets: vec![] },
+        });
+        assert!(cfg.migrate_to_v4());
+        let v4 = cfg.to_v4().unwrap();
+        assert_eq!(v4.block_engine.sets[0].url.url, "https://be1");
+        assert_eq!(v4.p2c.sets[0].url, "https://p2c");
+        assert!(v4.p2c.sets[0].mev);
+        assert!(v4.p2c.sets[0].resell);
+        assert!(v4.p2c.sets[0].enable_tpu_p2c_update);
+        assert!(!v4.block_engine.sets[0].consider_primary);
+        assert_eq!(v4.block_engine.sets[0].sch, 0);
+        assert_eq!(v4.block_engine.sets[0].consider, 0);
+        assert_eq!(v4.block_engine.config, BundlesConfig::default());
+        assert_eq!(v4.sch_config, SchedConfig::default());
+        assert!(!cfg.migrate_to_v4());
+    }
+
+    #[test]
+    fn v4_block_engine_options_round_trip() {
+        let mut v4 = ConfigV4::empty();
+        v4.block_engine.sets.push(BlockEngineEntryV4 {
+            name: Uuid::from_str_truncated("be"),
+            url: BlockEngineConfig {
+                url: "https://be".to_string(),
+                max_bundles: 0,
+                period_ms: 0,
+                max_bundle_burst: 0,
+            },
+            consider_primary: true,
+            sch: 7,
+            consider: 9,
+        });
+        v4.block_engine.config = BundlesConfig {
+            bs_pm1: 1,
+            bs_np1: 2,
+            bs_be1: 3,
+            bs_d1: 4,
+            bs_pm2: 5,
+            bs_np2: 6,
+            bs_be2: 7,
+            bs_d2: 8,
+        };
+        v4.sch_config = SchedConfig {
+            rs_mode: 4,
+            rs_cfg_d1: 25,
+            rs_enforce: true,
+        };
+        let cfg = Config::V4(v4);
+        let bytes = borsh::to_vec(&cfg).unwrap();
+        assert_eq!(Config::try_from_slice(&bytes).unwrap(), cfg);
+    }
+
+    #[test]
+    fn v4_defaults_for_bundles_and_sched_config() {
+        assert_eq!(
+            BundlesConfig::default(),
+            BundlesConfig {
+                bs_pm1: 20,
+                bs_np1: 10,
+                bs_be1: 10,
+                bs_d1: 10,
+                bs_pm2: 20,
+                bs_np2: 10,
+                bs_be2: 10,
+                bs_d2: 10,
+            }
+        );
+        assert_eq!(
+            SchedConfig::default(),
+            SchedConfig {
+                rs_mode: 1,
+                rs_cfg_d1: 40,
+                rs_enforce: false,
+            }
+        );
+        let v4 = ConfigV4::empty();
+        assert_eq!(v4.block_engine.config, BundlesConfig::default());
+        assert_eq!(v4.sch_config, SchedConfig::default());
+    }
+
+    #[test]
     fn v3_discriminant_is_two() {
         let cfg = Config::V3(ConfigV3::empty());
         let bytes = borsh::to_vec(&cfg).unwrap();
         assert_eq!(bytes[0], 2);
+    }
+
+    #[test]
+    fn v4_discriminant_is_three() {
+        let cfg = Config::V4(ConfigV4::empty());
+        let bytes = borsh::to_vec(&cfg).unwrap();
+        assert_eq!(bytes[0], 3);
     }
 }

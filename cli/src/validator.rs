@@ -5,9 +5,10 @@ use {
     colored::*,
     rakurai_client_config::{
         sdk::{
-            effective_config, name_from_str, BlockEngineConfig, BlockEngineEntryV1, BlockEngineV1,
-            Config, ConfigLimits, ConfigV3, P2cConfig, P2cEntryV3, P2cV3, Uuid, ValidatorProposal,
-            VirtualPriorityConfig, VirtualPriorityEntryV1, VirtualPriorityV1,
+            BlockEngineConfig, BlockEngineEntryV4, BlockEngineV4, BundlesConfig, Config,
+            ConfigLimits, ConfigV4, P2cEntryV4, P2cV4, SchedConfig, Uuid, ValidatorProposal,
+            VirtualPriorityConfig, VirtualPriorityEntryV1, VirtualPriorityV1, effective_config,
+            name_from_str,
         },
         state::{GlobalConfig, ValidatorConfig},
     },
@@ -18,7 +19,7 @@ use {
 
 use crate::parse_pubkey;
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct ConfigFile {
     #[serde(default)]
     block_engine: SetsFileBe,
@@ -26,22 +27,102 @@ struct ConfigFile {
     p2c: SetsFileP2c,
     #[serde(default)]
     virtual_priority: SetsFileVp,
+    #[serde(default)]
+    sch_config: SchedConfigFile,
 }
 
-#[derive(serde::Deserialize, Default)]
+/// Missing fields take the on-chain defaults from [`SchedConfig::default`].
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+struct SchedConfigFile {
+    rs_mode: u8,
+    rs_cfg_d1: u16,
+    rs_enforce: bool,
+}
+
+impl Default for SchedConfigFile {
+    fn default() -> Self {
+        let d = SchedConfig::default();
+        Self {
+            rs_mode: d.rs_mode,
+            rs_cfg_d1: d.rs_cfg_d1,
+            rs_enforce: d.rs_enforce,
+        }
+    }
+}
+
+/// `block_engine.config`: `*1` fields apply to primary bundles, `*2` to secondary.
+/// Missing fields take the on-chain defaults from [`BundlesConfig::default`].
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+struct BundlesConfigFile {
+    bs_pm1: u16,
+    bs_np1: u16,
+    bs_be1: u16,
+    bs_d1: u16,
+    bs_pm2: u16,
+    bs_np2: u16,
+    bs_be2: u16,
+    bs_d2: u16,
+}
+
+impl Default for BundlesConfigFile {
+    fn default() -> Self {
+        Self::from(&BundlesConfig::default())
+    }
+}
+
+impl From<&BundlesConfig> for BundlesConfigFile {
+    fn from(c: &BundlesConfig) -> Self {
+        Self {
+            bs_pm1: c.bs_pm1,
+            bs_np1: c.bs_np1,
+            bs_be1: c.bs_be1,
+            bs_d1: c.bs_d1,
+            bs_pm2: c.bs_pm2,
+            bs_np2: c.bs_np2,
+            bs_be2: c.bs_be2,
+            bs_d2: c.bs_d2,
+        }
+    }
+}
+
+impl From<&BundlesConfigFile> for BundlesConfig {
+    fn from(c: &BundlesConfigFile) -> Self {
+        Self {
+            bs_pm1: c.bs_pm1,
+            bs_np1: c.bs_np1,
+            bs_be1: c.bs_be1,
+            bs_d1: c.bs_d1,
+            bs_pm2: c.bs_pm2,
+            bs_np2: c.bs_np2,
+            bs_be2: c.bs_be2,
+            bs_d2: c.bs_d2,
+        }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Default)]
 struct SetsFileBe {
     #[serde(default)]
     sets: Vec<BeEntryFile>,
+    #[serde(default)]
+    config: BundlesConfigFile,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct BeEntryFile {
     name: String,
+    url: BeUrlFile,
     #[serde(default)]
-    url: Vec<BeUrlFile>,
+    consider_primary: bool,
+    #[serde(default)]
+    sch: u8,
+    #[serde(default)]
+    consider: u8,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct BeUrlFile {
     url: String,
     #[serde(default)]
@@ -52,40 +133,38 @@ struct BeUrlFile {
     max_bundle_burst: u32,
 }
 
-#[derive(serde::Deserialize, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Default)]
 struct SetsFileP2c {
     #[serde(default)]
     sets: Vec<P2cEntryFile>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct P2cEntryFile {
     name: String,
-    #[serde(default)]
-    url: Vec<P2cUrlFile>,
-}
-
-#[derive(serde::Deserialize)]
-struct P2cUrlFile {
     url: String,
+    #[serde(default)]
+    mev: bool,
+    #[serde(default)]
+    resell: bool,
     #[serde(default)]
     enable_tpu_p2c_update: bool,
 }
 
-#[derive(serde::Deserialize, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Default)]
 struct SetsFileVp {
     #[serde(default)]
     sets: Vec<VpEntryFile>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct VpEntryFile {
     name: String,
     #[serde(default)]
     url: Vec<VpUrlFile>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct VpUrlFile {
     key: String,
     value: f64,
@@ -100,42 +179,38 @@ pub fn uuid_to_string(uuid: &Uuid) -> String {
 pub fn load_config_from_file(path: &str) -> Result<Config, Box<dyn std::error::Error>> {
     let text = fs::read_to_string(Path::new(path))?;
     let file: ConfigFile = serde_json::from_str(&text)?;
-    Ok(Config::V3(ConfigV3 {
-        block_engine: BlockEngineV1 {
+    Ok(Config::V4(ConfigV4 {
+        block_engine: BlockEngineV4 {
             sets: file
                 .block_engine
                 .sets
                 .into_iter()
-                .map(|e| BlockEngineEntryV1 {
+                .map(|e| BlockEngineEntryV4 {
                     name: name_from_str(&e.name),
-                    url: e
-                        .url
-                        .into_iter()
-                        .map(|u| BlockEngineConfig {
-                            url: u.url,
-                            max_bundles: u.max_bundles,
-                            period_ms: u.period_ms,
-                            max_bundle_burst: u.max_bundle_burst,
-                        })
-                        .collect(),
+                    url: BlockEngineConfig {
+                        url: e.url.url,
+                        max_bundles: e.url.max_bundles,
+                        period_ms: e.url.period_ms,
+                        max_bundle_burst: e.url.max_bundle_burst,
+                    },
+                    consider_primary: e.consider_primary,
+                    sch: e.sch,
+                    consider: e.consider,
                 })
                 .collect(),
+            config: BundlesConfig::from(&file.block_engine.config),
         },
-        p2c: P2cV3 {
+        p2c: P2cV4 {
             sets: file
                 .p2c
                 .sets
                 .into_iter()
-                .map(|e| P2cEntryV3 {
+                .map(|e| P2cEntryV4 {
                     name: name_from_str(&e.name),
-                    url: e
-                        .url
-                        .into_iter()
-                        .map(|u| P2cConfig {
-                            url: u.url,
-                            enable_tpu_p2c_update: u.enable_tpu_p2c_update,
-                        })
-                        .collect(),
+                    url: e.url,
+                    mev: e.mev,
+                    resell: e.resell,
+                    enable_tpu_p2c_update: e.enable_tpu_p2c_update,
                 })
                 .collect(),
         },
@@ -162,7 +237,97 @@ pub fn load_config_from_file(path: &str) -> Result<Config, Box<dyn std::error::E
                 )
                 .collect::<Result<Vec<_>, _>>()?,
         },
+        sch_config: SchedConfig {
+            rs_mode: file.sch_config.rs_mode,
+            rs_cfg_d1: file.sch_config.rs_cfg_d1,
+            rs_enforce: file.sch_config.rs_enforce,
+        },
     }))
+}
+
+fn config_to_file(cfg: &Config) -> Result<ConfigFile, Box<dyn std::error::Error>> {
+    let v4 = cfg
+        .to_v4()
+        .map_err(|_| "unsupported config schema (reserved v1); migrate to V4 before dumping")?;
+    Ok(ConfigFile {
+        block_engine: SetsFileBe {
+            sets: v4
+                .block_engine
+                .sets
+                .iter()
+                .map(|e| BeEntryFile {
+                    name: uuid_to_string(&e.name),
+                    url: BeUrlFile {
+                        url: e.url.url.clone(),
+                        max_bundles: e.url.max_bundles,
+                        period_ms: e.url.period_ms,
+                        max_bundle_burst: e.url.max_bundle_burst,
+                    },
+                    consider_primary: e.consider_primary,
+                    sch: e.sch,
+                    consider: e.consider,
+                })
+                .collect(),
+            config: BundlesConfigFile::from(&v4.block_engine.config),
+        },
+        p2c: SetsFileP2c {
+            sets: v4
+                .p2c
+                .sets
+                .iter()
+                .map(|e| P2cEntryFile {
+                    name: uuid_to_string(&e.name),
+                    url: e.url.clone(),
+                    mev: e.mev,
+                    resell: e.resell,
+                    enable_tpu_p2c_update: e.enable_tpu_p2c_update,
+                })
+                .collect(),
+        },
+        virtual_priority: SetsFileVp {
+            sets: v4
+                .virtual_priority
+                .sets
+                .iter()
+                .map(|e| VpEntryFile {
+                    name: uuid_to_string(&e.name),
+                    url: e
+                        .url
+                        .iter()
+                        .map(|u| VpUrlFile {
+                            key: u.key.to_string(),
+                            value: u.value,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        },
+        sch_config: SchedConfigFile {
+            rs_mode: v4.sch_config.rs_mode,
+            rs_cfg_d1: v4.sch_config.rs_cfg_d1,
+            rs_enforce: v4.sch_config.rs_enforce,
+        },
+    })
+}
+
+/// Write `cfg` as JSON in the same shape accepted by `load_config_from_file`.
+pub fn write_config_to_file(cfg: &Config, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let file = config_to_file(cfg)?;
+    let text = serde_json::to_string_pretty(&file)?;
+    fs::write(Path::new(path), text)?;
+    Ok(())
+}
+
+/// If `path` is set, dump `cfg` to that JSON file (round-trippable with update/submit).
+pub fn maybe_dump_config(
+    cfg: &Config,
+    path: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(path) = path {
+        write_config_to_file(cfg, path)?;
+        println!("Wrote config to {path}");
+    }
+    Ok(())
 }
 
 pub fn get_global_config(
@@ -194,43 +359,55 @@ pub fn proposal_exists(rpc: &RpcClient, pda: &Pubkey) -> bool {
 }
 
 fn display_config_payload(cfg: &Config) {
-    let Ok(v3) = cfg.to_v3() else {
+    let Ok(v4) = cfg.to_v4() else {
         println!("   schema: unsupported (reserved v1)");
         return;
     };
     let schema = match cfg {
         Config::V1 => "unsupported-v1",
-        Config::V2(_) => "v2→v3",
-        Config::V3(_) => "v3",
+        Config::V2(_) => "v2→v4",
+        Config::V3(_) => "v3→v4",
+        Config::V4(_) => "v4",
     };
     println!("   schema: {schema}");
     println!("   {}", "block_engine".yellow());
-    for entry in &v3.block_engine.sets {
+    let bc = &v4.block_engine.config;
+    println!(
+        "Config :   bs_pm1 {} / bs_np1 {} / bs_be1 {} / bs_d1 {}  bs_pm2 {} / bs_np2 {} / bs_be2 {} / bs_d2 {}",
+        bc.bs_pm1, bc.bs_np1, bc.bs_be1, bc.bs_d1, bc.bs_pm2, bc.bs_np2, bc.bs_be2, bc.bs_d2
+    );
+    for entry in &v4.block_engine.sets {
         println!("     [{}]", uuid_to_string(&entry.name));
-        for u in &entry.url {
-            println!(
-                "       {} (max_bundles {} / period_ms {} / burst {})",
-                u.url, u.max_bundles, u.period_ms, u.max_bundle_burst
-            );
-        }
+        let u = &entry.url;
+        println!(
+            "       {} (max_bundles {} / period_ms {} / burst {})",
+            u.url, u.max_bundles, u.period_ms, u.max_bundle_burst
+        );
+        println!(
+            "       consider_primary {} / sch {} / consider {}",
+            entry.consider_primary, entry.sch, entry.consider
+        );
     }
     println!("   {}", "p2c".yellow());
-    for entry in &v3.p2c.sets {
+    for entry in &v4.p2c.sets {
         println!("     [{}]", uuid_to_string(&entry.name));
-        for u in &entry.url {
-            println!(
-                "       {} (enable_tpu_p2c_update={})",
-                u.url, u.enable_tpu_p2c_update
-            );
-        }
+        println!(
+            "       {} (mev={}, resell={}, enable_tpu_p2c_update={})",
+            entry.url, entry.mev, entry.resell, entry.enable_tpu_p2c_update
+        );
     }
     println!("   {}", "virtual_priority".yellow());
-    for entry in &v3.virtual_priority.sets {
+    for entry in &v4.virtual_priority.sets {
         println!("     [{}]", uuid_to_string(&entry.name));
         for u in &entry.url {
             println!("       {} -> {}", u.key, u.value);
         }
     }
+    println!("   {}", "sch_config".yellow());
+    println!(
+        "     rs_mode {} / rs_cfg_d1 {} / rs_enforce {}",
+        v4.sch_config.rs_mode, v4.sch_config.rs_cfg_d1, v4.sch_config.rs_enforce
+    );
 }
 
 fn display_limits(limits: &ConfigLimits) {

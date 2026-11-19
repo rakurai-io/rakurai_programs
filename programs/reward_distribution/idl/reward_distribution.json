@@ -2071,7 +2071,8 @@
     {
       "name": "record_p2c_subscription",
       "docs": [
-        "Record stake snapshot and amount due for an epoch (once). Manager only.",
+        "Record epoch fee once.",
+        "`updates` is optional metadata — pass `0` when not supplied.",
         "If the ledger is full of unclaimed rows, the oldest epoch is moved into `deficit`."
       ],
       "discriminator": [
@@ -2090,7 +2091,10 @@
           "writable": true
         },
         {
-          "name": "manager_authority",
+          "name": "authority",
+          "docs": [
+            "`manager_authority` or `record_authority`."
+          ],
           "signer": true
         }
       ],
@@ -2100,11 +2104,11 @@
           "type": "u64"
         },
         {
-          "name": "stake",
+          "name": "updates",
           "type": "u64"
         },
         {
-          "name": "amount_due",
+          "name": "recorded_amount",
           "type": "u64"
         }
       ]
@@ -2596,7 +2600,8 @@
     {
       "name": "update_p2c_epoch_converted_to_block_reward",
       "docs": [
-        "Marks a claimed P2C epoch as converted to block rewards."
+        "Marks a claimed P2C epoch as `block_reward_converted`.",
+        "Auth: manager, record authority, or validator identity (vote node signer)."
       ],
       "discriminator": [
         182,
@@ -4290,23 +4295,23 @@
             "type": "u64"
           },
           {
-            "name": "stake",
+            "name": "updates",
             "docs": [
-              "Off-chain stake snapshot used to price this epoch."
+              "Optional off-chain txn updates count for this epoch (0 if not supplied)."
             ],
             "type": "u64"
           },
           {
-            "name": "amount_due",
+            "name": "recorded_amount",
             "docs": [
-              "Fee due for the epoch."
+              "Recorded amount for the epoch (lamports)."
             ],
             "type": "u64"
           },
           {
             "name": "amount_deducted",
             "docs": [
-              "Lamports paid out on claim for this epoch (`min(due, free prepaid)`)."
+              "Lamports paid out on claim for this epoch"
             ],
             "type": "u64"
           },
@@ -4405,8 +4410,7 @@
           {
             "name": "record_authority",
             "docs": [
-              "Optional extra signer for convert-to-block (with manager / validator identity).",
-              "Not used for `record_p2c_subscription` (manager-only)."
+              "May record epoch charges; convert-to-block with manager or vote node."
             ],
             "type": "pubkey"
           },
@@ -4682,11 +4686,11 @@
             "type": "u64"
           },
           {
-            "name": "stake",
+            "name": "updates",
             "type": "u64"
           },
           {
-            "name": "amount_due",
+            "name": "recorded_amount",
             "type": "u64"
           }
         ]
