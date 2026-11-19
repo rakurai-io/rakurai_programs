@@ -38,12 +38,14 @@ pub mod rakurai_activation {
         client_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
+        // `bump` is kept for backward compatibility only; the canonical bump is used instead.
+        let _ = bump;
         let cfg = &mut ctx.accounts.config;
         cfg.authority = authority;
         cfg.client_authority = client_authority;
         cfg.client_commission_account = client_commission_account;
         cfg.client_commission_bps = client_commission_bps;
-        cfg.bump = bump;
+        cfg.bump = ctx.bumps.config;
         cfg.validate()?;
 
         Ok(())
@@ -76,12 +78,14 @@ pub mod rakurai_activation {
         block_reward_commission_bps: u16,
         bump: u8,
     ) -> Result<()> {
+        // `bump` is kept for backward compatibility only; the canonical bump is used instead.
+        let _ = bump;
         if ctx.accounts.validator_vote_account.owner != &solana_sdk_ids::vote::ID {
             return Err(Unauthorized.into());
         }
 
         let node_pubkey =
-            VoteState::deserialize_node_pubkey(&ctx.accounts.validator_vote_account).unwrap();
+            VoteState::deserialize_node_pubkey(&ctx.accounts.validator_vote_account)?;
         if node_pubkey != ctx.accounts.signer.key() {
             return Err(Unauthorized.into());
         }
@@ -93,7 +97,7 @@ pub mod rakurai_activation {
         activation_account.block_reward_commission_bps = block_reward_commission_bps;
         activation_account.client_commission_bps = ctx.accounts.config.client_commission_bps;
         activation_account.validator_authority = ctx.accounts.signer.key();
-        activation_account.bump = bump;
+        activation_account.bump = ctx.bumps.activation_account;
         activation_account.validate()?;
 
         emit!(RakuraiActivationAccountInitializedEvent {
@@ -308,6 +312,8 @@ pub struct InitializeRakuraiActivationAccount<'info> {
     pub validator_vote_account: UncheckedAccount<'info>,
 
     /// CHECK: The validator's identity account (used to derive the PDA and verify authority).
+    /// Must be the signer so a third party cannot create the PDA for another validator.
+    #[account(constraint = validator_identity_account.key() == signer.key() @ Unauthorized)]
     pub validator_identity_account: UncheckedAccount<'info>,
 
     /// Payer for account creation; must sign the transaction. In current context validator's identity account.

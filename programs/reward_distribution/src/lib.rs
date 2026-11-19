@@ -1589,7 +1589,7 @@ fn initialize_reward_collection_account_inner(
         return Err(ErrorCode::Unauthorized.into());
     }
 
-    let node_pubkey = VoteState::deserialize_node_pubkey(validator_vote_account).unwrap();
+    let node_pubkey = VoteState::deserialize_node_pubkey(validator_vote_account)?;
     if &node_pubkey != signer {
         return Err(ErrorCode::Unauthorized.into());
     }
